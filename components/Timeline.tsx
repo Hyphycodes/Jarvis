@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Chevron } from "./icons";
 
 export type TimelineItem = {
@@ -9,9 +10,14 @@ export type TimelineItem = {
   title: string;
   detail?: ReactNode;
   defaultExpanded?: boolean;
+  /** Active = gold time + gold node. Used for the "now" / "next" events. */
+  active?: boolean;
+  /** Optional route to open when the row is tapped. */
+  href?: string;
 };
 
 export function Timeline({ items }: { items: TimelineItem[] }) {
+  const router = useRouter();
   const initial = items.reduce<Record<string, boolean>>((acc, it) => {
     acc[it.id] = !!it.defaultExpanded;
     return acc;
@@ -28,29 +34,39 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
         const isOpen = open[item.id];
         const hasDetail = !!item.detail;
         const isLast = i === items.length - 1;
+
+        function onRowTap() {
+          if (item.href) router.push(item.href);
+          else if (hasDetail) setOpen((s) => ({ ...s, [item.id]: !s[item.id] }));
+        }
+
         return (
           <li key={item.id} className="relative">
             <div className="grid grid-cols-[96px_24px_1fr] items-start gap-x-3 py-4">
-              <div className="pt-[3px] text-[12px] uppercase tracking-[0.06em] text-warm-ivory/60">
+              <div
+                className={
+                  "pt-[3px] text-[12px] uppercase tracking-[0.06em] " +
+                  (item.active
+                    ? "text-muted-gold"
+                    : "text-warm-ivory/60")
+                }
+              >
                 {item.time}
               </div>
               <div className="flex justify-center pt-[6px]">
-                <Node active={!!isOpen} />
+                <Node active={!!item.active} expanded={!!isOpen} />
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  hasDetail &&
-                  setOpen((s) => ({ ...s, [item.id]: !s[item.id] }))
-                }
+                onClick={onRowTap}
                 className="flex items-start justify-between gap-3 text-left"
                 aria-expanded={isOpen}
-                disabled={!hasDetail}
+                disabled={!hasDetail && !item.href}
               >
                 <span className="font-serif text-[24px] font-normal leading-[1.2] text-warm-ivory">
                   {item.title}
                 </span>
-                {hasDetail ? (
+                {hasDetail || item.href ? (
                   <span className="pt-[10px] text-warm-ivory/60">
                     <Chevron direction={isOpen ? "up" : "down"} />
                   </span>
@@ -75,17 +91,25 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
   );
 }
 
-function Node({ active }: { active: boolean }) {
+function Node({ active, expanded }: { active: boolean; expanded: boolean }) {
+  if (active) {
+    return (
+      <span
+        className="relative flex h-3.5 w-3.5 items-center justify-center rounded-full border border-muted-gold"
+        style={{ boxShadow: "0 0 10px rgba(184,146,74,0.4)" }}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-gold" />
+      </span>
+    );
+  }
   return (
     <span
       className={
         "relative flex h-3 w-3 items-center justify-center rounded-full border " +
-        (active ? "border-warm-ivory" : "border-warm-ivory/60")
+        (expanded ? "border-warm-ivory" : "border-warm-ivory/60")
       }
     >
-      {active ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-warm-ivory" />
-      ) : null}
+      {expanded ? <span className="h-1.5 w-1.5 rounded-full bg-warm-ivory" /> : null}
     </span>
   );
 }
