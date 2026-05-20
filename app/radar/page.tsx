@@ -83,17 +83,17 @@ export default function RadarPage() {
   return (
     <AppFrame>
       <header className="flex flex-col gap-4">
-        <div className="relative">
+        <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
           <div className="flex items-center gap-3">
             <h1 className="font-serif text-[56px] italic leading-[1.02] tracking-[-0.01em] text-warm-ivory">
               Radar
             </h1>
             <span
               aria-hidden
-              className="pulse-dot mt-3 inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
+              className="pulse-dot mb-2 inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
             />
           </div>
-          <span className="absolute right-0 top-[18px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
+          <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
             May 17, 2025
           </span>
         </div>

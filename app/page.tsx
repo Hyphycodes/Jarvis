@@ -15,13 +15,13 @@ export default function Page() {
   return (
     <AppFrame>
       <header className="flex flex-col gap-4">
-        <div className="relative">
-          <h1 className="font-serif text-[56px] leading-[1.02] tracking-[-0.01em] text-warm-ivory">
+        <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
+          <h1 className="font-serif text-[44px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
             Good evening,
             <br />
             <span className="italic">J.</span>
           </h1>
-          <span className="absolute right-0 top-[18px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
+          <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
             May 17, 2025
           </span>
         </div>

@@ -9,4 +9,6 @@ export { Divider } from "./Divider";
 export { Timeline } from "./Timeline";
 export type { TimelineItem } from "./Timeline";
 export { Checkbox } from "./Checkbox";
+export { Orbit } from "./Orbit";
+export type { OrbitNode } from "./Orbit";
 export { Chevron, Arrow, Mic } from "./icons";
