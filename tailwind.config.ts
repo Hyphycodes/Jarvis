@@ -1,7 +1,5 @@
 import type { Config } from "tailwindcss";
 
-// Foundation config only. Design tokens and theme will be defined later
-// in /theme. Do not encode product design decisions here.
 const config: Config = {
   content: [
     "./app/**/*.{ts,tsx}",
@@ -9,7 +7,27 @@ const config: Config = {
     "./theme/**/*.{ts,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        "near-black": "var(--color-near-black)",
+        "soft-black": "var(--color-soft-black)",
+        charcoal: "var(--color-charcoal)",
+        "warm-ivory": "var(--color-warm-ivory)",
+        "muted-gold": "var(--color-muted-gold)",
+        "soft-gold": "var(--color-soft-gold)",
+        divider: "var(--color-divider)",
+      },
+      fontFamily: {
+        serif: ["var(--font-serif)"],
+        sans: ["var(--font-sans)"],
+      },
+      transitionTimingFunction: {
+        atmospheric: "cubic-bezier(0.25, 0.1, 0.25, 1)",
+      },
+      letterSpacing: {
+        editorial: "0.18em",
+      },
+    },
   },
   plugins: [],
 };

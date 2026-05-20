@@ -1,3 +1,49 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --color-near-black: #0A0A0B;
+  --color-soft-black: #111113;
+  --color-charcoal: #1A1A1C;
+  --color-warm-ivory: #F0ECD8;
+  --color-muted-gold: #B8924A;
+  --color-soft-gold: #C9A96E;
+  --color-divider: #2A2A2E;
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  --font-serif: "DM Serif Display", "Times New Roman", serif;
+  --font-sans: "Neue Haas Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+
+  --ease-atmospheric: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --duration-slow: 800ms;
+  --duration-default: 500ms;
+  --duration-fast: 300ms;
+
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+html,
+body {
+  background-color: var(--color-near-black);
+  color: var(--color-warm-ivory);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100dvh;
+  overscroll-behavior: none;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--color-muted-gold);
+  color: var(--color-near-black);
+}
