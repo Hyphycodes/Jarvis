@@ -11,4 +11,5 @@ export type { TimelineItem } from "./Timeline";
 export { Checkbox } from "./Checkbox";
 export { Orbit } from "./Orbit";
 export type { OrbitNode } from "./Orbit";
+export { DeepSectionFrame, DeepHeader } from "./DeepSectionFrame";
 export { Chevron, Arrow, Mic } from "./icons";

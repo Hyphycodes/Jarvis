@@ -25,42 +25,54 @@ import {
 import { useEventStatus } from "@/lib/eventStatus";
 import { timeOfDay } from "@/lib/timeOfDay";
 
-const SECTIONS: { id: string; label: string; sub: string; icon: ReactNode }[] = [
+const SECTIONS: {
+  id: string;
+  label: string;
+  sub: string;
+  icon: ReactNode;
+  href: string;
+}[] = [
   {
     id: "before",
     label: "Before You Go",
     sub: "What to wear, bring, and know before you leave.",
     icon: <Jacket size={20} />,
+    href: "/plan/sparrow/before-you-go",
   },
   {
     id: "move",
     label: "The Move",
     sub: "The flow of the night, step by step.",
     icon: <WineGlass size={20} />,
+    href: "/plan/sparrow/the-move",
   },
   {
     id: "atmosphere",
     label: "Atmosphere",
     sub: "Energy, music, lighting, and the mood.",
     icon: <Record size={20} />,
+    href: "/plan/sparrow/atmosphere",
   },
   {
     id: "details",
     label: "The Details",
     sub: "Address, reservation, contacts, and intel.",
     icon: <MapPin size={20} />,
+    href: "/plan/sparrow/the-details",
   },
   {
     id: "detours",
     label: "Optional Detours",
     sub: "Places worth considering along the way.",
     icon: <SignPost size={20} />,
+    href: "/plan/sparrow/optional-detours",
   },
   {
     id: "after",
     label: "After",
     sub: "How the night can end well.",
     icon: <Moon size={20} />,
+    href: "/plan/sparrow/after",
   },
 ];
 
@@ -130,6 +142,7 @@ export default function SparrowPlanPage() {
             icon={s.icon}
             label={s.label}
             sub={s.sub}
+            href={s.href}
             divider={i !== SECTIONS.length - 1}
           />
         ))}
@@ -203,11 +216,11 @@ function Hero({
         }}
       />
       <div
-        className="relative flex flex-col gap-5 px-6"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 16px)" }}
+        className="relative flex flex-col gap-4 px-6"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
       >
-        {/* Top chrome */}
-        <div className="flex items-start justify-between">
+        {/* Top row: back left · date right */}
+        <div className="flex items-center justify-between">
           <Link
             href="/"
             aria-label="Back to Today"
@@ -215,29 +228,30 @@ function Hero({
           >
             <ArrowLeft size={16} />
           </Link>
-          <span className="self-center pt-1 text-[12px] uppercase tracking-editorial text-warm-ivory/65">
+          <span className="text-[12px] uppercase tracking-editorial text-warm-ivory/65">
             May 17, 2025
           </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Share"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur"
-            >
-              <Share size={14} />
-            </button>
-            <button
-              type="button"
-              aria-label="More"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur"
-            >
-              <Ellipsis size={16} />
-            </button>
-          </div>
+        </div>
+        {/* Second row: share + more icons aligned right */}
+        <div className="flex items-center justify-end gap-2 -mt-2">
+          <button
+            type="button"
+            aria-label="Share"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur"
+          >
+            <Share size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="More"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur"
+          >
+            <Ellipsis size={16} />
+          </button>
         </div>
 
-        {/* Title block */}
-        <div className="pt-6">
+        {/* Title block — sit closer to the chrome */}
+        <div className="pt-1">
           <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/70">
             Dining
           </div>
@@ -259,12 +273,11 @@ function Hero({
           type="button"
           onClick={onBegin}
           className={
-            "mb-8 mt-4 flex items-center justify-between rounded-[4px] px-6 py-4 text-[12px] uppercase tracking-editorial transition-colors duration-500 ease-atmospheric " +
+            "mb-8 mt-2 flex items-center justify-between rounded-[4px] px-6 py-4 text-[12px] uppercase tracking-editorial transition-colors duration-500 ease-atmospheric " +
             (live
               ? "bg-near-black text-muted-gold ring-1 ring-muted-gold/60"
               : "bg-warm-ivory text-near-black")
           }
-          // hide content until hydrated to avoid CTA flicker
           style={{ opacity: hydrated ? 1 : 0.85 }}
         >
           <span className="flex items-center gap-2">
@@ -312,18 +325,20 @@ function SectionRow({
   icon,
   label,
   sub,
+  href,
   divider,
 }: {
   icon: ReactNode;
   label: string;
   sub: string;
+  href: string;
   divider: boolean;
 }) {
   return (
-    <button
-      type="button"
+    <Link
+      href={href}
       className={
-        "grid grid-cols-[40px_1fr_auto] items-center gap-3 py-5 text-left " +
+        "grid grid-cols-[40px_1fr_auto] items-center gap-3 py-5 text-left transition-colors duration-300 ease-atmospheric hover:bg-soft-black/40 " +
         (divider ? "border-b border-white/[0.06]" : "")
       }
     >
@@ -339,7 +354,7 @@ function SectionRow({
         </span>
       </span>
       <Chevron direction="right" size={14} className="text-warm-ivory/45" />
-    </button>
+    </Link>
   );
 }
 
