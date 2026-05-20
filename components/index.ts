@@ -6,3 +6,7 @@ export type { Tab } from "./BottomNav";
 export { FloatingMicButton } from "./FloatingMicButton";
 export { AtmosphericCard } from "./AtmosphericCard";
 export { Divider } from "./Divider";
+export { Timeline } from "./Timeline";
+export type { TimelineItem } from "./Timeline";
+export { Checkbox } from "./Checkbox";
+export { Chevron, Arrow, Mic } from "./icons";
