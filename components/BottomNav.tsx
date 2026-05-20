@@ -1,41 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Mic } from "./icons";
 
-const TABS = ["Today", "Radar", "Circle", "North"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = [
+  { label: "Today", href: "/" },
+  { label: "Radar", href: "/radar" },
+  { label: "Circle", href: "/circle" },
+  { label: "North", href: "/north" },
+] as const;
+
+type TabLabel = (typeof TABS)[number]["label"];
 
 export function BottomNav({
-  active: activeProp,
-  onChange,
+  active,
   onMic,
 }: {
-  active?: Tab;
-  onChange?: (tab: Tab) => void;
+  active?: TabLabel;
   onMic?: () => void;
 }) {
-  const [internal, setInternal] = useState<Tab>("Today");
-  const active = activeProp ?? internal;
+  const pathname = usePathname() ?? "/";
+  const routeActive =
+    active ??
+    (TABS.find((t) =>
+      t.href === "/" ? pathname === "/" : pathname.startsWith(t.href),
+    )?.label ??
+      "Today");
 
   return (
     <nav
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px] border-t border-divider/70 bg-near-black/95 backdrop-blur"
-      style={{ paddingBottom: "calc(var(--safe-bottom) + 10px)" }}
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 10px)" }}
     >
       <div className="flex items-center justify-between gap-3 px-6 pt-3">
         <ul className="flex flex-1 items-center justify-between pr-3">
           {TABS.map((tab) => {
-            const isActive = tab === active;
+            const isActive = tab.label === routeActive;
             return (
-              <li key={tab}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeProp === undefined) setInternal(tab);
-                    onChange?.(tab);
-                  }}
+              <li key={tab.label}>
+                <Link
+                  href={tab.href}
+                  prefetch
                   className={
                     "py-2 text-[11px] uppercase tracking-editorial transition-opacity duration-300 ease-atmospheric " +
                     (isActive
@@ -43,8 +50,8 @@ export function BottomNav({
                       : "text-warm-ivory/40 hover:text-warm-ivory/70")
                   }
                 >
-                  {tab}
-                </button>
+                  {tab.label}
+                </Link>
               </li>
             );
           })}
@@ -62,4 +69,4 @@ export function BottomNav({
   );
 }
 
-export type { Tab };
+export type Tab = TabLabel;

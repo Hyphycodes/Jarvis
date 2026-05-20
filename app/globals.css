@@ -34,9 +34,17 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+html {
+  height: 100%;
+  /* Prevent rubber-band / pull-to-refresh on the document */
+  overscroll-behavior: none;
+}
+
 body {
   min-height: 100dvh;
   overscroll-behavior: none;
+  /* Defeat iOS pull-to-refresh while keeping inner scroll containers usable */
+  position: relative;
 }
 
 * {
@@ -46,4 +54,47 @@ body {
 ::selection {
   background: var(--color-muted-gold);
   color: var(--color-near-black);
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-soft 2s var(--ease-atmospheric) infinite;
+}
+
+@keyframes cross-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-up-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 0.6;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+.fade-up-out {
+  animation: fade-up-out 600ms var(--ease-atmospheric) forwards;
+  pointer-events: none;
 }

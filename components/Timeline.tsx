@@ -22,7 +22,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
     <ol className="relative">
       <span
         aria-hidden
-        className="absolute left-[112px] top-3 bottom-3 w-px bg-divider"
+        className="absolute left-[112px] top-3 bottom-3 w-px bg-warm-ivory/20"
       />
       {items.map((item, i) => {
         const isOpen = open[item.id];
@@ -47,7 +47,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                 aria-expanded={isOpen}
                 disabled={!hasDetail}
               >
-                <span className="font-serif text-[24px] leading-[1.2] text-warm-ivory">
+                <span className="font-serif text-[24px] font-normal leading-[1.2] text-warm-ivory">
                   {item.title}
                 </span>
                 {hasDetail ? (

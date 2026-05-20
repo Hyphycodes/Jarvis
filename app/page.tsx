@@ -5,7 +5,6 @@ import {
   AppFrame,
   BottomNav,
   Checkbox,
-  EditorialHeader,
   SectionLabel,
   Timeline,
   type TimelineItem,
@@ -15,25 +14,22 @@ import { Arrow, Chevron } from "@/components/icons";
 export default function Page() {
   return (
     <AppFrame>
-      <EditorialHeader
-        meta={
-          <>
-            <span>9:41</span>
-            <span>May 17, 2025</span>
-          </>
-        }
-        title={
-          <>
-            Good evening, <span className="italic">J.</span>
-          </>
-        }
-        subtitle={
-          <>
-            Your day is set. White Sox game, tailgate at 10am.
-            <br />3 stops. 1 grab list. Weather clears at 6:40pm.
-          </>
-        }
-      />
+      <header className="flex flex-col gap-4">
+        <div className="relative">
+          <h1 className="font-serif text-[56px] leading-[1.02] tracking-[-0.01em] text-warm-ivory">
+            Good evening,
+            <br />
+            <span className="italic">J.</span>
+          </h1>
+          <span className="absolute right-0 top-[18px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
+            May 17, 2025
+          </span>
+        </div>
+        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/65">
+          Your day is set. White Sox game, tailgate at 10am.
+          <br />3 stops. 1 grab list. Weather clears at 6:40pm.
+        </p>
+      </header>
 
       <div className="mt-8 h-px w-full bg-divider/70" />
 
@@ -99,9 +95,9 @@ function TailgateDetail() {
     <div className="mt-1 rounded-[10px] border-l border-muted-gold/70 bg-soft-black/80 p-5">
       <div className="flex items-start justify-between gap-4">
         <address className="not-italic text-[14px] leading-[1.55] text-warm-ivory/85">
-          333 W. 35th St.
+          <span className="whitespace-nowrap">333 W. 35th St.</span>
           <br />
-          Chicago, IL 60616
+          <span className="whitespace-nowrap">Chicago, IL 60616</span>
         </address>
         <div className="flex items-start gap-2 rounded-[6px] border border-divider px-3 py-2">
           <span className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-[3px] border border-warm-ivory/40 text-[11px]">
@@ -193,7 +189,7 @@ function GrabList() {
 
 function SignalRow({ text, ago }: { text: string; ago: string }) {
   return (
-    <li className="flex items-start justify-between gap-4 border-l border-muted-gold/60 bg-soft-black/70 px-4 py-3">
+    <li className="flex items-start justify-between gap-4 border-l-2 border-muted-gold/40 bg-soft-black/70 px-4 py-3">
       <p className="text-[14px] leading-[1.5] text-warm-ivory/85">{text}</p>
       <div className="flex shrink-0 items-center gap-2 pt-[2px] text-[12px] text-warm-ivory/55">
         {ago}

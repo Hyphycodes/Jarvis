@@ -28,6 +28,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="bg-near-black">
       <head>
+        <meta name="theme-color" content="#0A0A0B" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
+        <meta name="apple-mobile-web-app-title" content="Jarvis" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
