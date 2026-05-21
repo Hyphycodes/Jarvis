@@ -231,3 +231,58 @@ export function Receipt({ size = 16, className = "" }: IconProps) {
     </svg>
   );
 }
+
+export function Link2({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
+    </svg>
+  );
+}
+
+export function Gear({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+export function Brain({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M9.5 2a2.5 2.5 0 0 0-2.5 2.5v.05A2.5 2.5 0 0 0 4.5 7a2.5 2.5 0 0 0 .5 1.5A2.5 2.5 0 0 0 4 11a2.5 2.5 0 0 0 1 2 2.5 2.5 0 0 0-1 2 2.5 2.5 0 0 0 2.5 2.5A2.5 2.5 0 0 0 9 20a2.5 2.5 0 0 0 3-.5V4.5A2.5 2.5 0 0 0 9.5 2z" />
+      <path d="M14.5 2a2.5 2.5 0 0 1 2.5 2.5v.05A2.5 2.5 0 0 1 19.5 7a2.5 2.5 0 0 1-.5 1.5A2.5 2.5 0 0 1 20 11a2.5 2.5 0 0 1-1 2 2.5 2.5 0 0 1 1 2 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 15 20a2.5 2.5 0 0 1-3-.5V4.5A2.5 2.5 0 0 1 14.5 2z" />
+    </svg>
+  );
+}
+
+export function LogOut({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  );
+}
+
+export function ShieldCheck({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
+
+export function Lock({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}

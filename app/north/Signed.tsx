@@ -111,7 +111,7 @@ export function NorthSigned() {
       </aside>
 
       <Link
-        href="/settings"
+        href="/account"
         className="mt-8 flex items-center justify-between border-t border-divider/70 py-5 text-[11px] uppercase tracking-editorial text-warm-ivory/65 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
       >
         <span>Account &amp; Settings</span>
