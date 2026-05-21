@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { signOut } from "@/lib/actions/auth";
+import { authCallbackUrl, siteOrigin } from "@/lib/siteOrigin";
 import { RefreshButton, ShowOrigin } from "./client-bits";
 
 export const metadata = { title: "Settings · Jarvis" };
@@ -18,6 +19,8 @@ export default async function SettingsPage() {
     supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     supabaseAnon: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,
+    detectedOrigin: siteOrigin(),
+    callbackUrl: authCallbackUrl(),
   };
 
   return (
@@ -118,8 +121,39 @@ export default async function SettingsPage() {
         ) : null}
       </Section>
 
-      {/* Environment check */}
-      <Section eyebrow="Environment">
+      {/* Auth / Environment */}
+      <Section eyebrow="Auth & Environment">
+        <Field
+          label="NEXT_PUBLIC_SITE_URL"
+          value={
+            envCheck.siteUrl ? (
+              <span className="break-all font-mono text-[12px] text-warm-ivory/85">
+                {envCheck.siteUrl}
+              </span>
+            ) : (
+              <span className="text-[13px] text-muted-gold/85">
+                Not set — magic links will redirect to the Vercel fallback
+              </span>
+            )
+          }
+        />
+        <Field
+          label="Detected origin"
+          value={
+            <span className="break-all font-mono text-[12px] text-warm-ivory/85">
+              {envCheck.detectedOrigin}
+            </span>
+          }
+        />
+        <Field
+          label="Callback URL"
+          value={
+            <span className="break-all font-mono text-[12px] text-warm-ivory/85">
+              {envCheck.callbackUrl}
+            </span>
+          }
+        />
+        <Field label="Window origin" value={<ShowOrigin />} />
         <Field
           label="Supabase URL"
           value={<YesNo ok={envCheck.supabaseUrl} />}
@@ -128,21 +162,6 @@ export default async function SettingsPage() {
           label="Supabase anon key"
           value={<YesNo ok={envCheck.supabaseAnon} />}
         />
-        <Field
-          label="NEXT_PUBLIC_SITE_URL"
-          value={
-            envCheck.siteUrl ? (
-              <span className="break-all text-[13px] text-warm-ivory/85">
-                {envCheck.siteUrl}
-              </span>
-            ) : (
-              <span className="text-[13px] text-muted-gold/85">
-                Not set
-              </span>
-            )
-          }
-        />
-        <Field label="Window origin" value={<ShowOrigin />} />
       </Section>
 
       {/* Actions */}
@@ -150,16 +169,16 @@ export default async function SettingsPage() {
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <Link
+              href="/"
+              className="block bg-warm-ivory px-4 py-3 text-center text-[11px] uppercase tracking-editorial text-near-black"
+            >
+              Today
+            </Link>
+            <Link
               href="/profile"
               className="block border border-divider px-4 py-3 text-center text-[11px] uppercase tracking-editorial text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40"
             >
               Profile
-            </Link>
-            <Link
-              href="/login"
-              className="block border border-divider px-4 py-3 text-center text-[11px] uppercase tracking-editorial text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40"
-            >
-              Login screen
             </Link>
           </div>
           <RefreshButton />

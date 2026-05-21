@@ -27,18 +27,21 @@ import {
 export default function Page() {
   return (
     <AppFrame>
-      <header className="flex flex-col gap-4">
-        <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
-          <h1 className="font-serif text-[44px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-            Good evening,
-            <br />
-            <span className="italic">J.</span>
-          </h1>
-          <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
+      <header className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-4">
+          <span className="text-[11px] uppercase tracking-editorial text-muted-gold/85">
+            Today
+          </span>
+          <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/55">
             May 17, 2025
           </span>
         </div>
-        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/65">
+        <h1 className="mt-1 font-serif text-[40px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
+          Good evening,
+          <br />
+          <span className="italic">J.</span>
+        </h1>
+        <p className="mt-1 max-w-[42ch] text-[14px] leading-[1.55] text-warm-ivory/60">
           Your day is set. Dinner at Sparrow tonight.
           <br />
           Leave by 7:42 PM.
@@ -151,65 +154,59 @@ function WalkHomeDetail() {
 
 function SparrowDetail() {
   return (
-    <div className="mt-1 flex flex-col gap-4">
-      <div className="text-[13px] leading-[1.55] text-warm-ivory/70">
+    <div className="mt-2 flex flex-col gap-5 border-l-2 border-muted-gold/40 pl-4">
+      <div className="text-[12px] leading-[1.55] text-warm-ivory/65">
         2121 W Division St, Chicago, IL 60622
       </div>
 
-      <div className="rounded-[10px] border border-white/[0.06] bg-soft-black/80 p-4">
-        <div className="grid grid-cols-4 gap-2">
-          <StatTile
-            icon={<Bell size={16} className="text-muted-gold" />}
-            label="Reservation"
-            value="8:30 PM"
-            sub="Party of 2"
-          />
-          <StatTile
-            icon={<Car size={16} className="text-muted-gold" />}
-            label="Parking"
-            value="Valet"
-            sub="Before 8:15"
-          />
-          <StatTile
-            icon={<Cloud size={16} className="text-muted-gold" />}
-            label="Weather"
-            value="61°"
-            sub="Clearing"
-          />
-          <StatTile
-            icon={<User size={16} className="text-muted-gold" />}
-            label="In the Area"
-            value="Marco C."
-            sub="In West Loop"
-          />
-        </div>
-
-        <div className="my-4 h-px w-full bg-white/[0.06]" />
-
-        <ul className="flex flex-col gap-3 text-[13px] leading-[1.45] text-warm-ivory/80">
-          <li className="flex items-start gap-3">
-            <Fork size={15} className="mt-[1px] shrink-0 text-muted-gold" />
-            Ask for patio if available.
-          </li>
-          <li className="flex items-start gap-3">
-            <Ticket size={15} className="mt-[1px] shrink-0 text-muted-gold" />
-            Valet ticket in your pocket.
-          </li>
-          <li className="flex items-start gap-3">
-            <Sparkle size={15} className="mt-[1px] shrink-0 text-muted-gold" />
-            Walk home route clears by 11:15 PM.
-          </li>
-        </ul>
-
-        <div className="my-4 h-px w-full bg-white/[0.06]" />
-
-        <Link
-          href="/plan/sparrow"
-          className="flex items-center justify-center gap-2 py-1 text-[12px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
-        >
-          Open Plan <ArrowRight size={14} />
-        </Link>
+      <div className="grid grid-cols-4 gap-x-3 gap-y-1">
+        <StatTile
+          icon={<Bell size={14} className="text-muted-gold/85" />}
+          label="Reservation"
+          value="8:30 PM"
+          sub="Party of 2"
+        />
+        <StatTile
+          icon={<Car size={14} className="text-muted-gold/85" />}
+          label="Parking"
+          value="Valet"
+          sub="Before 8:15"
+        />
+        <StatTile
+          icon={<Cloud size={14} className="text-muted-gold/85" />}
+          label="Weather"
+          value="61°"
+          sub="Clearing"
+        />
+        <StatTile
+          icon={<User size={14} className="text-muted-gold/85" />}
+          label="In the Area"
+          value="Marco C."
+          sub="West Loop"
+        />
       </div>
+
+      <ul className="flex flex-col gap-2.5 text-[13px] leading-[1.45] text-warm-ivory/75">
+        <li className="flex items-start gap-3">
+          <Fork size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
+          Ask for patio if available.
+        </li>
+        <li className="flex items-start gap-3">
+          <Ticket size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
+          Valet ticket in your pocket.
+        </li>
+        <li className="flex items-start gap-3">
+          <Sparkle size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
+          Walk home route clears by 11:15 PM.
+        </li>
+      </ul>
+
+      <Link
+        href="/plan/sparrow"
+        className="inline-flex items-center gap-2 self-start text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+      >
+        Open Plan <ArrowRight size={12} />
+      </Link>
     </div>
   );
 }
@@ -226,15 +223,15 @@ function StatTile({
   sub: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 text-center">
+    <div className="flex flex-col items-start gap-0.5">
       <div className="mb-1">{icon}</div>
-      <div className="text-[9px] uppercase tracking-editorial text-warm-ivory/55">
+      <div className="text-[9px] uppercase tracking-editorial text-warm-ivory/45">
         {label}
       </div>
-      <div className="font-serif text-[16px] leading-tight text-warm-ivory">
+      <div className="font-serif text-[15px] leading-tight text-warm-ivory">
         {value}
       </div>
-      <div className="text-[10px] text-warm-ivory/55">{sub}</div>
+      <div className="text-[10px] leading-tight text-warm-ivory/45">{sub}</div>
     </div>
   );
 }

@@ -31,10 +31,10 @@ export function BottomNav({
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px] border-t border-divider/70 bg-near-black/95 backdrop-blur"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 10px)" }}
+      className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px] border-t border-divider/40 bg-near-black/92 backdrop-blur"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
     >
-      <div className="flex items-center justify-between gap-3 px-6 pt-3">
+      <div className="flex items-center justify-between gap-2 px-6 pt-2.5">
         <ul className="flex flex-1 items-center justify-between pr-3">
           {TABS.map((tab) => {
             const isActive = tab.label === routeActive;
@@ -44,7 +44,7 @@ export function BottomNav({
                   href={tab.href}
                   prefetch
                   className={
-                    "py-2 text-[11px] uppercase tracking-editorial transition-opacity duration-300 ease-atmospheric " +
+                    "py-1.5 text-[10px] uppercase tracking-editorial transition-opacity duration-300 ease-atmospheric " +
                     (isActive
                       ? "text-warm-ivory"
                       : "text-warm-ivory/40 hover:text-warm-ivory/70")
@@ -60,9 +60,9 @@ export function BottomNav({
           type="button"
           aria-label="Voice"
           onClick={onMic}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-muted-gold/60 bg-near-black transition-colors duration-300 ease-atmospheric hover:border-soft-gold"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-muted-gold/40 text-soft-gold transition-colors duration-300 ease-atmospheric hover:border-muted-gold/70"
         >
-          <Mic size={16} className="text-soft-gold" />
+          <Mic size={14} />
         </button>
       </div>
     </nav>

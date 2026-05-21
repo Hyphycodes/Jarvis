@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { AppFrame, BottomNav, SectionLabel } from "@/components";
-import { Arrow } from "@/components/icons";
+import { Arrow, Chevron } from "@/components/icons";
 
 const PILLARS: { n: string; name: string; status: string; tint: string }[] = [
   { n: "01", name: "Lifestyle", status: "Strong", tint: "rgba(184,146,74,0.10)" },
@@ -108,6 +109,14 @@ export default function NorthPage() {
           Discipline today. Freedom tomorrow.
         </p>
       </aside>
+
+      <Link
+        href="/settings"
+        className="mt-8 flex items-center justify-between border-t border-divider/70 py-5 text-[11px] uppercase tracking-editorial text-warm-ivory/65 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
+      >
+        <span>Account &amp; Settings</span>
+        <Chevron direction="right" size={14} className="text-warm-ivory/45" />
+      </Link>
 
       <BottomNav active="North" />
     </AppFrame>

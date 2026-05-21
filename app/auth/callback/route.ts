@@ -1,28 +1,26 @@
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { siteOrigin } from "@/lib/siteOrigin";
 
 /**
  * Magic-link / OTP callback. Supabase posts the user back here with a `code`
  * (PKCE) which we exchange for a session before redirecting onward.
  *
- * On success → /profile (or `?next=`).
+ * On success → /settings (or `?next=`).
  * On failure → /login?error=<code>&message=<safe text>.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") ?? "/profile";
+  const next = url.searchParams.get("next") ?? "/settings";
 
-  // Supabase may also send error params directly (e.g. expired token).
   const supabaseError =
     url.searchParams.get("error") ??
     url.searchParams.get("error_code") ??
     null;
-  const supabaseErrorDescription = url.searchParams.get(
-    "error_description",
-  );
+  const supabaseErrorDescription = url.searchParams.get("error_description");
 
-  const origin = pickOrigin(url);
+  const origin = siteOrigin();
 
   if (supabaseError) {
     return redirectTo(origin, "/login", {
@@ -42,7 +40,10 @@ export async function GET(request: Request) {
     const supabase = await getServerSupabase();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      console.error("[auth/callback] exchangeCodeForSession failed:", error.message);
+      console.error(
+        "[auth/callback] exchangeCodeForSession failed:",
+        error.message,
+      );
       return redirectTo(origin, "/login", {
         error: "callback_failed",
         message: error.message,
@@ -58,16 +59,6 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(new URL(next, origin));
-}
-
-function pickOrigin(url: URL): string {
-  // Prefer NEXT_PUBLIC_SITE_URL so the redirect uses the production host even
-  // when running behind a proxy or preview deployment.
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configured && /^https?:\/\//.test(configured)) {
-    return configured.replace(/\/$/, "");
-  }
-  return url.origin;
 }
 
 function redirectTo(

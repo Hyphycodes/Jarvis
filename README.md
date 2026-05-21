@@ -82,7 +82,40 @@ with non-secret placeholders so the app boots locally without network.
 
 If sign-in stalls, `/settings` is your diagnostic surface — it shows
 whether the session is active, whether profile/founder rows exist, and
-whether the required env vars are present.
+whether the required env vars are present (including the final
+**Callback URL** the app is computing for magic links).
+
+### Testing login end-to-end
+
+There are two sign-in modes on `/login`:
+
+- **Magic Link** — enter your email, click the link in the email.
+- **Password** — sign in to an existing account, or create a new one.
+  Supabase may require email confirmation for new accounts (a
+  confirmation link is sent automatically).
+
+To verify:
+
+1. Visit `/login`. Choose Magic Link or Password.
+2. Complete sign-in. You should land on `/settings`.
+3. `/settings` should show:
+   - your email + user id
+   - role (`viewer` initially; `owner` after seeding)
+   - session **Active**
+   - Auth & Environment values matching what you set in Vercel
+4. If you're the founder, run the seed command in Supabase SQL Editor:
+   ```sql
+   select public.seed_founder('your-email@example.com');
+   ```
+5. Refresh `/settings`. Role should now read `owner`, founder_profile
+   should be **Yes**, and memory/signal counts should be populated.
+6. Sign out from `/settings`. You're redirected back to `/login`.
+
+The seed helper accepts the **email**, not a UUID — internally it
+looks up `auth.users` and is idempotent, so it's safe to re-run.
+
+Settings live inside the **North** tab as an "Account & Settings"
+row near the bottom. There is no floating settings icon on Today.
 
 ## Folder layout
 
