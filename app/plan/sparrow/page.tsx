@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode } from "react";
 import { AppFrame, BackButton, BottomNav, MotionPage } from "@/components";
 import {
   ArrowRight,
@@ -21,8 +21,6 @@ import {
   User,
   WineGlass,
 } from "@/components/icons";
-import { useEventStatus } from "@/lib/eventStatus";
-import { timeOfDay } from "@/lib/timeOfDay";
 import { useDayPlan } from "@/lib/dayPlanStore";
 
 const SECTIONS: {
@@ -78,22 +76,12 @@ const SECTIONS: {
 
 export default function SparrowPlanPage() {
   const router = useRouter();
-  const { status, begin, hydrated } = useEventStatus("sparrow");
-  const { activeItemId } = useDayPlan();
+  const { activeItemId, setActive } = useDayPlan();
   const isActive = activeItemId === "sparrow";
-  const [dayPart, setDayPart] = useState<"Morning" | "Afternoon" | "Evening" | "Night" | "Plan">(
-    "Evening",
-  );
-
-  useEffect(() => {
-    setDayPart(timeOfDay());
-  }, []);
-
-  const ctaLabel =
-    status === "live" ? "Live" : `Begin ${dayPart}`;
+  const ctaLabel = isActive ? "Live" : "Begin Evening";
 
   function onBegin() {
-    if (status !== "live") begin();
+    if (!isActive) setActive("sparrow");
     router.push("/active/sparrow");
   }
 
@@ -102,8 +90,7 @@ export default function SparrowPlanPage() {
       <MotionPage>
       {/* Hero */}
       <Hero
-        live={status === "live"}
-        hydrated={hydrated}
+        live={isActive}
         ctaLabel={ctaLabel}
         onBegin={onBegin}
         isActive={isActive}
@@ -189,13 +176,11 @@ export default function SparrowPlanPage() {
 
 function Hero({
   live,
-  hydrated,
   ctaLabel,
   onBegin,
   isActive,
 }: {
   live: boolean;
-  hydrated: boolean;
   ctaLabel: string;
   onBegin: () => void;
   isActive: boolean;
@@ -226,33 +211,32 @@ function Hero({
         className="relative flex flex-col gap-4 px-6"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
       >
-        {/* Top row: back left · date right */}
-        <div className="flex items-center justify-between">
+        {/* Top row: back left · date/actions right */}
+        <div className="flex items-center justify-between gap-3">
           <BackButton fallbackHref="/" />
-          <span className="text-[12px] uppercase tracking-editorial text-warm-ivory/65">
-            May 17, 2025
-          </span>
-        </div>
-        {/* Second row: share + more icons aligned right */}
-        <div className="flex items-center justify-end gap-2 -mt-2">
-          <button
-            type="button"
-            aria-label="Share"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur"
-          >
-            <Share size={14} />
-          </button>
-          <button
-            type="button"
-            aria-label="More"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur"
-          >
-            <Ellipsis size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="mr-1 text-[12px] uppercase tracking-editorial text-warm-ivory/65">
+              May 17, 2025
+            </span>
+            <button
+              type="button"
+              aria-label="Share"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur transition duration-300 ease-atmospheric active:scale-95"
+            >
+              <Share size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="More"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur transition duration-300 ease-atmospheric active:scale-95"
+            >
+              <Ellipsis size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Title block — sit closer to the chrome */}
-        <div className="pt-1">
+        <div className="pt-0">
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-editorial text-warm-ivory/70">
             {isActive ? (
               <>
@@ -289,12 +273,11 @@ function Hero({
           type="button"
           onClick={onBegin}
           className={
-            "mb-8 mt-2 flex items-center justify-between rounded-[4px] px-6 py-4 text-[12px] uppercase tracking-editorial transition-colors duration-500 ease-atmospheric " +
+            "mb-8 mt-2 flex items-center justify-between rounded-[4px] px-6 py-4 text-[12px] uppercase tracking-editorial transition duration-300 ease-atmospheric active:translate-y-px " +
             (live
               ? "bg-near-black text-muted-gold ring-1 ring-muted-gold/60"
               : "bg-warm-ivory text-near-black")
           }
-          style={{ opacity: hydrated ? 1 : 0.85 }}
         >
           <span className="flex items-center gap-2">
             {live ? (
@@ -373,4 +356,3 @@ function SectionRow({
     </Link>
   );
 }
-

@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Chevron } from "./icons";
 import { useDayPlan } from "@/lib/dayPlanStore";
 import { ease } from "@/lib/motion";
@@ -11,6 +12,7 @@ export type TimelineItem = {
   time: string;
   title: string;
   detail?: ReactNode;
+  href?: string;
   defaultExpanded?: boolean;
   /**
    * Visual default — if true, the dot renders in the active hue (gold) until
@@ -21,6 +23,7 @@ export type TimelineItem = {
 };
 
 export function Timeline({ items }: { items: TimelineItem[] }) {
+  const router = useRouter();
   const initial = items.reduce<Record<string, boolean>>((acc, it) => {
     acc[it.id] = !!it.defaultExpanded;
     return acc;
@@ -55,6 +58,18 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
         function onDotTap(e: React.MouseEvent | React.KeyboardEvent) {
           e.stopPropagation();
           toggle(item.id);
+        }
+
+        function onDetailTap() {
+          if (item.href) router.push(item.href);
+        }
+
+        function onDetailKeyDown(e: React.KeyboardEvent) {
+          if (!item.href) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            router.push(item.href);
+          }
         }
 
         return (
@@ -105,7 +120,19 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                 >
                   <div className="grid grid-cols-[120px_1fr] gap-x-3 pb-6">
                     <div />
-                    <div>{item.detail}</div>
+                    <div
+                      role={item.href ? "link" : undefined}
+                      tabIndex={item.href ? 0 : undefined}
+                      onClick={onDetailTap}
+                      onKeyDown={onDetailKeyDown}
+                      className={
+                        item.href
+                          ? "cursor-pointer transition duration-300 ease-atmospheric hover:translate-y-[-1px] active:translate-y-px"
+                          : undefined
+                      }
+                    >
+                      {item.detail}
+                    </div>
                   </div>
                 </motion.div>
               ) : null}
@@ -135,11 +162,12 @@ function DotToggle({
     <button
       type="button"
       aria-label={
-        active ? `Deactivate ${itemId}` : `Make ${itemId} active`
+        active ? `Turn off ${itemId} live status` : `Turn on ${itemId} live status`
       }
+      title={active ? "Turn live status off" : "Turn live status on"}
       aria-pressed={active}
       onClick={onTap}
-      className="flex h-9 w-9 items-center justify-center"
+      className="flex h-9 w-9 items-center justify-center transition duration-200 ease-atmospheric active:scale-90"
     >
       {active ? (
         <span

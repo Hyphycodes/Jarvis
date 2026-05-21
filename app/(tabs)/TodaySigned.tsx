@@ -121,8 +121,8 @@ const DAY_ITEMS: TimelineItem[] = [
     id: "sparrow",
     time: "8:30 PM",
     title: "Dinner at Sparrow",
-    active: true,
     defaultExpanded: true,
+    href: "/plan/sparrow",
     detail: <SparrowDetail />,
   },
   { id: "walk", time: "11:00 PM", title: "Walk Home", detail: <WalkHomeDetail /> },
@@ -150,12 +150,12 @@ function WalkHomeDetail() {
 
 function SparrowDetail() {
   return (
-    <div className="mt-2 flex flex-col gap-5 border-l-2 border-muted-gold/40 pl-4">
-      <div className="text-[12px] leading-[1.55] text-warm-ivory/65">
+    <div className="mt-2 flex flex-col gap-5 rounded-[8px] border border-white/[0.06] border-l-2 border-l-muted-gold/40 bg-soft-black/45 px-4 py-4">
+      <div className="text-[12px] leading-[1.65] text-warm-ivory/65">
         2121 W Division St, Chicago, IL 60622
       </div>
 
-      <div className="grid grid-cols-4 gap-x-3 gap-y-1">
+      <div className="grid grid-cols-2 gap-x-5 gap-y-4">
         <StatTile
           icon={<Bell size={14} className="text-muted-gold/85" />}
           label="Reservation"
@@ -182,28 +182,28 @@ function SparrowDetail() {
         />
       </div>
 
-      <ul className="flex flex-col gap-2.5 text-[13px] leading-[1.45] text-warm-ivory/75">
+      <ul className="flex flex-col gap-3 text-[13px] leading-[1.6] text-warm-ivory/75">
         <li className="flex items-start gap-3">
           <Fork size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
-          Ask for patio if available.
+          <span>Ask for patio if available.</span>
         </li>
         <li className="flex items-start gap-3">
           <Ticket size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
-          Valet ticket in your pocket.
+          <span>Valet ticket in your pocket.</span>
         </li>
         <li className="flex items-start gap-3">
           <Sparkle size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
-          Walk home route clears by 11:15 PM.
+          <span>Walk home route clears by 11:15 PM.</span>
         </li>
       </ul>
 
-      <Link
-        href="/plan/sparrow"
-        className="inline-flex items-center gap-1.5 self-start text-[13px] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/85"
+      <div
+        aria-hidden
+        className="inline-flex items-center gap-1.5 self-start text-[13px] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric"
       >
         View full plan
         <ArrowRight size={12} />
-      </Link>
+      </div>
     </div>
   );
 }
@@ -220,15 +220,17 @@ function StatTile({
   sub: string;
 }) {
   return (
-    <div className="flex flex-col items-start gap-0.5">
-      <div className="mb-1">{icon}</div>
+    <div className="min-w-0 border-t border-white/[0.05] pt-3 first:border-t-0 first:pt-0">
+      <div className="mb-2">{icon}</div>
       <div className="text-[9px] uppercase tracking-editorial text-warm-ivory/45">
         {label}
       </div>
-      <div className="font-serif text-[15px] leading-tight text-warm-ivory">
+      <div className="mt-1 font-serif text-[16px] leading-[1.15] text-warm-ivory">
         {value}
       </div>
-      <div className="text-[10px] leading-tight text-warm-ivory/45">{sub}</div>
+      <div className="mt-1 text-[11px] leading-[1.35] text-warm-ivory/45">
+        {sub}
+      </div>
     </div>
   );
 }

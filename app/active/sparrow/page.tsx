@@ -14,14 +14,17 @@ import {
   Sparkle,
 } from "@/components/icons";
 import { useEventStatus } from "@/lib/eventStatus";
+import { useDayPlan } from "@/lib/dayPlanStore";
 
 export default function SparrowActivePage() {
   const { status, begin } = useEventStatus("sparrow");
+  const { activeItemId, setActive } = useDayPlan();
 
   // Landing on the Active screen implies the event is live.
   useEffect(() => {
     if (status !== "live") begin();
-  }, [status, begin]);
+    if (activeItemId !== "sparrow") setActive("sparrow");
+  }, [status, begin, activeItemId, setActive]);
 
   return (
     <AppFrame>
