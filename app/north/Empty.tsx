@@ -40,7 +40,7 @@ export function NorthEmpty() {
               <li key={r.label}>
                 <Link
                   href="/login"
-                  className="flex items-center justify-between gap-3 rounded-md border border-divider/60 px-4 py-3 text-left text-[13px] text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:border-divider hover:bg-soft-black/40"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-divider/60 px-4 py-3 text-left text-[13px] text-warm-ivory/85 transition duration-300 ease-atmospheric hover:border-divider hover:bg-soft-black/40 active:translate-y-px active:bg-soft-black/70"
                 >
                   <span className="flex items-center gap-3">
                     <span className="text-muted-gold/85">{r.icon}</span>

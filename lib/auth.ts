@@ -2,6 +2,7 @@ import "server-only";
 
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import type { AppRole } from "@/lib/types/database";
+import { isAllowedOwner } from "@/lib/ownerEmails";
 
 export type SessionUser = {
   id: string;
@@ -24,16 +25,37 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   if (!user) return null;
 
+  const allowedOwner = isAllowedOwner(user.email);
+
+  if (allowedOwner) {
+    await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        email: user.email ?? null,
+        app_role: "owner",
+      },
+      { onConflict: "id" },
+    );
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("id, email, app_role, display_name, home_city, timezone")
     .eq("id", user.id)
     .maybeSingle();
 
+  if (!profile) {
+    await supabase.from("profiles").insert({
+      id: user.id,
+      email: user.email ?? null,
+      app_role: allowedOwner ? "owner" : "viewer",
+    });
+  }
+
   return {
     id: user.id,
     email: profile?.email ?? user.email ?? null,
-    role: (profile?.app_role ?? "viewer") as AppRole,
+    role: (allowedOwner ? "owner" : (profile?.app_role ?? "viewer")) as AppRole,
     display_name: profile?.display_name ?? null,
     home_city: profile?.home_city ?? null,
     timezone: profile?.timezone ?? null,

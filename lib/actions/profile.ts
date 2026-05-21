@@ -79,6 +79,19 @@ export async function updateFounderProfile(input: UpdateFounderProfileInput) {
   revalidatePath("/profile");
 }
 
+export async function seedFounderProfile() {
+  const owner = await requireOwner();
+  if (!owner.email) throw new Error("Owner email is required.");
+
+  const supabase = await getServerSupabase();
+  const { error } = await supabase.rpc("seed_founder", {
+    p_email: owner.email,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/profile");
+  revalidatePath("/settings");
+}
+
 /**
  * Read-only convenience for components that want to know whether the current
  * user can edit. Cheap helper; reads the session profile only.

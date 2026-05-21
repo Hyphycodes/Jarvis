@@ -35,7 +35,7 @@ export function RadarEmpty() {
               <li key={c}>
                 <Link
                   href="/login"
-                  className="inline-flex items-center rounded-full border border-divider px-4 py-1.5 text-[11px] uppercase tracking-editorial text-warm-ivory/75 transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40 hover:text-warm-ivory"
+                  className="inline-flex min-h-10 items-center rounded-full border border-divider px-4 py-1.5 text-[11px] uppercase tracking-editorial text-warm-ivory/75 transition duration-300 ease-atmospheric hover:border-warm-ivory/40 hover:text-warm-ivory active:translate-y-px active:bg-soft-black/60"
                 >
                   {c}
                 </Link>

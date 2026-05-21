@@ -48,9 +48,9 @@ export function EmptyTab({
         </p>
       </header>
 
-      <div className="mt-10">{visual}</div>
+      <div className="ambient-visual mt-10">{visual}</div>
 
-      <div className="mt-8 flex flex-col items-center text-center">
+      <div className="motion-card mt-8 flex flex-col items-center text-center">
         <Star />
         <h2 className="mt-3 font-serif text-[26px] leading-[1.15] tracking-[-0.005em] text-warm-ivory">
           {headline}
@@ -62,7 +62,7 @@ export function EmptyTab({
         ) : null}
       </div>
 
-      {actions ? <div className="mt-6">{actions}</div> : null}
+      {actions ? <div className="motion-card mt-6">{actions}</div> : null}
     </div>
   );
 }

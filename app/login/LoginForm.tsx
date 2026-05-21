@@ -8,6 +8,7 @@ import {
   signUpWithPassword,
   type AuthErrorCode,
 } from "@/lib/actions/auth";
+import { safeNextPath } from "@/lib/navigation";
 
 const ERROR_COPY: Record<AuthErrorCode, string> = {
   invalid_input: "Check the email and password.",
@@ -34,13 +35,14 @@ type PasswordState =
 
 export function LoginForm({ next }: { next?: string }) {
   const [mode, setMode] = useState<Mode>("link");
+  const destination = safeNextPath(next, "/");
   return (
     <section className="mt-10 flex flex-col gap-6">
       <ModeToggle mode={mode} onChange={setMode} />
       {mode === "link" ? (
-        <MagicLinkForm next={next} />
+        <MagicLinkForm next={destination} />
       ) : (
-        <PasswordForm next={next} />
+        <PasswordForm next={destination} />
       )}
     </section>
   );
@@ -161,6 +163,7 @@ function PasswordForm({ next }: { next?: string }) {
   const [state, setState] = useState<PasswordState>({ kind: "idle" });
 
   function onSubmit(formData: FormData) {
+    if (next) formData.set("next", next);
     startTransition(async () => {
       const action =
         kind === "signin" ? signInWithPassword : signUpWithPassword;
@@ -175,7 +178,7 @@ function PasswordForm({ next }: { next?: string }) {
       if (result.signedIn) {
         // Cookies are set by the server action; refresh to pick up the session.
         router.refresh();
-        router.push(next ?? "/settings");
+        router.push(next ?? "/");
       } else {
         // Sign-up requiring email confirmation.
         setState({ kind: "needs_confirmation", email: result.email });
@@ -253,9 +256,10 @@ function KindTab({
       type="button"
       onClick={onClick}
       className={
-        active
+        "transition-colors duration-200 ease-atmospheric active:translate-y-px " +
+        (active
           ? "text-warm-ivory"
-          : "text-warm-ivory/40 hover:text-warm-ivory/70"
+          : "text-warm-ivory/40 hover:text-warm-ivory/70")
       }
     >
       {label}
@@ -320,7 +324,7 @@ function PrimaryButton({
     <button
       type="submit"
       disabled={pending}
-      className="mt-1 bg-warm-ivory px-5 py-3.5 text-[12px] uppercase tracking-editorial text-near-black transition-opacity duration-300 ease-atmospheric disabled:opacity-50"
+      className="mt-1 bg-warm-ivory px-5 py-3.5 text-[12px] uppercase tracking-editorial text-near-black transition duration-200 ease-atmospheric active:translate-y-px active:bg-soft-gold disabled:opacity-50"
     >
       {pending ? "Working…" : label}
     </button>

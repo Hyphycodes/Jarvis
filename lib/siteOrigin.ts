@@ -21,6 +21,8 @@ export function siteOrigin(): string {
   return "http://localhost:3000";
 }
 
-export function authCallbackUrl(): string {
-  return `${siteOrigin()}/auth/callback`;
+export function authCallbackUrl(next?: string | null): string {
+  const url = new URL("/auth/callback", siteOrigin());
+  if (next) url.searchParams.set("next", next);
+  return url.toString();
 }

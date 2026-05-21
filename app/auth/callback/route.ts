@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { siteOrigin } from "@/lib/siteOrigin";
+import { safeNextPath } from "@/lib/navigation";
 
 /**
  * Magic-link / OTP callback. Supabase posts the user back here with a `code`
  * (PKCE) which we exchange for a session before redirecting onward.
  *
- * On success → /settings (or `?next=`).
+ * On success → / (or a safe `?next=` path).
  * On failure → /login?error=<code>&message=<safe text>.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") ?? "/settings";
+  const next = safeNextPath(url.searchParams.get("next"), "/");
 
   const supabaseError =
     url.searchParams.get("error") ??

@@ -33,18 +33,15 @@ export function GuestActions({ prompts }: { prompts: PromptItem[] }) {
     setGuest(readGuest());
   }, []);
 
-  // Until hydrated, render the auth-prompt variant. That's the larger,
-  // more-content variant — switching to the guest variant after hydration
-  // only ever removes content, so layout shift is minimal.
   const showLoginCluster = guest !== true;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex min-h-[188px] flex-col gap-5">
       {showLoginCluster ? (
         <div className="flex flex-col items-center gap-3">
           <Link
             href="/login"
-            className="inline-flex items-center gap-2 rounded-full border border-muted-gold/55 px-5 py-2.5 text-[12px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:border-muted-gold hover:text-soft-gold"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-muted-gold/55 px-5 py-2.5 text-[12px] uppercase tracking-editorial text-muted-gold transition duration-300 ease-atmospheric hover:border-muted-gold hover:text-soft-gold active:translate-y-px"
           >
             <UserIcon />
             Log in to save your insights
@@ -70,7 +67,7 @@ export function GuestActions({ prompts }: { prompts: PromptItem[] }) {
           <li key={p.label}>
             <Link
               href="/login"
-              className="flex items-center justify-between gap-3 rounded-md border border-divider/60 px-4 py-3 text-left text-[13px] text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:border-divider hover:bg-soft-black/40"
+              className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-divider/60 px-4 py-3 text-left text-[13px] text-warm-ivory/85 transition duration-300 ease-atmospheric hover:border-divider hover:bg-soft-black/40 active:translate-y-px active:bg-soft-black/70"
             >
               <span className="flex items-center gap-3">
                 <span className="text-muted-gold/85">{p.icon}</span>

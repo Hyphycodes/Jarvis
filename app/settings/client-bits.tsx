@@ -28,3 +28,27 @@ export function ShowOrigin() {
   }
   return <span className="break-all text-[13px] text-warm-ivory/85">{origin}</span>;
 }
+
+export function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      className="min-h-7 px-2 text-[9px] uppercase tracking-editorial text-muted-gold/65 transition duration-300 ease-atmospheric hover:text-muted-gold active:translate-y-px"
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}

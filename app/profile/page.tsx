@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { getProfile } from "@/lib/actions/profile";
+import { getProfile, seedFounderProfile } from "@/lib/actions/profile";
 import { listMemoryItems } from "@/lib/actions/memory";
 import { listTasteSignals } from "@/lib/actions/taste";
 import { signOut } from "@/lib/actions/auth";
@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/login?next=/profile");
 
   const { profile, founder } = await getProfile();
   const [memory, signals] = await Promise.all([
@@ -92,12 +92,22 @@ export default async function ProfilePage() {
             </>
           ) : editable && founderMissing ? (
             <>
-              Owner detected, but the founder identity row is empty. Run{" "}
-              <code className="rounded bg-near-black/60 px-1 py-0.5 text-[12px] text-muted-gold">
-                select public.seed_founder(&apos;{user.email ?? "your@email"}
-                &apos;);
-              </code>{" "}
-              in Supabase SQL Editor to populate it.
+              <span className="block font-serif text-[18px] italic text-warm-ivory">
+                Founder profile not set yet.
+              </span>
+              <span className="mt-1 block text-warm-ivory/62">
+                Owner access is active. Seed the founder layer when you are
+                ready to load the first private profile, memory, and taste
+                signals.
+              </span>
+              <form action={seedFounderProfile} className="mt-4">
+                <button
+                  type="submit"
+                  className="min-h-10 border border-muted-gold/45 px-4 text-[11px] uppercase tracking-editorial text-muted-gold transition duration-300 ease-atmospheric hover:border-muted-gold active:translate-y-px"
+                >
+                  Seed Founder Profile
+                </button>
+              </form>
             </>
           ) : (
             <>

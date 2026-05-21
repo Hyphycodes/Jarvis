@@ -27,6 +27,7 @@ export function BottomNav({
       t.href === "/" ? pathname === "/" : pathname.startsWith(t.href),
     )?.label ??
       "Today");
+  const activeIndex = TABS.findIndex((tab) => tab.label === routeActive);
 
   return (
     <nav
@@ -35,16 +36,24 @@ export function BottomNav({
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
     >
       <div className="flex items-center justify-between gap-2 px-6 pt-2.5">
-        <ul className="flex flex-1 items-center justify-between pr-3">
+        <div className="relative flex-1 pr-3">
+          <span
+            aria-hidden
+            className="absolute top-0 h-px w-8 bg-muted-gold/70 transition-[left] duration-300 ease-atmospheric"
+            style={{
+              left: `${Math.max(activeIndex, 0) * 25}%`,
+            }}
+          />
+          <ul className="grid grid-cols-4 items-center">
           {TABS.map((tab) => {
             const isActive = tab.label === routeActive;
             return (
-              <li key={tab.label}>
+              <li key={tab.label} className="min-w-0">
                 <Link
                   href={tab.href}
                   prefetch
                   className={
-                    "py-1.5 text-[10px] uppercase tracking-editorial transition-opacity duration-300 ease-atmospheric " +
+                    "inline-flex min-h-9 items-center py-1.5 text-[10px] uppercase tracking-editorial transition duration-300 ease-atmospheric active:translate-y-px " +
                     (isActive
                       ? "text-warm-ivory"
                       : "text-warm-ivory/40 hover:text-warm-ivory/70")
@@ -55,12 +64,13 @@ export function BottomNav({
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </div>
         <button
           type="button"
           aria-label="Voice"
           onClick={onMic}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-muted-gold/40 text-soft-gold transition-colors duration-300 ease-atmospheric hover:border-muted-gold/70"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-muted-gold/40 text-soft-gold transition duration-300 ease-atmospheric hover:border-muted-gold/70 active:scale-95"
         >
           <Mic size={14} />
         </button>

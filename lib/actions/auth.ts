@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { magicLinkSchema } from "@/lib/schemas";
 import { siteOrigin, authCallbackUrl } from "@/lib/siteOrigin";
+import { safeNextPath } from "@/lib/navigation";
 
 export type AuthErrorCode =
   | "invalid_input"
@@ -50,10 +51,11 @@ export async function sendMagicLink(
   }
 
   const supabase = await getServerSupabase();
+  const next = safeNextPath(String(formData.get("next") ?? ""), "/");
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.data.email,
     options: {
-      emailRedirectTo: authCallbackUrl(),
+      emailRedirectTo: authCallbackUrl(next),
     },
   });
 
@@ -124,11 +126,12 @@ export async function signUpWithPassword(
     };
   }
   const supabase = await getServerSupabase();
+  const next = safeNextPath(String(formData.get("next") ?? ""), "/");
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: authCallbackUrl(),
+      emailRedirectTo: authCallbackUrl(next),
     },
   });
   if (error) {
