@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AppFrame, BottomNav, SectionLabel } from "@/components";
+import { AppFrame, SectionLabel } from "@/components";
 import { Arrow, Chevron } from "@/components/icons";
 
 const PILLARS: { n: string; name: string; status: string; tint: string }[] = [
@@ -118,7 +118,6 @@ export function NorthSigned() {
         <Chevron direction="right" size={14} className="text-warm-ivory/45" />
       </Link>
 
-      <BottomNav active="North" />
     </AppFrame>
   );
 }

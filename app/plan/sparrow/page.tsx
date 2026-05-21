@@ -23,6 +23,7 @@ import {
 } from "@/components/icons";
 import { useEventStatus } from "@/lib/eventStatus";
 import { timeOfDay } from "@/lib/timeOfDay";
+import { useDayPlan } from "@/lib/dayPlanStore";
 
 const SECTIONS: {
   id: string;
@@ -78,6 +79,8 @@ const SECTIONS: {
 export default function SparrowPlanPage() {
   const router = useRouter();
   const { status, begin, hydrated } = useEventStatus("sparrow");
+  const { activeItemId } = useDayPlan();
+  const isActive = activeItemId === "sparrow";
   const [dayPart, setDayPart] = useState<"Morning" | "Afternoon" | "Evening" | "Night" | "Plan">(
     "Evening",
   );
@@ -103,6 +106,7 @@ export default function SparrowPlanPage() {
         hydrated={hydrated}
         ctaLabel={ctaLabel}
         onBegin={onBegin}
+        isActive={isActive}
       />
 
       {/* Quick stats row */}
@@ -188,11 +192,13 @@ function Hero({
   hydrated,
   ctaLabel,
   onBegin,
+  isActive,
 }: {
   live: boolean;
   hydrated: boolean;
   ctaLabel: string;
   onBegin: () => void;
+  isActive: boolean;
 }) {
   return (
     <div className="relative -mx-6 -mt-[calc(env(safe-area-inset-top)+24px)] overflow-hidden">
@@ -247,8 +253,23 @@ function Hero({
 
         {/* Title block — sit closer to the chrome */}
         <div className="pt-1">
-          <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/70">
-            Dining
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-editorial text-warm-ivory/70">
+            {isActive ? (
+              <>
+                <span
+                  aria-hidden
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
+                  style={{
+                    boxShadow: "0 0 10px rgba(184,146,74,0.55)",
+                  }}
+                />
+                <span className="text-muted-gold">Active</span>
+                <span className="text-warm-ivory/35">·</span>
+                <span>Dining</span>
+              </>
+            ) : (
+              <span>Dining</span>
+            )}
           </div>
           <h1 className="mt-2 font-serif text-[60px] leading-[0.98] tracking-[-0.01em] text-warm-ivory">
             Sparrow

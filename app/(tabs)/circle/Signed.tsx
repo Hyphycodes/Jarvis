@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   AppFrame,
-  BottomNav,
   Orbit,
   SectionLabel,
   type OrbitNode,
@@ -135,7 +134,6 @@ export function CircleSigned() {
         </button>
       </section>
 
-      <BottomNav active="Circle" />
     </AppFrame>
   );
 }

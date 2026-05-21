@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AppFrame, BottomNav } from "@/components";
+import { AppFrame } from "@/components";
 import { EmptyTab } from "@/components/empty/EmptyTab";
 import { RadarVisual } from "@/components/empty/Visuals";
 import { dateLabel } from "@/lib/dateLabel";
@@ -44,7 +44,6 @@ export function RadarEmpty() {
           </ul>
         }
       />
-      <BottomNav active="Radar" />
     </AppFrame>
   );
 }

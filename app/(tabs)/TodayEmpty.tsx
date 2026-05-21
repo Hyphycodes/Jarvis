@@ -1,4 +1,4 @@
-import { AppFrame, BottomNav } from "@/components";
+import { AppFrame } from "@/components";
 import { EmptyTab } from "@/components/empty/EmptyTab";
 import { SunriseVisual } from "@/components/empty/Visuals";
 import { GuestActions } from "@/components/empty/GuestActions";
@@ -28,7 +28,6 @@ export function TodayEmpty() {
           />
         }
       />
-      <BottomNav active="Today" />
     </AppFrame>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { AppFrame, BottomNav } from "@/components";
+import { AppFrame } from "@/components";
 
 const FILTERS = [
   "All",
@@ -131,7 +131,6 @@ export function RadarSigned() {
         ) : null}
       </section>
 
-      <BottomNav active="Radar" />
     </AppFrame>
   );
 }

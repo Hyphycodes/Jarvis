@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AppFrame, BottomNav } from "@/components";
+import { AppFrame } from "@/components";
 import { EmptyTab } from "@/components/empty/EmptyTab";
 import { OrbitVisual } from "@/components/empty/Visuals";
 import { Chevron } from "@/components/icons";
@@ -53,7 +53,6 @@ export function CircleEmpty() {
           </ul>
         }
       />
-      <BottomNav active="Circle" />
     </AppFrame>
   );
 }

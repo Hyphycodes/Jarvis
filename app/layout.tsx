@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { DayPlanProvider } from "@/lib/dayPlanStore";
 
 export const metadata: Metadata = {
   title: "Jarvis",
@@ -48,7 +49,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-near-black text-warm-ivory antialiased">
-        {children}
+        <DayPlanProvider>{children}</DayPlanProvider>
       </body>
     </html>
   );

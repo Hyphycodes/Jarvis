@@ -17,3 +17,4 @@ export { SmoothPage, MotionCard } from "./motion";
 export { BackButton } from "./BackButton";
 export { MotionPage } from "./MotionPage";
 export { PageHeader } from "./PageHeader";
+export { TabShell } from "./TabShell";

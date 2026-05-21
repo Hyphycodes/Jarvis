@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   AppFrame,
-  BottomNav,
   Checkbox,
   SectionLabel,
   Timeline,
@@ -104,7 +103,6 @@ export function TodaySigned() {
         </ul>
       </section>
 
-      <BottomNav active="Today" />
     </AppFrame>
   );
 }
@@ -116,7 +114,6 @@ const DAY_ITEMS: TimelineItem[] = [
     id: "leave",
     time: "7:42 PM",
     title: "Leave Home",
-    active: true,
     defaultExpanded: true,
     detail: <LeaveHomeDetail />,
   },
@@ -126,7 +123,6 @@ const DAY_ITEMS: TimelineItem[] = [
     title: "Dinner at Sparrow",
     active: true,
     defaultExpanded: true,
-    href: "/plan/sparrow",
     detail: <SparrowDetail />,
   },
   { id: "walk", time: "11:00 PM", title: "Walk Home", detail: <WalkHomeDetail /> },
@@ -203,9 +199,10 @@ function SparrowDetail() {
 
       <Link
         href="/plan/sparrow"
-        className="inline-flex items-center gap-2 self-start text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+        className="inline-flex items-center gap-1.5 self-start text-[13px] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/85"
       >
-        Open Plan <ArrowRight size={12} />
+        View full plan
+        <ArrowRight size={12} />
       </Link>
     </div>
   );
