@@ -18,6 +18,8 @@ const FILTERS = [
 ] as const;
 type Filter = (typeof FILTERS)[number];
 
+// TODO(intelligence): Replace signed Circle people/updates with CirclePayload
+// from routeIntelligence once the relationship graph reads from Supabase.
 const ORBIT_NODES: OrbitNode[] = [
   { id: "marco", name: "Marco Calvani", recency: "3w", x: 0, y: -1, faded: true, size: 48 },
   { id: "elena", name: "Elena Rossi", role: "Designer", recency: "2d", x: -0.7, y: -0.45, size: 60 },

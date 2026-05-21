@@ -1,6 +1,8 @@
 # Schema plan
 
-> Draft. Tables are not created yet. This is the conceptual model.
+> Draft. The intelligence foundation is now represented by additive migration
+> `supabase/migrations/0002_intelligence_foundation.sql`; this file remains the
+> conceptual map.
 
 ## Identity and intent
 
@@ -26,10 +28,12 @@
 - **research_cache** — external API results keyed and TTL'd
 - **surfaced_items** — what the system surfaced, when, and why
 - **user_feedback** — accepted / dismissed / saved signals on surfaced items
-- **memory_writes** — append-only log of memory updates
+- **memory_update_proposals** — proposal-first memory changes before canonical write
+- **behavior_signals** — save/pass/open/activate/complete signals
 
 ## Open questions
 
-- Vector store: pgvector in Supabase vs external
+- Vector store: Supabase pgvector columns are present; embedding provider is
+  interface-only until Voyage/OpenAI keys are configured.
 - How to model the Inspired → Remembered arc as state transitions
 - Granularity of `taste_graph` edges

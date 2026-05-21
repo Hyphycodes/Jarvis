@@ -2,6 +2,8 @@ import Link from "next/link";
 import { AppFrame, SectionLabel } from "@/components";
 import { Arrow, Chevron } from "@/components/icons";
 
+// TODO(intelligence): Replace signed North star, pillars, and signals with
+// NorthPayload routed from stored North data. Do not add new product mock data.
 const PILLARS: { n: string; name: string; status: string; tint: string }[] = [
   { n: "01", name: "Lifestyle", status: "Strong", tint: "rgba(184,146,74,0.10)" },
   { n: "02", name: "Health", status: "Focus", tint: "rgba(201,169,110,0.08)" },

@@ -23,6 +23,8 @@ type Card = {
   media: "stacked" | "portrait" | "landscape";
 };
 
+// TODO(intelligence): Replace signed Radar cards with RadarCard[] from
+// buildRadarPayload()/routeIntelligence. Keep these rows demo-only until then.
 const CARDS: Card[] = [
   {
     id: "sparrow",

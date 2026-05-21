@@ -1,0 +1,84 @@
+import type {
+  MemoryDecision,
+  MemoryType,
+  UserBehaviorSignal,
+} from "@/lib/memory/types";
+
+export function evaluateBehaviorForMemory(
+  signal: UserBehaviorSignal,
+): MemoryDecision {
+  switch (signal.type) {
+    case "memory.accept":
+    case "memory.reject":
+      return noProposal("Memory approval actions update proposal state directly.");
+    case "timeline.complete":
+      return {
+        shouldPropose: true,
+        type: "confirmed_behavior",
+        confidence: 0.72,
+        strength: "strong",
+        reason: "Completed timeline items are stronger than opened plans.",
+        evidence: [`timeline.complete:${signal.itemId}`],
+      };
+    case "plan.complete":
+      return planProposal("confirmed_behavior", 0.82, "strong", signal.planId, signal.type);
+    case "plan.activate":
+      return planProposal("event_history", 0.74, "strong", signal.planId, signal.type);
+    case "plan.open":
+      return planProposal("event_history", 0.55, "medium", signal.planId, signal.type);
+    case "plan.cancel":
+      return planProposal("avoidance", 0.58, "medium", signal.planId, signal.type);
+    case "radar.save":
+      return itemProposal("taste", 0.52, "weak", signal.itemId, signal.type);
+    case "radar.pass":
+      return itemProposal("avoidance", 0.48, "weak", signal.itemId, signal.type);
+  }
+}
+
+export function shouldAutoCommitMemory(_decision: MemoryDecision): boolean {
+  return false;
+}
+
+function itemProposal(
+  type: MemoryType,
+  confidence: number,
+  strength: MemoryDecision["strength"],
+  itemId: string,
+  signalType: UserBehaviorSignal["type"],
+): MemoryDecision {
+  return {
+    shouldPropose: true,
+    type,
+    confidence,
+    strength,
+    reason: "Behavior signal is useful, but should remain a proposal until accepted.",
+    evidence: [`${signalType}:${itemId}`],
+  };
+}
+
+function planProposal(
+  type: MemoryType,
+  confidence: number,
+  strength: MemoryDecision["strength"],
+  planId: string,
+  signalType: UserBehaviorSignal["type"],
+): MemoryDecision {
+  return {
+    shouldPropose: true,
+    type,
+    confidence,
+    strength,
+    reason: "Plan behavior can compound future taste once reviewed.",
+    evidence: [`${signalType}:${planId}`],
+  };
+}
+
+function noProposal(reason: string): MemoryDecision {
+  return {
+    shouldPropose: false,
+    confidence: 0,
+    strength: "weak",
+    reason,
+    evidence: [],
+  };
+}

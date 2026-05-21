@@ -8,7 +8,7 @@ and version prompts in one place.
 
 1. **Provider wrappers** (`/lib/ai/anthropic.ts`) — thin client setup, keyed
    off validated env. Default model lives here.
-2. **Orchestrator** (later) — composes prompts, pulls context from
+2. **Orchestrator** (`/lib/ai/orchestrator.ts`) — composes prompts, pulls context from
    `/lib/memory` and `/lib/directory`, calls tools from `/lib/tools`,
    handles caching via `/lib/cache`.
 3. **Surfaces** — UI flows call the orchestrator, never the provider.
@@ -30,3 +30,6 @@ and version prompts in one place.
 
 The AI is given tools (not free-form web access). Tools live in
 `/lib/tools` and are explicit, typed, and auditable.
+
+See `docs/intelligence-routing.md` for the current routing and memory
+architecture.

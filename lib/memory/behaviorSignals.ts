@@ -1,0 +1,64 @@
+import { requireOwner } from "@/lib/auth";
+import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { evaluateBehaviorForMemory } from "@/lib/memory/memoryRules";
+import { createMemoryProposal } from "@/lib/memory/memoryProposals";
+import type { UserBehaviorSignal } from "@/lib/memory/types";
+
+export async function recordBehaviorSignal(
+  signal: UserBehaviorSignal,
+): Promise<void> {
+  const owner = await requireOwner();
+  const supabase = await getServerSupabase();
+  const subjectId = subjectFromSignal(signal);
+
+  const { error } = await supabase.from("behavior_signals").insert({
+    user_id: owner.id,
+    signal_type: signal.type,
+    subject_id: subjectId,
+    payload: signal,
+  });
+  if (error) throw new Error(error.message);
+
+  const decision = evaluateBehaviorForMemory(signal);
+  if (!decision.shouldPropose || !decision.type) return;
+
+  await createMemoryProposal({
+    userId: owner.id,
+    type: decision.type,
+    content: proposalContent(signal, subjectId),
+    confidence: decision.confidence,
+    shouldSave: true,
+    reason: decision.reason,
+    evidence: decision.evidence,
+    requiresUserApproval: true,
+  });
+}
+
+function subjectFromSignal(signal: UserBehaviorSignal) {
+  if ("itemId" in signal) return signal.itemId;
+  if ("planId" in signal) return signal.planId;
+  if ("memoryProposalId" in signal) return signal.memoryProposalId;
+  return "unknown";
+}
+
+function proposalContent(signal: UserBehaviorSignal, subjectId: string) {
+  switch (signal.type) {
+    case "radar.save":
+      return `Saved radar item: ${subjectId}`;
+    case "radar.pass":
+      return `Passed radar item: ${subjectId}`;
+    case "plan.open":
+      return `Opened plan: ${subjectId}`;
+    case "plan.activate":
+      return `Activated plan: ${subjectId}`;
+    case "plan.complete":
+      return `Completed plan: ${subjectId}`;
+    case "plan.cancel":
+      return `Cancelled plan: ${subjectId}`;
+    case "timeline.complete":
+      return `Completed timeline item: ${subjectId}`;
+    case "memory.accept":
+    case "memory.reject":
+      return `Reviewed memory proposal: ${subjectId}`;
+  }
+}

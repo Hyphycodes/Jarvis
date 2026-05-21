@@ -20,8 +20,31 @@ export type MemoryKind =
   | "preference"
   | "pattern"
   | "principle"
-  | "context";
-export type MemoryStatus = "active" | "archived" | "fading";
+  | "context"
+  | "taste"
+  | "avoidance"
+  | "decision_rule"
+  | "relationship"
+  | "north_goal"
+  | "place_history"
+  | "event_history"
+  | "confirmed_behavior";
+export type MemoryStatus =
+  | "active"
+  | "pending"
+  | "rejected"
+  | "archived"
+  | "fading";
+export type MemoryProposalType =
+  | "taste"
+  | "avoidance"
+  | "decision_rule"
+  | "relationship"
+  | "north_goal"
+  | "place_history"
+  | "event_history"
+  | "confirmed_behavior";
+export type MemoryProposalStatus = "pending" | "accepted" | "rejected";
 export type SignalDirection = "positive" | "negative";
 export type SessionKind = "mood" | "interest" | "plan" | "energy";
 export type DecisionUserAction =
@@ -169,6 +192,10 @@ export interface Database {
           last_reinforced_at: string;
           source: string | null;
           is_pinned: boolean;
+          last_used_at: string | null;
+          usage_count: number;
+          tags: string[];
+          embedding: number[] | null;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -184,6 +211,10 @@ export interface Database {
           last_reinforced_at?: string;
           source?: string | null;
           is_pinned?: boolean;
+          last_used_at?: string | null;
+          usage_count?: number;
+          tags?: string[];
+          embedding?: number[] | null;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
@@ -199,6 +230,10 @@ export interface Database {
           last_reinforced_at?: string;
           source?: string | null;
           is_pinned?: boolean;
+          last_used_at?: string | null;
+          usage_count?: number;
+          tags?: string[];
+          embedding?: number[] | null;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
@@ -343,6 +378,408 @@ export interface Database {
         };
         Relationships: [];
       };
+      memory_update_proposals: {
+        Row: {
+          id: string;
+          user_id: string;
+          memory_type: MemoryProposalType;
+          content: string;
+          confidence: number;
+          should_save: boolean;
+          reason: string;
+          evidence: string[];
+          requires_user_approval: boolean;
+          status: MemoryProposalStatus;
+          metadata: Json;
+          decided_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          memory_type: MemoryProposalType;
+          content: string;
+          confidence?: number;
+          should_save?: boolean;
+          reason: string;
+          evidence?: string[];
+          requires_user_approval?: boolean;
+          status?: MemoryProposalStatus;
+          metadata?: Json;
+          decided_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          memory_type?: MemoryProposalType;
+          content?: string;
+          confidence?: number;
+          should_save?: boolean;
+          reason?: string;
+          evidence?: string[];
+          requires_user_approval?: boolean;
+          status?: MemoryProposalStatus;
+          metadata?: Json;
+          decided_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      behavior_signals: {
+        Row: {
+          id: string;
+          user_id: string;
+          signal_type: string;
+          subject_id: string | null;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          signal_type: string;
+          subject_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          signal_type?: string;
+          subject_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      surfaced_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          destination: string;
+          source: string;
+          payload: Json;
+          score: number | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          destination: string;
+          source: string;
+          payload?: Json;
+          score?: number | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          destination?: string;
+          source?: string;
+          payload?: Json;
+          score?: number | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      plans: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          category: string | null;
+          date: string | null;
+          location_line: string | null;
+          summary: string | null;
+          live_enabled: boolean;
+          live_label: string;
+          key_stats: Json;
+          quote_card: Json;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          category?: string | null;
+          date?: string | null;
+          location_line?: string | null;
+          summary?: string | null;
+          live_enabled?: boolean;
+          live_label?: string;
+          key_stats?: Json;
+          quote_card?: Json;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          category?: string | null;
+          date?: string | null;
+          location_line?: string | null;
+          summary?: string | null;
+          live_enabled?: boolean;
+          live_label?: string;
+          key_stats?: Json;
+          quote_card?: Json;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      plan_sections: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_id: string;
+          section_id: string;
+          title: string;
+          subtitle: string | null;
+          icon: string | null;
+          content: Json;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_id: string;
+          section_id: string;
+          title: string;
+          subtitle?: string | null;
+          icon?: string | null;
+          content?: Json;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          plan_id?: string;
+          section_id?: string;
+          title?: string;
+          subtitle?: string | null;
+          icon?: string | null;
+          content?: Json;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      today_timeline_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_id: string | null;
+          time: string;
+          title: string;
+          status: string;
+          expandable: boolean;
+          details: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_id?: string | null;
+          time: string;
+          title: string;
+          status?: string;
+          expandable?: boolean;
+          details?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          plan_id?: string | null;
+          time?: string;
+          title?: string;
+          status?: string;
+          expandable?: boolean;
+          details?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      circle_people: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          category: string;
+          role: string | null;
+          closeness_score: number;
+          last_interaction: string | null;
+          next_action: string | null;
+          current_thread: string | null;
+          notes: string[];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          category: string;
+          role?: string | null;
+          closeness_score?: number;
+          last_interaction?: string | null;
+          next_action?: string | null;
+          current_thread?: string | null;
+          notes?: string[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          category?: string;
+          role?: string | null;
+          closeness_score?: number;
+          last_interaction?: string | null;
+          next_action?: string | null;
+          current_thread?: string | null;
+          notes?: string[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      circle_updates: {
+        Row: {
+          id: string;
+          user_id: string;
+          person_id: string | null;
+          title: string;
+          summary: string;
+          suggested_action: string | null;
+          urgency: string;
+          source: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          person_id?: string | null;
+          title: string;
+          summary: string;
+          suggested_action?: string | null;
+          urgency?: string;
+          source?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          person_id?: string | null;
+          title?: string;
+          summary?: string;
+          suggested_action?: string | null;
+          urgency?: string;
+          source?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      north_pillars: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string;
+          progress: number | null;
+          active_signals: string[];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description: string;
+          progress?: number | null;
+          active_signals?: string[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          description?: string;
+          progress?: number | null;
+          active_signals?: string[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      north_signals: {
+        Row: {
+          id: string;
+          user_id: string;
+          pillar_id: string | null;
+          title: string;
+          summary: string;
+          action: string | null;
+          source: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          pillar_id?: string | null;
+          title: string;
+          summary: string;
+          action?: string | null;
+          source?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          pillar_id?: string | null;
+          title?: string;
+          summary?: string;
+          action?: string | null;
+          source?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -370,3 +807,5 @@ export type SessionContextRow =
   Database["public"]["Tables"]["session_context"]["Row"];
 export type DecisionRunRow =
   Database["public"]["Tables"]["decision_runs"]["Row"];
+export type MemoryUpdateProposalRow =
+  Database["public"]["Tables"]["memory_update_proposals"]["Row"];

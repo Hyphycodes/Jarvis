@@ -23,6 +23,8 @@ import {
 } from "@/components/icons";
 import { useDayPlan } from "@/lib/dayPlanStore";
 
+// TODO(intelligence): Replace Sparrow plan fields with PlanDetailPayload once
+// plan detail data is routed from Supabase-backed intelligence.
 const SECTIONS: {
   id: string;
   label: string;

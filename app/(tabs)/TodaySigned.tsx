@@ -23,6 +23,8 @@ import {
   User,
 } from "@/components/icons";
 
+// TODO(intelligence): Replace the signed Today constants and hero copy with
+// buildTodayPayload()/TodayPayload once the UI is wired to /api/intelligence.
 export function TodaySigned() {
   return (
     <AppFrame>
@@ -236,6 +238,8 @@ function StatTile({
 }
 
 function GrabList() {
+  // TODO(intelligence): Source grab-list rows from TodayPayload.grabList when
+  // persistent plan state replaces the current static Sparrow demo surface.
   const [open, setOpen] = useState(true);
   return (
     <section className="mt-6 rounded-[10px] bg-soft-black/80">
