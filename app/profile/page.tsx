@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getProfile } from "@/lib/actions/profile";
@@ -34,6 +35,8 @@ export default async function ProfilePage() {
 
   const editable = user.role === "owner";
   const isViewerOfFounder = !editable && profile && profile.id !== user.id;
+  const profileMissing = !profile;
+  const founderMissing = !founder;
   const positive = signals.filter((s) => s.direction === "positive");
   const negative = signals.filter((s) => s.direction === "negative");
 
@@ -60,8 +63,50 @@ export default async function ProfilePage() {
           </p>
           <div className="mt-3 h-px w-8 bg-muted-gold/50" />
         </div>
-        <RoleBadge role={user.role} />
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <RoleBadge role={user.role} />
+          <Link
+            href="/settings"
+            className="text-[10px] uppercase tracking-editorial text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/85"
+          >
+            Settings
+          </Link>
+        </div>
       </header>
+
+      {(profileMissing || founderMissing) && !isViewerOfFounder ? (
+        <aside
+          role="status"
+          className="mt-8 border-l-2 border-muted-gold/60 bg-soft-black/60 px-4 py-3 text-[13px] leading-[1.55] text-warm-ivory/85"
+        >
+          {profileMissing ? (
+            <>
+              You are signed in, but profile data hasn’t loaded yet.{" "}
+              <Link
+                href="/settings"
+                className="underline decoration-muted-gold/60 underline-offset-2"
+              >
+                Open settings
+              </Link>{" "}
+              to verify your account.
+            </>
+          ) : editable && founderMissing ? (
+            <>
+              Owner detected, but the founder identity row is empty. Run{" "}
+              <code className="rounded bg-near-black/60 px-1 py-0.5 text-[12px] text-muted-gold">
+                select public.seed_founder(&apos;{user.email ?? "your@email"}
+                &apos;);
+              </code>{" "}
+              in Supabase SQL Editor to populate it.
+            </>
+          ) : (
+            <>
+              Founder identity not yet seeded. Editable fields will populate
+              once the owner runs the seed function.
+            </>
+          )}
+        </aside>
+      ) : null}
 
       {/* Identity */}
       <div className="mt-12">

@@ -47,10 +47,42 @@ Defined in `.env.example`. All required keys are validated at runtime by
 | `SUPABASE_SERVICE_ROLE_KEY`       | yes      | Server only. Bypasses RLS.          |
 | `ANTHROPIC_API_KEY`               | yes      | Anthropic / Claude API key          |
 | `CRON_SECRET`                     | yes      | Shared secret for scheduled jobs    |
-| `NEXT_PUBLIC_SITE_URL`            | no       | Public origin, used in absolute URLs |
+| `NEXT_PUBLIC_SITE_URL`            | **yes for auth** | Public origin, used in magic-link `emailRedirectTo` |
 
 Real values live in Vercel and are committed nowhere. `.env.local` ships
 with non-secret placeholders so the app boots locally without network.
+
+### Auth setup (Supabase)
+
+1. **Vercel env vars** — set these for both Preview and Production:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SITE_URL` — your production origin, e.g.
+     `https://jarvis-five-gamma.vercel.app` (no trailing slash). Without
+     this, magic-link emails point to `localhost:3000` and lead nowhere.
+2. **Supabase Auth settings** (Dashboard → Authentication → URL
+   Configuration):
+   - **Site URL** — same value as `NEXT_PUBLIC_SITE_URL`.
+   - **Redirect URLs** — add an entry for `${SITE_URL}/auth/callback`
+     (and any preview origins you use, plus
+     `http://localhost:3000/auth/callback` for local dev).
+3. **Apply the schema** — run `supabase/migrations/0001_init.sql` in the
+   SQL Editor, then `supabase/seed.sql` to load the seed helper.
+4. **Sign up the founder** — visit `/login`, enter your email, click the
+   magic link. You should land on `/profile`.
+5. **Promote to owner + populate identity** — in Supabase SQL Editor:
+
+   ```sql
+   select public.seed_founder('your-email@example.com');
+   ```
+
+   (The function looks up `auth.users` by email and is idempotent — safe
+   to re-run.) Visit `/settings` to confirm role, profile rows, and
+   memory/signal counts.
+
+If sign-in stalls, `/settings` is your diagnostic surface — it shows
+whether the session is active, whether profile/founder rows exist, and
+whether the required env vars are present.
 
 ## Folder layout
 

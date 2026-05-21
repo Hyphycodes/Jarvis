@@ -43,6 +43,8 @@ export async function updateSupabaseSession(request: NextRequest) {
   const isProtected =
     pathname === "/profile" ||
     pathname.startsWith("/profile/") ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/") ||
     pathname.startsWith("/api/");
 
   if (isProtected && !user) {

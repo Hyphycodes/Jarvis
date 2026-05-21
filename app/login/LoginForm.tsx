@@ -1,21 +1,36 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { sendMagicLink } from "@/lib/actions/auth";
+import { sendMagicLink, type AuthErrorCode } from "@/lib/actions/auth";
 
-export function LoginForm() {
+const ERROR_COPY: Record<AuthErrorCode, string> = {
+  invalid_email: "Enter a valid email.",
+  rate_limited:
+    "Too many login emails requested. Wait a few minutes before trying again.",
+  send_failed: "Sign-in email couldn’t be sent. Try again shortly.",
+};
+
+type State =
+  | { kind: "idle" }
+  | { kind: "sent"; email: string }
+  | { kind: "error"; message: string };
+
+export function LoginForm({ next }: { next?: string }) {
   const [pending, startTransition] = useTransition();
-  const [state, setState] = useState<
-    | { kind: "idle" }
-    | { kind: "sent"; email: string }
-    | { kind: "error"; message: string }
-  >({ kind: "idle" });
+  const [state, setState] = useState<State>({ kind: "idle" });
 
   function onSubmit(formData: FormData) {
+    if (next) formData.set("next", next);
     startTransition(async () => {
       const result = await sendMagicLink(formData);
-      if (result.ok) setState({ kind: "sent", email: result.email });
-      else setState({ kind: "error", message: result.error });
+      if (result.ok) {
+        setState({ kind: "sent", email: result.email });
+      } else {
+        setState({
+          kind: "error",
+          message: ERROR_COPY[result.code] ?? result.message,
+        });
+      }
     });
   }
 
@@ -27,6 +42,11 @@ export function LoginForm() {
         </span>
         <p className="font-serif text-[18px] italic leading-[1.45] text-warm-ivory/85">
           A sign-in link is on its way to {state.email}.
+        </p>
+        <p className="text-[12px] leading-[1.55] text-warm-ivory/55">
+          The link expires shortly. If it doesn’t work, request a new one — but
+          wait a minute or two between attempts so the rate limit doesn’t kick
+          in.
         </p>
         <button
           type="button"
@@ -57,7 +77,12 @@ export function LoginForm() {
       </label>
 
       {state.kind === "error" ? (
-        <p className="text-[12px] text-muted-gold/90">{state.message}</p>
+        <p
+          role="alert"
+          className="border-l-2 border-muted-gold/60 bg-soft-black/60 px-3 py-2 text-[12px] leading-[1.5] text-warm-ivory/85"
+        >
+          {state.message}
+        </p>
       ) : null}
 
       <button
