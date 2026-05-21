@@ -14,3 +14,6 @@ export type { OrbitNode } from "./Orbit";
 export { DeepSectionFrame, DeepHeader } from "./DeepSectionFrame";
 export { Chevron, Arrow, Mic } from "./icons";
 export { SmoothPage, MotionCard } from "./motion";
+export { BackButton } from "./BackButton";
+export { MotionPage } from "./MotionPage";
+export { PageHeader } from "./PageHeader";

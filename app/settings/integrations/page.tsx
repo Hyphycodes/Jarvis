@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { Chevron } from "@/components/icons";
+import { BackButton, MotionPage } from "@/components";
 
 export const metadata = { title: "Integrations · Jarvis" };
 export const dynamic = "force-dynamic";
@@ -41,19 +40,15 @@ export default async function IntegrationsPage() {
         paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
       }}
     >
-      <Link
-        href="/settings"
-        className="inline-flex min-h-10 items-center gap-2 text-[11px] uppercase tracking-editorial text-warm-ivory/50 transition duration-300 ease-atmospheric hover:text-warm-ivory active:translate-y-px"
-      >
-        <Chevron direction="left" size={13} />
-        Settings
-      </Link>
-
-      <header className="mt-4">
-        <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
-          Integrations
+      <MotionPage>
+      <header>
+        <div className="flex items-center gap-1">
+          <BackButton fallbackHref="/account" />
+          <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+            Integrations
+          </span>
         </div>
-        <h1 className="mt-2 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
+        <h1 className="mt-6 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
           What Jarvis can touch.
         </h1>
         <p className="mt-3 max-w-[39ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
@@ -92,6 +87,7 @@ export default async function IntegrationsPage() {
           mode.
         </p>
       </aside>
+      </MotionPage>
     </main>
   );
 }

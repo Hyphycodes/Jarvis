@@ -14,6 +14,8 @@ import {
   ShieldCheck,
   User,
 } from "@/components/icons";
+import { MotionPage } from "@/components";
+import { PressLink, PressFormButton } from "./client-bits";
 
 export const metadata = { title: "Account · Jarvis" };
 export const dynamic = "force-dynamic";
@@ -50,6 +52,7 @@ export default async function AccountPage() {
         paddingBottom: "calc(env(safe-area-inset-bottom) + 36px)",
       }}
     >
+      <MotionPage>
       <header className="flex items-baseline justify-between">
         <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
           Account
@@ -159,6 +162,7 @@ export default async function AccountPage() {
         <Lock size={12} />
         <span>All data is private and encrypted.</span>
       </footer>
+      </MotionPage>
     </main>
   );
 }
@@ -187,7 +191,12 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
 }
 
 function Divider() {
-  return <div className="my-8 h-px w-full bg-white/[0.06]" />;
+  return (
+    <div
+      className="my-8 h-px w-full"
+      style={{ background: "rgba(255, 250, 240, 0.06)" }}
+    />
+  );
 }
 
 function Avatar() {
@@ -225,9 +234,9 @@ function AccountNavRow({
   description: string;
 }) {
   return (
-    <Link
+    <PressLink
       href={href}
-      className="group flex items-center gap-4 border-b border-white/[0.06] py-5 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
+      className="group flex items-center gap-4 border-b border-[rgba(255,250,240,0.06)] py-5 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
     >
       <IconWell>
         <span className="text-muted-gold">{icon}</span>
@@ -245,37 +254,35 @@ function AccountNavRow({
         size={16}
         className="shrink-0 text-warm-ivory/35 transition-colors duration-300 ease-atmospheric group-hover:text-warm-ivory/65"
       />
-    </Link>
+    </PressLink>
   );
 }
 
 function SignOutRow() {
   return (
-    <form action={signOut}>
-      <button
-        type="submit"
-        className="group flex w-full items-center gap-4 border-b border-white/[0.06] py-5 text-left transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
-      >
-        <IconWell>
-          <span className="text-[#E07A6E]">
-            <LogOut size={20} />
-          </span>
-        </IconWell>
-        <div className="min-w-0 flex-1">
-          <div className="font-serif text-[24px] leading-tight text-[#E07A6E]">
-            Sign out
-          </div>
-          <p className="mt-1 text-[14px] leading-[1.5] text-warm-ivory/55">
-            End this session.
-          </p>
+    <PressFormButton
+      action={signOut}
+      className="group flex w-full items-center gap-4 border-b border-[rgba(255,250,240,0.06)] py-5 text-left transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
+    >
+      <IconWell>
+        <span className="text-[#E07A6E]">
+          <LogOut size={20} />
+        </span>
+      </IconWell>
+      <div className="min-w-0 flex-1">
+        <div className="font-serif text-[24px] leading-tight text-[#E07A6E]">
+          Sign out
         </div>
-        <Chevron
-          direction="right"
-          size={16}
-          className="shrink-0 text-warm-ivory/35 transition-colors duration-300 ease-atmospheric group-hover:text-warm-ivory/65"
-        />
-      </button>
-    </form>
+        <p className="mt-1 text-[14px] leading-[1.5] text-warm-ivory/55">
+          End this session.
+        </p>
+      </div>
+      <Chevron
+        direction="right"
+        size={16}
+        className="shrink-0 text-warm-ivory/35 transition-colors duration-300 ease-atmospheric group-hover:text-warm-ivory/65"
+      />
+    </PressFormButton>
   );
 }
 
@@ -301,7 +308,10 @@ function AccountStateCard({
   memoryCount: number;
 }) {
   return (
-    <div className="mt-4 rounded-2xl border border-white/[0.08] bg-white/[0.015] px-5 py-2">
+    <div
+      className="mt-4 rounded-2xl bg-white/[0.015] px-5 py-2"
+      style={{ border: "1px solid rgba(255, 250, 240, 0.08)" }}
+    >
       <StateRow
         icon={<SessionDot active={sessionActive} />}
         label="Session"
@@ -355,9 +365,11 @@ function StateRow({
 }) {
   return (
     <div
-      className={
-        "flex items-center justify-between gap-4 py-3.5 " +
-        (last ? "" : "border-b border-white/[0.05]")
+      className="flex items-center justify-between gap-4 py-3.5"
+      style={
+        last
+          ? undefined
+          : { borderBottom: "1px solid rgba(255, 250, 240, 0.05)" }
       }
     >
       <div className="flex items-center gap-3">

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowLeft, Ellipsis, Share } from "./icons";
+import { Ellipsis, Share } from "./icons";
+import { BackButton } from "./BackButton";
 
 type Props = {
   /** Centered uppercase label that names the section, e.g. "BEFORE YOU GO". */
@@ -36,31 +36,25 @@ export function DeepSectionFrame({
         }}
       >
         <div className="relative grid grid-cols-[40px_1fr_auto] items-center">
-          <Link
-            href={backHref}
-            aria-label="Back"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40"
-          >
-            <ArrowLeft size={16} />
-          </Link>
+          <BackButton fallbackHref={backHref} />
           <div className="text-center text-[11px] uppercase tracking-editorial text-muted-gold">
             {eyebrow}
           </div>
           {hideMeta ? (
             <span />
           ) : (
-            <div className="flex items-center gap-2 justify-self-end">
+            <div className="flex items-center gap-2 justify-self-end text-warm-ivory/70">
               <button
                 type="button"
                 aria-label="Share"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-warm-ivory/85"
+                className="flex h-9 w-9 items-center justify-center transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
               >
                 <Share size={14} />
               </button>
               <button
                 type="button"
                 aria-label="More"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-warm-ivory/85"
+                className="flex h-9 w-9 items-center justify-center transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
               >
                 <Ellipsis size={16} />
               </button>

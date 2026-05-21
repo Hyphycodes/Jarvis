@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { AppFrame, BottomNav } from "@/components";
+import { AppFrame, BackButton, BottomNav, MotionPage } from "@/components";
 import {
-  ArrowLeft,
   ArrowRight,
   Bell,
   Car,
@@ -97,6 +96,7 @@ export default function SparrowPlanPage() {
 
   return (
     <AppFrame>
+      <MotionPage>
       {/* Hero */}
       <Hero
         live={status === "live"}
@@ -178,6 +178,7 @@ export default function SparrowPlanPage() {
       </aside>
 
       <BottomNav active="Today" />
+      </MotionPage>
     </AppFrame>
   );
 }
@@ -221,13 +222,7 @@ function Hero({
       >
         {/* Top row: back left · date right */}
         <div className="flex items-center justify-between">
-          <Link
-            href="/"
-            aria-label="Back to Today"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-warm-ivory/85 backdrop-blur transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40"
-          >
-            <ArrowLeft size={16} />
-          </Link>
+          <BackButton fallbackHref="/" />
           <span className="text-[12px] uppercase tracking-editorial text-warm-ivory/65">
             May 17, 2025
           </span>

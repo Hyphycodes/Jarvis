@@ -6,6 +6,7 @@ import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { signOut } from "@/lib/actions/auth";
 import { authCallbackUrl, siteOrigin } from "@/lib/siteOrigin";
 import { Chevron } from "@/components/icons";
+import { BackButton, MotionPage } from "@/components";
 import { CopyButton, ShowOrigin } from "./client-bits";
 
 export const metadata = { title: "Settings · Jarvis" };
@@ -33,11 +34,15 @@ export default async function SettingsPage() {
         paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
       }}
     >
+      <MotionPage>
       <header>
-        <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
-          Settings
+        <div className="flex items-center gap-1">
+          <BackButton fallbackHref="/account" />
+          <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+            Settings
+          </span>
         </div>
-        <h1 className="mt-2 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
+        <h1 className="mt-6 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
           Control room.
         </h1>
         <p className="mt-3 max-w-[38ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
@@ -98,7 +103,7 @@ export default async function SettingsPage() {
           className="mt-5 flex min-h-12 items-center justify-between border-t border-divider/60 pt-4 text-[11px] uppercase tracking-editorial text-warm-ivory/70 transition duration-300 ease-atmospheric hover:text-warm-ivory active:translate-y-px"
         >
           <span>Open Profile</span>
-          <Chevron direction="right" size={14} className="text-muted-gold" />
+          <Chevron direction="right" size={14} className="text-warm-ivory/45" />
         </Link>
       </SettingsSection>
 
@@ -144,6 +149,7 @@ export default async function SettingsPage() {
           </button>
         </form>
       </section>
+      </MotionPage>
     </main>
   );
 }
@@ -251,7 +257,13 @@ function SettingsCard({
         </p>
       </div>
       <span className="shrink-0 text-[10px] uppercase tracking-editorial text-muted-gold/70">
-        {status ?? <Chevron direction="right" size={14} />}
+        {status ?? (
+          <Chevron
+            direction="right"
+            size={14}
+            className="text-warm-ivory/45"
+          />
+        )}
       </span>
     </>
   );

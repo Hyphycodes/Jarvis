@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { AppFrame } from "@/components";
+import { AppFrame, BackButton, MotionPage } from "@/components";
 import {
-  ArrowLeft,
   Bell,
   Car,
   Chevron,
@@ -26,15 +25,10 @@ export default function SparrowActivePage() {
 
   return (
     <AppFrame>
+      <MotionPage>
       {/* Top bar */}
       <div className="flex items-center justify-between">
-        <Link
-          href="/plan/sparrow"
-          aria-label="Back to plan"
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-warm-ivory/80 transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40"
-        >
-          <ArrowLeft size={16} />
-        </Link>
+        <BackButton fallbackHref="/plan/sparrow" />
         <div className="flex items-center gap-2 text-[13px] italic text-muted-gold">
           <span
             aria-hidden
@@ -175,6 +169,7 @@ export default function SparrowActivePage() {
 
       {/* Bottom dock: nav + exit-active affordance */}
       <ActiveDock />
+      </MotionPage>
     </AppFrame>
   );
 }

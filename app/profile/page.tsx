@@ -5,6 +5,7 @@ import { getProfile, seedFounderProfile } from "@/lib/actions/profile";
 import { listMemoryItems } from "@/lib/actions/memory";
 import { listTasteSignals } from "@/lib/actions/taste";
 import { signOut } from "@/lib/actions/auth";
+import { BackButton, MotionPage } from "@/components";
 import { Section } from "@/components/profile/Section";
 import {
   FounderEditableField,
@@ -48,12 +49,16 @@ export default async function ProfilePage() {
         paddingBottom: "calc(env(safe-area-inset-bottom) + 64px)",
       }}
     >
+      <MotionPage>
       <header className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
-            {editable ? "Founder" : "Demo view"}
+          <div className="flex items-center gap-1">
+            <BackButton fallbackHref="/account" />
+            <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+              {editable ? "Founder" : "Demo view"}
+            </span>
           </div>
-          <h1 className="mt-2 font-serif text-[44px] italic leading-[1.02] tracking-[-0.01em] text-warm-ivory">
+          <h1 className="mt-6 font-serif text-[44px] italic leading-[1.02] tracking-[-0.01em] text-warm-ivory">
             {profile?.display_name || "Profile"}
           </h1>
           <p className="mt-2 font-serif text-[15px] italic leading-[1.5] text-warm-ivory/65">
@@ -63,14 +68,8 @@ export default async function ProfilePage() {
           </p>
           <div className="mt-3 h-px w-8 bg-muted-gold/50" />
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-col items-end gap-2 pt-2">
           <RoleBadge role={user.role} />
-          <Link
-            href="/settings"
-            className="text-[10px] uppercase tracking-editorial text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/85"
-          >
-            Settings
-          </Link>
         </div>
       </header>
 
@@ -459,6 +458,7 @@ export default async function ProfilePage() {
           </button>
         </form>
       </footer>
+      </MotionPage>
     </div>
   );
 }
