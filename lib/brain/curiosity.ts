@@ -15,6 +15,7 @@ import "server-only";
 
 import type { ExplorationLane } from "@/lib/brain/tasteStrategist";
 import type { InterestGraph } from "@/lib/brain/interests";
+import { translateQueryIdeas } from "@/lib/brain/queryTranslation";
 import {
   LOCAL_RADAR_MAX_QUERIES_PER_REFRESH,
   LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
@@ -120,7 +121,13 @@ export function buildCuriosityPlan(input: CuriosityInput): CuriosityPlan {
     const queryCount = wasRecent && lane.urgency !== "high"
       ? 1
       : Math.min(lane.query_ideas.length, MAX_QUERIES_PER_LANE);
-    const queries = lane.query_ideas.slice(0, queryCount);
+    const translated = translateQueryIdeas({
+      queries: lane.query_ideas,
+      laneTitle: lane.title,
+      interestArea: lane.interest_area,
+      subinterests: lane.subinterests,
+    });
+    const queries = translated.slice(0, queryCount);
 
     // Estimate candidates from this lane and respect the global cap.
     const perQuery = perQueryResultCap(source);

@@ -1,0 +1,76 @@
+import "server-only";
+
+const TRANSLATIONS: Array<{ match: RegExp; queries: string[] }> = [
+  {
+    match: /(rugged|heritage|masculine|western|workwear|menswear)/i,
+    queries: [
+      "Chicago menswear boutique",
+      "Chicago heritage menswear",
+      "Chicago leather goods boutique",
+      "Chicago barber grooming lounge",
+      "Chicago vintage menswear market",
+      "Chicago western wear boutique",
+      "Chicago watch event",
+      "Chicago cigar lounge event",
+    ],
+  },
+  {
+    match: /(quiet luxury|tailoring|refined|luxury menswear)/i,
+    queries: [
+      "Chicago menswear boutique",
+      "Chicago design store",
+      "Chicago tailoring event",
+      "Chicago watch boutique event",
+      "Chicago leather goods",
+    ],
+  },
+  {
+    match: /(italian countryside|italy|linen|natural materials|italian design)/i,
+    queries: [
+      "Chicago Italian market",
+      "Chicago design store natural materials",
+      "Chicago linen menswear",
+      "Italian design Chicago event",
+    ],
+  },
+  {
+    match: /(land|homestead|cabin|timber|woodworking|rural)/i,
+    queries: [
+      "Wisconsin land auction",
+      "Midwest timber framing workshop",
+      "Illinois woodworking class",
+      "Michigan cabin land",
+    ],
+  },
+];
+
+export function translateQueryIdeas(input: {
+  queries: string[];
+  laneTitle?: string;
+  interestArea?: string;
+  subinterests?: string[];
+}): string[] {
+  const blob = [
+    input.laneTitle,
+    input.interestArea,
+    ...(input.subinterests ?? []),
+    ...input.queries,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const replacements = TRANSLATIONS.find((entry) => entry.match.test(blob));
+  const translated = replacements?.queries ?? input.queries;
+  return uniq(translated.map(normalizeQuery).filter(Boolean)).slice(0, 6);
+}
+
+function normalizeQuery(query: string): string {
+  return query
+    .replace(/\brugged masculine\b/gi, "heritage menswear")
+    .replace(/\bquiet luxury\b/gi, "menswear boutique")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniq(values: string[]): string[] {
+  return Array.from(new Set(values));
+}

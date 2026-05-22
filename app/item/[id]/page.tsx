@@ -3,8 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getIndexItem } from "@/lib/index/repo";
 import { BackButton, MotionPage } from "@/components";
-import { ItemActionButton, GeneratePlanButton } from "./client-bits";
+import {
+  ItemActionButton,
+  GeneratePlanButton,
+  RefreshBriefingButton,
+} from "./client-bits";
 import type { IndexedItem, IndexItemStatus } from "@/lib/index/types";
+import type { ItemBriefing } from "@/lib/brain/briefingTypes";
 
 export const metadata = { title: "Item · Jarvis" };
 export const dynamic = "force-dynamic";
@@ -21,6 +26,7 @@ export default async function ItemDetailPage({
   const item = await getIndexItem(id);
   if (!item) notFound();
 
+  const briefing = item.briefing ?? fallbackBriefing(item);
   const evidence = readEvidence(item);
   const planContext = readPlanContext(item);
   const formattedStart = formatDateTime(item.startsAt);
@@ -50,16 +56,17 @@ export default async function ItemDetailPage({
         {/* Hero */}
         <section className="mt-6">
           <div className="flex items-center gap-3">
-            <CategoryPill type={item.type} category={item.category} />
+            <CategoryPill label={briefing.display_category} />
             <StatusPill status={item.status} />
             <DestinationPill destination={item.destination} />
+            <ConfidencePill label={briefing.confidence_label} />
           </div>
           <h1 className="mt-4 font-serif text-[40px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-            {item.title}
+            {briefing.display_title}
           </h1>
-          {item.subtitle ? (
+          {briefing.one_line ? (
             <p className="mt-2 max-w-[44ch] text-[15px] leading-[1.5] text-warm-ivory/70">
-              {item.subtitle}
+              {briefing.one_line}
             </p>
           ) : null}
         </section>
@@ -76,79 +83,86 @@ export default async function ItemDetailPage({
           </section>
         ) : null}
 
-        {/* When + Where */}
-        {(formattedStart || formattedEnd || formattedExpires || item.locationName) ? (
-          <section className="mt-8">
-            <SectionLabel>Details</SectionLabel>
-            <dl className="mt-3 flex flex-col divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06] bg-white/[0.01]">
-              {formattedStart ? (
-                <DetailRow label="Starts" value={formattedStart} />
-              ) : null}
-              {formattedEnd ? (
-                <DetailRow label="Ends" value={formattedEnd} />
-              ) : null}
-              {formattedExpires ? (
-                <DetailRow label="Expires" value={formattedExpires} />
-              ) : null}
-              {item.locationName ? (
-                <DetailRow
-                  label="Where"
-                  value={
-                    item.address ? (
-                      <span>
-                        {item.locationName}
-                        <br />
-                        <span className="text-warm-ivory/55">{item.address}</span>
-                      </span>
-                    ) : (
-                      item.locationName
-                    )
-                  }
-                />
-              ) : null}
-              {item.score != null ? (
-                <DetailRow
-                  label="Score"
-                  value={`${Math.round(item.score * 100)} / 100`}
-                />
-              ) : null}
-            </dl>
-          </section>
-        ) : null}
+        <section className="mt-8">
+          <SectionLabel>Jarvis Take</SectionLabel>
+          <p className="mt-3 text-[17px] leading-[1.55] text-warm-ivory/82">
+            {briefing.jarvis_take}
+          </p>
+        </section>
 
-        {/* Description */}
-        {item.description ? (
-          <section className="mt-8">
-            <SectionLabel>Description</SectionLabel>
-            <p className="mt-3 text-[15px] leading-[1.55] text-warm-ivory/80">
-              {item.description}
-            </p>
-          </section>
-        ) : null}
+        <section className="mt-8">
+          <SectionLabel>Why It Matters</SectionLabel>
+          <p className="mt-3 text-[15px] leading-[1.55] text-warm-ivory/75">
+            {briefing.why_it_matters}
+          </p>
+        </section>
 
-        {/* Why */}
-        {item.reasons.length > 0 ? (
-          <section className="mt-8">
-            <SectionLabel>Why Jarvis surfaced this</SectionLabel>
-            <ul className="mt-3 flex flex-col gap-2 text-[13px] leading-[1.5] text-warm-ivory/70">
-              {item.reasons.slice(0, 6).map((r, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="mt-[7px] inline-block h-[3px] w-[3px] shrink-0 rounded-full bg-muted-gold/60" />
-                  <span>{r}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <section className="mt-8 rounded-2xl border border-muted-gold/20 bg-muted-gold/[0.03] px-5 py-4">
+          <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
+            Best Next Action
+          </div>
+          <p className="mt-2 text-[15px] leading-[1.5] text-warm-ivory/82">
+            {formatBestNextAction(briefing.best_next_action)}
+          </p>
+          {!item.briefing ? (
+            <div className="mt-3">
+              <RefreshBriefingButton itemId={item.id} />
+            </div>
+          ) : null}
+        </section>
+
+        {/* Practical Fit */}
+        <section className="mt-8">
+          <SectionLabel>Practical Fit</SectionLabel>
+          <dl className="mt-3 flex flex-col divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+            <DetailRow label="Effort" value={briefing.effort_level} />
+            <DetailRow label="Spend" value={briefing.spending_posture} />
+            <DetailRow label="Confidence" value={`${briefing.confidence_label} · ${Math.round(briefing.confidence * 100)} / 100`} />
+            {formattedStart ? (
+              <DetailRow label="Starts" value={formattedStart} />
+            ) : null}
+            {formattedEnd ? (
+              <DetailRow label="Ends" value={formattedEnd} />
+            ) : null}
+            {formattedExpires ? (
+              <DetailRow label="Expires" value={formattedExpires} />
+            ) : null}
+            {item.locationName ? (
+              <DetailRow
+                label="Where"
+                value={
+                  item.address ? (
+                    <span>
+                      {item.locationName}
+                      <br />
+                      <span className="text-warm-ivory/55">{item.address}</span>
+                    </span>
+                  ) : (
+                    item.locationName
+                  )
+                }
+              />
+            ) : null}
+            {item.score != null ? (
+              <DetailRow
+                label="Score"
+                value={`${Math.round(item.score * 100)} / 100`}
+              />
+            ) : null}
+          </dl>
+        </section>
 
         {/* Source evidence */}
         {evidence ? (
           <section className="mt-8">
-            <SectionLabel>Source</SectionLabel>
+            <SectionLabel>Source Evidence</SectionLabel>
             <div className="mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.01] px-5 py-4">
               <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/55">
                 {evidence.label}
               </div>
+              <p className="mt-2 text-[14px] leading-[1.5] text-warm-ivory/75">
+                {briefing.evidence_summary}
+              </p>
               {evidence.sourceTitle ? (
                 <div className="mt-2 text-[14px] leading-[1.4] text-warm-ivory/85">
                   {evidence.sourceTitle}
@@ -173,12 +187,11 @@ export default async function ItemDetailPage({
           </section>
         ) : null}
 
-        {/* Tags */}
-        {item.tags.length > 0 ? (
+        {briefing.cleaned_tags.length > 0 ? (
           <section className="mt-8">
-            <SectionLabel>Tags</SectionLabel>
+            <SectionLabel>Clean Tags</SectionLabel>
             <div className="mt-3 flex flex-wrap gap-2">
-              {item.tags.slice(0, 16).map((t) => (
+              {briefing.cleaned_tags.slice(0, 8).map((t) => (
                 <span
                   key={t}
                   className="rounded-full border border-white/[0.06] bg-white/[0.02] px-3 py-1 text-[11px] text-warm-ivory/65"
@@ -327,13 +340,34 @@ export default async function ItemDetailPage({
           </section>
         )}
 
-        <footer className="mt-12 text-[11px] text-warm-ivory/35">
-          <div>id · {item.id}</div>
-          <div>
-            updated · {new Date(item.updatedAt).toLocaleString()} · created ·{" "}
-            {new Date(item.createdAt).toLocaleString()}
+        <details className="mt-12 rounded-2xl border border-white/[0.06] bg-white/[0.01] px-4 py-3 text-[11px] text-warm-ivory/40">
+          <summary className="cursor-pointer uppercase tracking-editorial text-warm-ivory/45">
+            Debug metadata
+          </summary>
+          <div className="mt-3 space-y-3">
+            {item.reasons.length > 0 ? (
+              <div>
+                <div className="text-warm-ivory/55">reasons</div>
+                <ul className="mt-1 list-inside list-disc">
+                  {item.reasons.slice(0, 8).map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {item.tags.length > 0 ? (
+              <div>
+                <div className="text-warm-ivory/55">tags</div>
+                <div className="mt-1">{item.tags.join(", ")}</div>
+              </div>
+            ) : null}
+            <div>id · {item.id}</div>
+            <div>
+              updated · {new Date(item.updatedAt).toLocaleString()} · created ·{" "}
+              {new Date(item.createdAt).toLocaleString()}
+            </div>
           </div>
-        </footer>
+        </details>
       </MotionPage>
     </main>
   );
@@ -349,17 +383,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CategoryPill({
-  type,
-  category,
-}: {
-  type?: string;
-  category?: string;
-}) {
-  const label = (category ?? type ?? "item").toUpperCase();
+function CategoryPill({ label }: { label: string }) {
   return (
     <span className="rounded-md border border-muted-gold/30 px-2 py-0.5 text-[10px] uppercase tracking-editorial text-muted-gold">
-      {label}
+      {label.toUpperCase()}
     </span>
   );
 }
@@ -393,6 +420,14 @@ function DestinationPill({ destination }: { destination: string }) {
   return (
     <span className="rounded-md border border-white/[0.08] px-2 py-0.5 text-[10px] uppercase tracking-editorial text-warm-ivory/55">
       {destination}
+    </span>
+  );
+}
+
+function ConfidencePill({ label }: { label: ItemBriefing["confidence_label"] }) {
+  return (
+    <span className="rounded-md border border-white/[0.08] px-2 py-0.5 text-[10px] uppercase tracking-editorial text-warm-ivory/55">
+      {label}
     </span>
   );
 }
@@ -432,9 +467,6 @@ function readEvidence(item: IndexedItem): EvidenceSummary | null {
   const sourceTitle =
     typeof raw.source_title === "string" ? raw.source_title : undefined;
   const leadName = typeof raw.lead_name === "string" ? raw.lead_name : null;
-  const queryGroup =
-    typeof raw.query_group === "string" ? raw.query_group : undefined;
-  const laneId = typeof raw.lane_id === "string" ? raw.lane_id : undefined;
 
   if (!url && !sourceTitle && !leadName) {
     // No web/article evidence — fall back to the source name itself
@@ -444,14 +476,88 @@ function readEvidence(item: IndexedItem): EvidenceSummary | null {
 
   const domain = url ? safeDomain(url) : undefined;
   const label = leadName
-    ? `Lead · extracted from article`
-    : queryGroup
-      ? `LocalRadar · ${queryGroup.replace(/_/g, " ")}`
-      : laneId
-        ? `Strategist lane · ${laneId}`
-        : `Source · ${item.source ?? "web"}`;
+    ? "Lead from source"
+    : `Source · ${domain ?? item.source ?? "web"}`;
 
   return { label, domain, url, sourceTitle };
+}
+
+function fallbackBriefing(item: IndexedItem): ItemBriefing {
+  const confidence = clamp01(item.score ?? 0.5);
+  const raw = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const sourceTitle =
+    typeof raw.source_title === "string" ? raw.source_title : undefined;
+  const cleanedTags = item.tags
+    .filter((tag) => !isInternalTag(tag))
+    .map((tag) => tag.replace(/[_:]/g, " "))
+    .slice(0, 8);
+  return {
+    display_title: cleanDisplayText(item.title || sourceTitle || "Untitled"),
+    display_category: cleanDisplayText(item.category ?? item.type ?? "Item"),
+    one_line:
+      cleanDisplayText(item.description ?? item.subtitle ?? "") ||
+      "Worth a closer look, but the briefing has not been fully edited yet.",
+    jarvis_take:
+      cleanDisplayText(item.reasons[0] ?? "") ||
+      (item.destination === "holding"
+        ? "Good signal, not urgent. Keep it for later."
+        : "Worth attention now if the source checks out."),
+    why_it_matters:
+      cleanDisplayText(item.reasons[1] ?? "") ||
+      "It matched enough of the current taste profile to keep on the board.",
+    why_now: cleanDisplayText(item.startsAt ? formatDateTime(item.startsAt) ?? "" : ""),
+    best_next_action: item.destination === "holding" ? "hold" : "save",
+    confidence,
+    confidence_label: confidence >= 0.74 ? "high" : confidence >= 0.5 ? "medium" : "low",
+    effort_level: item.tags.includes("high-effort") ? "high" : "low",
+    spending_posture: item.tags.includes("paid") || item.tags.includes("ticketed")
+      ? "paid"
+      : "unknown",
+    suggested_destination:
+      item.destination === "holding" ? "holding" : item.destination === "radar" ? "radar" : "discovered",
+    quality_flags: [],
+    evidence_summary: sourceTitle
+      ? `Original source: ${cleanDisplayText(sourceTitle)}.`
+      : "No edited source summary yet.",
+    cleaned_tags: cleanedTags,
+  };
+}
+
+function formatBestNextAction(action: ItemBriefing["best_next_action"]): string {
+  const map: Record<ItemBriefing["best_next_action"], string> = {
+    save: "Save it if you want this in the active pile.",
+    pass: "Pass. This is not worth keeping in view.",
+    hold: "Hold, don't act yet.",
+    plan: "Worth planning if the timing fits.",
+    research: "Needs verification before it deserves action.",
+    ignore: "Ignore. Not worth active attention.",
+  };
+  return map[action];
+}
+
+function cleanDisplayText(value: string): string {
+  return value
+    .replace(/Strategist lane:\s*[^.]+\.?/gi, "")
+    .replace(/Query:\s*"[^"]+"\s*/gi, "")
+    .replace(/\b(seed|lane|local-radar):[\w:-]+\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isInternalTag(tag: string): boolean {
+  return (
+    tag.startsWith("seed:") ||
+    tag.startsWith("lane:") ||
+    tag.startsWith("mode:") ||
+    tag === "strategist-lane" ||
+    tag === "local-radar" ||
+    tag === "web-result" ||
+    tag.includes(":")
+  );
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 type PlanContext = {

@@ -3,6 +3,7 @@ import "server-only";
 import { getViewableProfileId } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
+import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
 import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
 import type {
@@ -441,6 +442,7 @@ export async function loadPlanBySlug(
 function toRadarCard(item: IndexedItem): RadarCard {
   const category = mapCategory(item.type, item.category);
   const planSlug = readPlanSlug(item.rawPayload);
+  const briefing = item.briefing;
   return {
     id: item.id,
     source: item.source,
@@ -449,15 +451,24 @@ function toRadarCard(item: IndexedItem): RadarCard {
     destination: item.destination,
     planSlug,
     category,
-    title: item.title,
-    summary: item.description ?? item.subtitle ?? "",
+    title: briefing?.display_title ?? item.title,
+    summary: briefing?.one_line ?? item.description ?? item.subtitle ?? "",
+    displayCategory: briefing?.display_category,
+    oneLine: briefing?.one_line,
+    jarvisTake: briefing?.jarvis_take,
+    bestNextAction: briefing?.best_next_action,
+    confidenceLabel: briefing?.confidence_label,
+    effortLevel: briefing?.effort_level,
+    spendingPosture: briefing?.spending_posture,
+    evidenceSummary: briefing?.evidence_summary,
+    cleanedTags: briefing?.cleaned_tags,
     neighborhood: item.locationName ?? undefined,
     datetime: item.startsAt ?? undefined,
     imageUrl: item.imageUrl ?? undefined,
-    score: item.score ?? scoreIndexedItem(item).total,
+    score: briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
-    whyItFits: item.reasons[0] ?? "Matches your taste profile.",
-    whyNow: item.reasons[1] ?? "Available now.",
+    whyItFits: briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
+    whyNow: briefing?.why_now ?? item.reasons[1] ?? "Available now.",
     actions: { save: true, pass: true, openPlan: Boolean(planSlug) },
     routeOnSave: ["radar.saved"],
     routeOnPass: ["radar.passed"],
@@ -481,12 +492,13 @@ function sortTime(iso?: string): number {
 
 function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
   const planSlug = readPlanSlug(row.payload);
-  const reason = row.reasons?.[0] ?? row.subtitle ?? undefined;
+  const briefing = readBriefingFromPayload(row.payload);
+  const reason = briefing?.jarvis_take ?? row.reasons?.[0] ?? row.subtitle ?? undefined;
   return {
     id: row.id,
-    title: row.title ?? "Untitled",
-    subtitle: row.subtitle ?? undefined,
-    summary: row.description ?? undefined,
+    title: briefing?.display_title ?? row.title ?? "Untitled",
+    subtitle: briefing?.display_category ?? row.subtitle ?? undefined,
+    summary: briefing?.one_line ?? row.description ?? undefined,
     source: row.source ?? undefined,
     type: row.type ?? undefined,
     category: row.category ?? undefined,

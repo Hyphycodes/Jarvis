@@ -5,6 +5,11 @@ import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems, rowToIndexedItem } from "@/lib/index/repo";
 import { hasAnthropic } from "@/lib/ai/anthropic";
 import { buildBrainContext } from "@/lib/brain/context";
+import { editBriefing } from "@/lib/brain/briefingEditor";
+import {
+  isMajorQualityFlag,
+  mergeBriefingIntoPayload,
+} from "@/lib/brain/briefingTypes";
 import { runCurator, summarizeContext } from "@/lib/brain/curator";
 import { runCritic } from "@/lib/brain/critic";
 import { shortlistByScore } from "@/lib/brain/router";
@@ -29,6 +34,7 @@ import {
 } from "@/lib/brain/constants";
 
 const FALLBACK_HOLDING_CONFIDENCE_FLOOR = 0.45;
+const MAX_BRIEFINGS_PER_REFRESH = 12;
 
 export type RadarCurationResult = {
   shortlisted: number;
@@ -143,8 +149,11 @@ export async function runRadarCuration(options: {
     shortlist,
   });
 
+  const briefed = await attachBriefings(critiqued, shortlist, context);
+
   // Post-critique gates (code-enforced, not just prompt hints)
-  const gated = enforceGates(critiqued, shortlist, now);
+  const qualityGated = enforceBriefingQuality(briefed);
+  const gated = enforceGates(qualityGated, shortlist, now);
   if (gated.fallbackUsed) {
     console.warn("[brain.curation] fallback brain applied", {
       fallbackReason: gated.fallbackReason ?? gated.notes,
@@ -327,6 +336,139 @@ function enforceGates(
   };
 }
 
+async function attachBriefings(
+  decision: BrainDecision,
+  shortlist: ScoredItem[],
+  context: Awaited<ReturnType<typeof buildBrainContext>>,
+): Promise<BrainDecision> {
+  const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
+  const rejectionReasonByItemId = new Map(
+    decision.rejected.map((r) => [r.itemId, r.reason]),
+  );
+  const selected = [];
+  let generated = 0;
+
+  for (const sel of decision.selected) {
+    const scored = scoreByItemId.get(sel.itemId);
+    if (!scored || generated >= MAX_BRIEFINGS_PER_REFRESH) {
+      selected.push(sel);
+      continue;
+    }
+    const result = await editBriefing({
+      context,
+      scored,
+      selection: sel,
+      criticReason: rejectionReasonByItemId.get(sel.itemId),
+    });
+    if (!result.reused) generated++;
+    selected.push({
+      ...sel,
+      briefing: result.briefing,
+      briefingMeta: result.meta,
+    });
+  }
+
+  return {
+    ...decision,
+    selected,
+    notes: [
+      decision.notes,
+      `Briefing Editor applied to ${generated} candidate${generated === 1 ? "" : "s"}.`,
+    ].filter(Boolean).join(" | "),
+  };
+}
+
+function enforceBriefingQuality(decision: BrainDecision): BrainDecision {
+  const selected: BrainDecision["selected"] = [];
+  const rejected: BrainDecision["rejected"] = [...decision.rejected];
+  const notes: string[] = [];
+
+  for (const sel of decision.selected) {
+    const briefing = sel.briefing;
+    if (!briefing) {
+      selected.push(sel.destination === "radar" ? { ...sel, destination: "holding" } : sel);
+      notes.push(`${sel.itemId}: no briefing, moved to Holding`);
+      continue;
+    }
+
+    const hasCoreCopy =
+      briefing.one_line.trim().length > 0 && briefing.jarvis_take.trim().length > 0;
+    const majorFlags = briefing.quality_flags.filter(isMajorQualityFlag);
+    const terminal =
+      briefing.suggested_destination === "archived" ||
+      briefing.suggested_destination === "discovered" ||
+      briefing.best_next_action === "ignore" ||
+      briefing.best_next_action === "pass";
+
+    if (terminal) {
+      rejected.push({
+        itemId: sel.itemId,
+        reason: `Briefing gate: ${briefing.best_next_action}; ${briefing.jarvis_take}`,
+        suggestedStatus:
+          briefing.suggested_destination === "archived" ? "archived" : "discovered",
+      });
+      notes.push(`${sel.itemId}: briefing rejected`);
+      continue;
+    }
+
+    const nextConfidence = Math.min(sel.confidence, briefing.confidence);
+    let destination = sel.destination;
+    if (briefing.suggested_destination === "holding") destination = "holding";
+    if (briefing.suggested_destination === "radar" && destination !== "holding") {
+      destination = "radar";
+    }
+
+    if (
+      destination === "radar" &&
+      (!hasCoreCopy ||
+        nextConfidence < RADAR_MIN_CONFIDENCE ||
+        majorFlags.length > 0)
+    ) {
+      if (
+        briefing.confidence >= FALLBACK_HOLDING_CONFIDENCE_FLOOR &&
+        briefing.best_next_action !== "ignore" &&
+        briefing.best_next_action !== "pass"
+      ) {
+        selected.push({
+          ...sel,
+          destination: "holding",
+          confidence: nextConfidence,
+          reason: briefing.why_it_matters,
+          displayAngle: briefing.jarvis_take,
+          tags: briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags,
+        });
+        notes.push(`${sel.itemId}: briefing downgraded to Holding`);
+      } else {
+        rejected.push({
+          itemId: sel.itemId,
+          reason: `Briefing gate: ${majorFlags.join(", ") || "not decision-ready"}`,
+          suggestedStatus: "discovered",
+        });
+        notes.push(`${sel.itemId}: briefing rejected`);
+      }
+      continue;
+    }
+
+    selected.push({
+      ...sel,
+      destination,
+      confidence: nextConfidence,
+      reason: briefing.why_it_matters,
+      displayAngle: briefing.jarvis_take,
+      tags: briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags,
+    });
+  }
+
+  return {
+    ...decision,
+    selected,
+    rejected,
+    notes: [decision.notes, notes.length ? `Briefing gate: ${notes.join("; ")}` : ""]
+      .filter(Boolean)
+      .join(" | "),
+  };
+}
+
 // ── Apply decision ────────────────────────────────────────────────────────────
 
 async function applyDecision(
@@ -350,6 +492,9 @@ async function applyDecision(
       sel.displayAngle,
     ]).filter(Boolean);
     const tags = uniq([...existing.tags, ...sel.tags]).filter(Boolean);
+    const payload = sel.briefing
+      ? mergeBriefingIntoPayload(existing.rawPayload, sel.briefing, sel.briefingMeta)
+      : existing.rawPayload;
 
     const { error } = await supabase
       .from("surfaced_items")
@@ -359,6 +504,7 @@ async function applyDecision(
         reasons,
         tags,
         score: sel.confidence,
+        payload,
       })
       .eq("id", sel.itemId)
       .eq("user_id", userId);

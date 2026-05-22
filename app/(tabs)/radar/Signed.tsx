@@ -18,12 +18,13 @@ type Filter = (typeof FILTERS)[number];
 
 type Card = {
   id: string;
-  category: "DINING" | "CULTURE" | "PLACES" | "EVENTS" | "SPORTS";
+  category: string;
   title: string;
   body: string;
+  take?: string;
   meta: string[];
   sourceLine: string;
-  statusLine: string;
+  confidenceLine: string;
   planSlug?: string;
   filter: Filter;
   media: "stacked" | "portrait" | "landscape";
@@ -33,18 +34,24 @@ function adaptRadarToCard(item: RadarPayloadCard, idx: number): Card {
   const filter = mapCategoryToFilter(item.category);
   const media = ["stacked", "portrait", "landscape"][idx % 3] as Card["media"];
   const meta = [
-    item.neighborhood,
     formatMeta(item.datetime),
+    item.neighborhood,
     item.whyNow,
   ].filter((value): value is string => Boolean(value));
   return {
     id: item.id,
-    category: mapCategoryToBadge(item.category),
+    category: (item.displayCategory ?? mapCategoryToBadge(item.category)).toUpperCase(),
     title: item.title,
-    body: item.summary || item.whyItFits || "Worth a closer look.",
+    body: item.oneLine || item.summary || item.whyItFits || "Worth a closer look.",
+    take: item.jarvisTake,
     meta,
     sourceLine: [item.source, item.type].filter(Boolean).join(" · "),
-    statusLine: [item.destination, item.status].filter(Boolean).join(" · "),
+    confidenceLine: [
+      item.effortLevel ? `Effort ${item.effortLevel}` : null,
+      item.spendingPosture ? `Spend ${item.spendingPosture}` : null,
+      item.confidenceLabel ? `${item.confidenceLabel} confidence` : null,
+      item.source,
+    ].filter(Boolean).join(" · "),
     planSlug: item.planSlug,
     filter,
     media,
@@ -295,11 +302,6 @@ function RadarCard({
             <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
               {card.category}
             </span>
-            {card.sourceLine ? (
-              <span className="text-[10px] uppercase tracking-editorial text-warm-ivory/35">
-                {card.sourceLine}
-              </span>
-            ) : null}
           </div>
           <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
             {card.title}
@@ -308,12 +310,17 @@ function RadarCard({
           <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
             {card.body}
           </p>
+          {card.take ? (
+            <p className="max-w-[30ch] text-[13px] leading-[1.5] text-warm-ivory/58">
+              {card.take}
+            </p>
+          ) : null}
           <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
             {card.meta.slice(0, 3).map((line) => (
               <div key={line}>{line}</div>
             ))}
-            {card.statusLine ? (
-              <div className="text-muted-gold/60">{card.statusLine}</div>
+            {card.confidenceLine ? (
+              <div className="text-muted-gold/60">{card.confidenceLine}</div>
             ) : null}
           </div>
         </div>

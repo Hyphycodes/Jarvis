@@ -2,6 +2,7 @@ import "server-only";
 
 import { getViewableProfileId, requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import type {
   IndexItemStatus,
   SurfacedItemRow,
@@ -44,6 +45,7 @@ export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
     url: row.url ?? undefined,
     imageUrl: row.image_url ?? undefined,
     rawPayload: row.payload,
+    briefing: readBriefingFromPayload(row.payload) ?? undefined,
     status: row.status,
     destination: normalizeDestination(row.destination),
     score: row.score ?? undefined,

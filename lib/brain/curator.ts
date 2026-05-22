@@ -48,6 +48,10 @@ SOURCES:
 - Structured API data (google-places, ticketmaster) is more reliable than web-research
   articles. Web-research items (local-radar, tavily, brave tags) need a strong lead name
   or specific venue to be worth selecting.
+- Prefer candidates that can be explained cleanly in one private briefing.
+- If the evidence is thin, source looks noisy, or the item is interesting but not
+  decision-ready, route it to "holding" or reject it to "discovered".
+- Do not place an item in Active Radar just because it matches a query literally.
 
 Return strict JSON matching the BrainDecision schema.
 - selected[]: items for Radar (radar) or Holding (holding). Max ${RADAR_IDEAL_ACTIVE_ITEM_LIMIT} combined.

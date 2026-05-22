@@ -108,14 +108,30 @@ POST /api/radar/refresh
      c. shortlistByScore() — deterministic top-N by score
      d. runCurator() — Claude or deterministic fallback
      e. runCritic() — Claude or deterministic fallback
-     f. enforceGates() — confidence floor, category quotas, weekday limits
-     g. applyDecision() — write status/destination to DB
-     h. enforceActiveRadarCap() — rotate excess shown→holding or discovered
-     i. pruneStaleHolding() — archive aged Holding items
-     j. logDecisionRun() → brain_decision_runs (decision + strategy snapshot)
+     f. Briefing Editor — clean owner-facing display copy for finalists
+     g. briefing quality gate — downgrade or reject weak/noisy candidates
+     h. enforceGates() — confidence floor, category quotas, weekday limits
+     i. applyDecision() — write status/destination/payload.briefing to DB
+     j. enforceActiveRadarCap() — rotate excess shown→holding or discovered
+     k. pruneStaleHolding() — archive aged Holding items
+     l. logDecisionRun() → brain_decision_runs (decision + strategy snapshot)
 ```
 
 See [`docs/BRAIN.md`](./BRAIN.md) for the Interest Graph + Taste Strategist + Curiosity Engine details.
+
+## Briefing Layer
+
+Radar uses `surfaced_items.payload.briefing` when present. See
+[`docs/BRIEFINGS.md`](./BRIEFINGS.md).
+
+Active Radar requires clean briefing copy, adequate confidence, no major quality
+flags, and a next action other than `pass` or `ignore`. Items with useful signal
+but weak timing/evidence are routed to Holding. Low-confidence, generic,
+source-thin, literal-query, social-noise, or SEO-style results remain discovered
+or archived.
+
+The primary card does not show raw query text, strategist lane ids, seed tags,
+raw status/destination, or source payload details.
 
 ## Surface Rendering
 

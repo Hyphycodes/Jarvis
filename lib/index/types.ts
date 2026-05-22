@@ -1,4 +1,5 @@
 import type { Json, IndexItemStatus } from "@/lib/types/database";
+import type { ItemBriefing } from "@/lib/brain/briefingTypes";
 
 export type { IndexItemStatus } from "@/lib/types/database";
 
@@ -62,6 +63,7 @@ export type IndexedItem = {
   url?: string;
   imageUrl?: string;
   rawPayload: Json;
+  briefing?: ItemBriefing;
   status: IndexItemStatus;
   destination: IndexDestination;
   score?: number;

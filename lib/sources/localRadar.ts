@@ -122,6 +122,15 @@ function normalizeLaneTavily(
 ): CreateIndexedItemInput | null {
   const title = cleanTitle(result.title);
   if (!title) return null;
+  if (shouldRejectSearchResult({
+    title,
+    snippet: result.content,
+    url: result.url,
+    query: lq.query,
+    publishedDate: result.published_date,
+  })) {
+    return null;
+  }
   const leadName = extractLeadName(title, result.content);
   return {
     type: lq.type,
@@ -160,6 +169,15 @@ function normalizeLaneBrave(
 ): CreateIndexedItemInput | null {
   const title = cleanTitle(result.title);
   if (!title) return null;
+  if (shouldRejectSearchResult({
+    title,
+    snippet: result.description,
+    url: result.url,
+    query: lq.query,
+    age: result.age,
+  })) {
+    return null;
+  }
   const leadName = extractLeadName(title, result.description);
   return {
     type: lq.type,
@@ -391,6 +409,15 @@ function normalizeTavilyLead(
 ): CreateIndexedItemInput | null {
   const title = cleanTitle(result.title);
   if (!title) return null;
+  if (shouldRejectSearchResult({
+    title,
+    snippet: result.content,
+    url: result.url,
+    query: config.query,
+    publishedDate: result.published_date,
+  })) {
+    return null;
+  }
 
   const leadName = extractLeadName(title, result.content);
   const snippet = result.content?.slice(0, 400) ?? "";
@@ -430,6 +457,15 @@ function normalizeBraveLead(
 ): CreateIndexedItemInput | null {
   const title = cleanTitle(result.title);
   if (!title) return null;
+  if (shouldRejectSearchResult({
+    title,
+    snippet: result.description,
+    url: result.url,
+    query: config.query,
+    age: result.age,
+  })) {
+    return null;
+  }
 
   const leadName = extractLeadName(title, result.description);
 
@@ -528,6 +564,72 @@ function cleanTitle(raw: string): string {
     .replace(/\s*[\|•·—]\s*.+$/, "") // strip " | Site Name" suffixes
     .replace(/^\s+|\s+$/, "")
     .trim();
+}
+
+function shouldRejectSearchResult(input: {
+  title: string;
+  snippet?: string;
+  url?: string;
+  query?: string;
+  publishedDate?: string | null;
+  age?: string | null;
+}): boolean {
+  const title = input.title.trim();
+  const snippet = input.snippet ?? "";
+  const domain = safeDomain(input.url)?.toLowerCase() ?? "";
+  const haystack = `${title} ${snippet} ${input.url ?? ""}`.toLowerCase();
+
+  if (/(instagram|tiktok|facebook|x\.com|twitter)\.com/.test(domain)) {
+    return !/(event|opening|tickets|venue|restaurant|store|market|gallery)/i.test(haystack);
+  }
+  if (/#\w+/.test(title) || /comments?\s+and\s+posts|profile\s+photos/i.test(title)) {
+    return true;
+  }
+  if (/near me|coupon|groupon|tripadvisor|yelp|directory|yellow pages|mapquest/i.test(haystack)) {
+    return true;
+  }
+  if (/^(best|top)\s+\d+\b/i.test(title) && !extractLeadName(title, snippet)) {
+    return true;
+  }
+  if (/ultimate guide|things to do|everything you need to know/i.test(haystack)) {
+    return true;
+  }
+  if (input.query && literalOverlap(title, input.query) > 0.72) {
+    return true;
+  }
+  if (input.publishedDate && isOlderThanDays(input.publishedDate, 90)) {
+    return true;
+  }
+  if (input.age && /\b(20[0-2][0-4]|[2-9]\s+years?\s+ago)\b/i.test(input.age)) {
+    return true;
+  }
+  return false;
+}
+
+function literalOverlap(title: string, query: string): number {
+  const titleWords = new Set(words(title).filter((word) => word.length > 4));
+  const queryWords = words(query).filter((word) => word.length > 4);
+  if (queryWords.length === 0) return 0;
+  return queryWords.filter((word) => titleWords.has(word)).length / queryWords.length;
+}
+
+function words(value: string): string[] {
+  return value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+}
+
+function isOlderThanDays(iso: string, days: number): boolean {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return false;
+  return Date.now() - time > days * 24 * 60 * 60 * 1000;
+}
+
+function safeDomain(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
 }
 
 function humanGroupLabel(group: LocalRadarGroup): string {
