@@ -1,0 +1,370 @@
+/**
+ * Local Cultural Radar — web-research source lane.
+ *
+ * Six focused query groups covering the founder's core interests.
+ * Tavily is preferred; Brave is the fallback if Tavily is not configured.
+ * Results are normalized into CreateIndexedItemInput candidates with
+ * local-radar provenance tags so the curator can distinguish them from
+ * structured API data.
+ *
+ * Lead extraction: article snippets are scanned for named places/businesses.
+ * The extracted lead is stored in rawPayload.lead_name so downstream enrichment
+ * (e.g. Google Places lookup) can verify it if appropriate.
+ */
+
+import { hasTavily, searchWeb } from "@/lib/sources/tavily";
+import { hasBrave, webSearch } from "@/lib/sources/brave";
+import type { TavilySearchResult } from "@/lib/sources/tavily";
+import type { BraveResult } from "@/lib/sources/brave";
+import type { CreateIndexedItemInput, IndexItemType } from "@/lib/index/types";
+import { LOCAL_RADAR_MAX_RESULTS_PER_QUERY } from "@/lib/brain/constants";
+
+// ── Query group definitions ──────────────────────────────────────────────────
+
+export type LocalRadarGroup =
+  | "chicago_food"
+  | "chicago_culture"
+  | "chicago_music"
+  | "chicago_style"
+  | "chicago_products"
+  | "italy_travel_lifestyle";
+
+type QueryGroupConfig = {
+  group: LocalRadarGroup;
+  query: string;
+  type: IndexItemType;
+  category: string;
+  tags: string[];
+  preferredDomains?: string[];
+};
+
+const QUERY_GROUPS: QueryGroupConfig[] = [
+  {
+    group: "chicago_food",
+    query:
+      "best new restaurant openings Chicago 2025 atmospheric fine dining intimate",
+    type: "restaurant",
+    category: "dining",
+    tags: ["chicago", "dining", "local-radar", "chicago_food"],
+    preferredDomains: [
+      "eater.com",
+      "chicagomag.com",
+      "chicago.eater.com",
+      "tinyurl.com",
+      "infatuation.com",
+      "seriouseats.com",
+    ],
+  },
+  {
+    group: "chicago_culture",
+    query:
+      "Chicago art exhibit gallery opening cultural event this month craftsmanship",
+    type: "culture",
+    category: "culture",
+    tags: ["chicago", "culture", "local-radar", "chicago_culture"],
+    preferredDomains: [
+      "timeout.com",
+      "chicagomag.com",
+      "artic.edu",
+      "chicagoreader.com",
+      "designchicago.org",
+    ],
+  },
+  {
+    group: "chicago_music",
+    query:
+      "Chicago jazz live music intimate venue performance this week upcoming",
+    type: "event",
+    category: "music",
+    tags: ["chicago", "music", "jazz", "live", "local-radar", "chicago_music"],
+    preferredDomains: [
+      "timeout.com",
+      "jazzchicago.net",
+      "chicagoreader.com",
+      "domu.com",
+    ],
+  },
+  {
+    group: "chicago_style",
+    query:
+      "Chicago menswear boutique artisan leather goods craft quality independent store",
+    type: "place",
+    category: "style",
+    tags: [
+      "chicago",
+      "style",
+      "menswear",
+      "craft",
+      "local-radar",
+      "chicago_style",
+    ],
+    preferredDomains: [
+      "timeout.com",
+      "chicagomag.com",
+      "gq.com",
+      "esquire.com",
+    ],
+  },
+  {
+    group: "chicago_products",
+    query:
+      "handcrafted artisan quality goods leather accessories made Chicago independent brand",
+    type: "product",
+    category: "style",
+    tags: [
+      "chicago",
+      "craft",
+      "artisan",
+      "product",
+      "local-radar",
+      "chicago_products",
+    ],
+    preferredDomains: [
+      "timeout.com",
+      "chicagomag.com",
+      "uncrate.com",
+      "huckberry.com",
+    ],
+  },
+  {
+    group: "italy_travel_lifestyle",
+    query:
+      "Italian craftsmanship lifestyle culture travel slow living artisan 2025",
+    type: "culture",
+    category: "culture",
+    tags: ["italy", "craft", "lifestyle", "culture", "local-radar", "italy_travel_lifestyle"],
+    preferredDomains: [
+      "cntraveler.com",
+      "vogue.com",
+      "theguardian.com",
+      "wallpaper.com",
+      "monocle.com",
+      "slowtravelstories.com",
+    ],
+  },
+];
+
+// ── Main export ──────────────────────────────────────────────────────────────
+
+export type LocalRadarResult = {
+  group: LocalRadarGroup;
+  candidates: CreateIndexedItemInput[];
+  source: "tavily" | "brave" | "none";
+};
+
+/**
+ * Run all six query groups. Tavily is preferred; Brave is the fallback.
+ * Returns one result set per group that returned at least one candidate.
+ * Never throws — individual group failures are caught and logged.
+ */
+export async function gatherLocalRadarCandidates(): Promise<LocalRadarResult[]> {
+  const results: LocalRadarResult[] = [];
+  const canTavily = hasTavily();
+  const canBrave = hasBrave();
+
+  if (!canTavily && !canBrave) return results;
+
+  for (const config of QUERY_GROUPS) {
+    try {
+      let candidates: CreateIndexedItemInput[] = [];
+      let usedSource: "tavily" | "brave" | "none" = "none";
+
+      if (canTavily) {
+        const data = await searchWeb({
+          query: config.query,
+          maxResults: LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
+          includeDomains:
+            config.preferredDomains && config.preferredDomains.length > 0
+              ? config.preferredDomains
+              : undefined,
+          days: 30,
+        });
+        candidates = data.results
+          .map((r) => normalizeTavilyLead(r, config))
+          .filter((c): c is CreateIndexedItemInput => c !== null);
+        usedSource = "tavily";
+      } else if (canBrave) {
+        const data = await webSearch({
+          query: config.query,
+          count: LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
+          freshness: "pm",
+        });
+        candidates = data
+          .map((r) => normalizeBraveLead(r, config))
+          .filter((c): c is CreateIndexedItemInput => c !== null);
+        usedSource = "brave";
+      }
+
+      if (candidates.length > 0) {
+        results.push({
+          group: config.group,
+          candidates,
+          source: usedSource,
+        });
+      }
+    } catch (err) {
+      console.error("[local-radar] group", config.group, err);
+    }
+  }
+
+  return results;
+}
+
+// ── Normalizers ───────────────────────────────────────────────────────────────
+
+function normalizeTavilyLead(
+  result: TavilySearchResult,
+  config: QueryGroupConfig,
+): CreateIndexedItemInput | null {
+  const title = cleanTitle(result.title);
+  if (!title) return null;
+
+  const leadName = extractLeadName(title, result.content);
+  const snippet = result.content?.slice(0, 400) ?? "";
+
+  return {
+    type: config.type,
+    destination: "radar" as const,
+    source: "research" as const,
+    sourceId: `local-radar:${config.group}:${result.url}`,
+    title: leadName ?? title,
+    subtitle: leadName ? cleanTitle(result.title) : undefined,
+    description: snippet || undefined,
+    url: result.url,
+    reasons: [
+      `Discovered via LocalRadar: ${humanGroupLabel(config.group)}`,
+      ...(leadName ? [`Mentioned in: ${title}`] : []),
+    ],
+    tags: [
+      ...config.tags,
+      ...(leadName ? ["article-lead"] : ["web-result"]),
+    ],
+    rawPayload: {
+      query_group: config.group,
+      query: config.query,
+      source_url: result.url,
+      source_title: result.title,
+      lead_name: leadName ?? null,
+      tavily_score: result.score ?? null,
+      published_date: result.published_date ?? null,
+    },
+  };
+}
+
+function normalizeBraveLead(
+  result: BraveResult,
+  config: QueryGroupConfig,
+): CreateIndexedItemInput | null {
+  const title = cleanTitle(result.title);
+  if (!title) return null;
+
+  const leadName = extractLeadName(title, result.description);
+
+  return {
+    type: config.type,
+    destination: "radar" as const,
+    source: "research" as const,
+    sourceId: `local-radar:${config.group}:${result.url}`,
+    title: leadName ?? title,
+    subtitle: leadName ? cleanTitle(result.title) : undefined,
+    description: result.description?.slice(0, 400) ?? undefined,
+    url: result.url,
+    reasons: [
+      `Discovered via LocalRadar (Brave): ${humanGroupLabel(config.group)}`,
+      ...(leadName ? [`Mentioned in: ${title}`] : []),
+    ],
+    tags: [
+      ...config.tags,
+      "brave-source",
+      ...(leadName ? ["article-lead"] : ["web-result"]),
+    ],
+    rawPayload: {
+      query_group: config.group,
+      query: config.query,
+      source_url: result.url,
+      source_title: result.title,
+      lead_name: leadName ?? null,
+      age: result.age ?? null,
+    },
+  };
+}
+
+// ── Lead extraction ────────────────────────────────────────────────────────────
+
+/**
+ * Heuristic extraction of a specific business/venue name from article text.
+ *
+ * Handles common article title patterns:
+ *   "Review: Smyth Is the Best Restaurant in Chicago Right Now"  → "Smyth"
+ *   "Dinner at The Publican" → "The Publican"
+ *   "Inside Alinea's New Menu" → "Alinea"
+ *   "Best New Restaurants 2025: ..." → null (listicle header — no single lead)
+ *
+ * Returns null if no confident single lead is found. Callers should fall back
+ * to using the full article title as the item title.
+ */
+function extractLeadName(title: string, content?: string): string | null {
+  const t = title.trim();
+
+  // "Review: Name" or "Review — Name"
+  const reviewMatch = t.match(/^review[:\s–—]+(.+?)(?:\s+(?:is|at|in|for|a|an)\s|$)/i);
+  if (reviewMatch) {
+    const name = reviewMatch[1].trim().replace(/['"]/g, "");
+    if (name.length > 0 && name.length < 60 && !name.match(/^\d/)) return name;
+  }
+
+  // "Dinner/Lunch/Breakfast at Name" — captures short proper-noun phrases
+  const atMatch = t.match(/(?:dinner|lunch|brunch|breakfast|drinks|visit|inside)\s+at\s+([A-Z][^,.:]+)/i);
+  if (atMatch) {
+    const name = atMatch[1].trim();
+    if (name.length > 1 && name.length < 50) return name;
+  }
+
+  // "Inside Name's " or "Inside Name —"
+  const insideMatch = t.match(/^inside\s+([A-Z][^'s\s][^,.:–—]+)/i);
+  if (insideMatch) {
+    const name = insideMatch[1].trim();
+    if (name.length > 1 && name.length < 50) return name;
+  }
+
+  // "Name Is Chicago's Best..." — lead word(s) before " Is" verb
+  const isVerbMatch = t.match(/^([A-Z][a-zA-Z\s&'-]{2,40}?)\s+(?:is|has|wins|named|opens|gets)\b/);
+  if (isVerbMatch && !isVerbMatch[1].match(/\b(best|top|new|great|good|why|how|what|this|these|the)\b/i)) {
+    const name = isVerbMatch[1].trim();
+    if (name.split(" ").length <= 4) return name;
+  }
+
+  // Scan content snippet for the pattern "at [ProperNounPhrase]"
+  if (content) {
+    const contentAt = content.match(/\bat\s+([A-Z][a-zA-Z\s&'-]{2,35}?)(?:[,.]|\s+(?:in|on|at|for|a|an|is|are)\b)/);
+    if (contentAt) {
+      const name = contentAt[1].trim();
+      if (name.length > 2 && name.length < 40 && name.split(" ").length <= 5) {
+        return name;
+      }
+    }
+  }
+
+  return null;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function cleanTitle(raw: string): string {
+  return raw
+    .replace(/\s*[\|•·—]\s*.+$/, "") // strip " | Site Name" suffixes
+    .replace(/^\s+|\s+$/, "")
+    .trim();
+}
+
+function humanGroupLabel(group: LocalRadarGroup): string {
+  const map: Record<LocalRadarGroup, string> = {
+    chicago_food: "Chicago food",
+    chicago_culture: "Chicago culture",
+    chicago_music: "Chicago music",
+    chicago_style: "Chicago style",
+    chicago_products: "Chicago products",
+    italy_travel_lifestyle: "Italy / lifestyle",
+  };
+  return map[group] ?? group;
+}

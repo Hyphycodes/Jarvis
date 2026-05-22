@@ -355,6 +355,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
     datetime: item.startsAt ?? undefined,
     imageUrl: item.imageUrl ?? undefined,
     score: item.score ?? scoreIndexedItem(item).total,
+
     whyItFits: item.reasons[0] ?? "Matches your taste profile.",
     whyNow: item.reasons[1] ?? "Available now.",
     actions: { save: true, pass: true, openPlan: false },

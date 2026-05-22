@@ -20,6 +20,7 @@ const ALL_DESTINATIONS = new Set<IndexDestination>([
   "north",
   "circle",
   "plan",
+  "holding",
 ]);
 
 export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
@@ -211,6 +212,7 @@ function normalizeDestination(destination: string): IndexDestination {
   if (destination.startsWith("north")) return "north";
   if (destination.startsWith("circle")) return "circle";
   if (destination.startsWith("plan")) return "plan";
+  if (destination === "holding") return "holding";
   return "radar";
 }
 

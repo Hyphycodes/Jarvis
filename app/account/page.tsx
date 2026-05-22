@@ -149,6 +149,12 @@ export default async function AccountPage() {
           title="History"
           description="Everything Jarvis has shown you — saved, passed, expired, archived."
         />
+        <AccountNavRow
+          href="/account/intelligence"
+          icon={<Sparkle size={20} />}
+          title="Intelligence"
+          description="External sources, scoring, and the curation brain. Refresh Radar here."
+        />
         <SignOutRow />
       </nav>
 

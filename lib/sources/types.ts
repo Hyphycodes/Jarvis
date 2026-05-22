@@ -1,10 +1,17 @@
 import type { CreateIndexedItemInput } from "@/lib/index/types";
 
-/**
- * Clean seam for the next sprint's external API integrations
- * (Google Places, Mapbox, Open-Meteo, Ticketmaster, Tavily, Brave, SerpAPI).
- * No implementations live in this sprint — only the contract.
- */
+export type SourceLane =
+  | "places"
+  | "events"
+  | "weather"
+  | "maps"
+  | "research"
+  | "shopping"
+  | "sports"
+  | "calendar"
+  | "contacts"
+  | "directory";
+
 export type SourceAdapterContext = {
   userId: string;
   homeCity?: string;
@@ -15,7 +22,16 @@ export type SourceAdapterContext = {
 
 export type SourceAdapter = {
   id: string;
-  /** Lanes match the IntelligenceSource union in lib/ai/types.ts. */
-  lane: "places" | "events" | "calendar" | "contacts" | "research" | "directory";
-  fetch(context: SourceAdapterContext): Promise<CreateIndexedItemInput[]>;
+  lane: SourceLane;
+  /** Returns `null` candidates when the adapter is not configured. */
+  fetch(
+    context: SourceAdapterContext,
+  ): Promise<CreateIndexedItemInput[]>;
 };
+
+export type SourceHealthStatus =
+  | "available"
+  | "not_configured"
+  | "error";
+
+export type SourceHealth = Record<string, SourceHealthStatus>;

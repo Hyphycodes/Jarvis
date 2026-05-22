@@ -806,6 +806,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      brain_decision_runs: {
+        Row: {
+          id: string;
+          user_id: string;
+          run_type: string;
+          input_summary: string | null;
+          candidate_ids: string[];
+          selected_ids: string[];
+          rejected_ids: string[];
+          model: string;
+          raw_output: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          run_type: string;
+          input_summary?: string | null;
+          candidate_ids?: string[];
+          selected_ids?: string[];
+          rejected_ids?: string[];
+          model?: string;
+          raw_output?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          run_type?: string;
+          input_summary?: string | null;
+          candidate_ids?: string[];
+          selected_ids?: string[];
+          rejected_ids?: string[];
+          model?: string;
+          raw_output?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       north_signals: {
         Row: {
           id: string;
@@ -890,3 +929,5 @@ export type NorthPillarRow =
   Database["public"]["Tables"]["north_pillars"]["Row"];
 export type NorthSignalRow =
   Database["public"]["Tables"]["north_signals"]["Row"];
+export type BrainDecisionRunRow =
+  Database["public"]["Tables"]["brain_decision_runs"]["Row"];

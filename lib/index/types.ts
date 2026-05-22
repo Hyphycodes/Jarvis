@@ -27,7 +27,8 @@ export type IndexDestination =
   | "radar"
   | "north"
   | "circle"
-  | "plan";
+  | "plan"
+  | "holding";
 
 export type IndexItemSource =
   | "system"
