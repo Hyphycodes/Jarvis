@@ -36,6 +36,18 @@ export type RadarCurationResult = {
   decisionRunId: string | null;
 };
 
+/** Optional snapshot from the Taste Strategist + Curiosity Engine, logged
+ *  into `brain_decision_runs.raw_output` for audit. The fields are loose
+ *  on purpose — the schema lives in the strategist/curiosity modules. */
+export type StrategySnapshot = {
+  graph_summary?: unknown;
+  lanes?: unknown;
+  source_plan?: unknown;
+  skipped_lane_ids?: string[];
+  strategist_fallback_used?: boolean;
+  strategist_reason?: string;
+};
+
 /** Lifecycle states a user has acted on — never overwritten by curation. */
 const PROTECTED_STATUSES = new Set([
   "saved",
@@ -48,6 +60,9 @@ const PROTECTED_STATUSES = new Set([
 export async function runRadarCuration(options: {
   maxShortlist?: number;
   maxSelected?: number;
+  /** Optional snapshot from the Taste Strategist + Curiosity Engine.
+   *  Logged into brain_decision_runs.raw_output for audit. */
+  strategy?: StrategySnapshot;
 } = {}): Promise<RadarCurationResult> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
@@ -150,7 +165,10 @@ export async function runRadarCuration(options: {
     selectedIds: gated.selected.map((s) => s.itemId),
     rejectedIds: gated.rejected.map((r) => r.itemId),
     model: hasAnthropic() ? "claude" : "deterministic",
-    rawOutput: gated,
+    rawOutput: {
+      decision: gated,
+      strategy: options.strategy ?? null,
+    } as unknown as BrainDecision,
   });
 
   return {

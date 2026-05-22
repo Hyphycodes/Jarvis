@@ -90,9 +90,15 @@ are candidates for Google Places enrichment downstream.
 POST /api/radar/refresh
   1. Check cooldown (30 min). Return {skipped:true} if blocked.
   2. expireOldCandidates() — time-expired events → status="expired"
-  3. gatherRadarCandidates() — all configured sources, capped at 60 total
-  4. ingestCandidates() per lane — PROTECTED_STATUSES always skipped
-  5. runRadarCuration():
+  3. buildBrainContext() — founder, memory, signals, weather, inventory
+  4. buildInterestGraph() — seed + memory + behavior nudges  ← Sprint 2.2
+  5. runTasteStrategist() — exploration lanes (Claude)        ← Sprint 2.2
+  6. buildCuriosityPlan() — lanes → typed source plan         ← Sprint 2.2
+  7. gather:
+     - Lane-driven: gatherFromCuriosityPlan(plan)
+     - Static fallback: gatherRadarCandidates() (no lanes returned)
+  8. ingestCandidates() per lane — PROTECTED_STATUSES always skipped
+  9. runRadarCuration():
      a. Build pool (radar + holding, status discovered/shown)
      b. Exclude recently-passed items (from context.recentActions)
      c. shortlistByScore() — deterministic top-N by score
@@ -102,8 +108,10 @@ POST /api/radar/refresh
      g. applyDecision() — write status/destination to DB
      h. enforceActiveRadarCap() — rotate excess shown→holding or discovered
      i. pruneStaleHolding() — archive aged Holding items
-     j. logDecisionRun() → brain_decision_runs
+     j. logDecisionRun() → brain_decision_runs (decision + strategy snapshot)
 ```
+
+See [`docs/BRAIN.md`](./BRAIN.md) for the Interest Graph + Taste Strategist + Curiosity Engine details.
 
 ## Memory of Rejections
 

@@ -11,15 +11,29 @@ import {
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import { hasBrave, webSearch } from "@/lib/sources/brave";
 import {
+  searchProducts as searchSerpProducts,
+  hasSerpapi,
+} from "@/lib/sources/serpapi";
+import {
   normalizeGooglePlace,
   normalizeTavilyResult,
   normalizeTicketmasterEvent,
   normalizeBraveResult,
+  normalizeShoppingResult,
 } from "@/lib/sources/normalizers";
-import { gatherLocalRadarCandidates } from "@/lib/sources/localRadar";
-import type { CreateIndexedItemInput } from "@/lib/index/types";
+import {
+  gatherLocalRadarCandidates,
+  gatherLocalRadarLanes,
+  type LocalRadarLaneQuery,
+} from "@/lib/sources/localRadar";
+import type { CreateIndexedItemInput, IndexItemType } from "@/lib/index/types";
 import type { SourceHealth } from "@/lib/sources/types";
 import { MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH } from "@/lib/brain/constants";
+import type {
+  CuriosityPlan,
+  SourceName,
+  SourcePlanEntry,
+} from "@/lib/brain/curiosity";
 
 export type RadarLaneResult = {
   source: string;
@@ -34,17 +48,195 @@ export type GatherContext = {
   state?: string;
 };
 
+// ── Lane-driven gather (Sprint 2.2 — primary path) ──────────────────────────
+
 /**
- * Pull controlled batches from configured sources. Each lane is bounded;
- * we never run SerpAPI speculatively (shopping only on explicit request).
- * Brave is only used as a fallback when Tavily is not configured.
+ * Execute the source plan produced by the Curiosity Engine.
  *
- * Total candidates are capped at MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH (60)
- * across all lanes. If the cap is hit mid-run, remaining lanes are skipped.
+ * This is the PRIMARY refresh path when the Taste Strategist is active.
+ * Falls back to `gatherRadarCandidates()` when the strategist returned no
+ * usable lanes (e.g. no Anthropic key + empty graph).
  *
  * NOTE: Radar refresh is intentionally pull-based / manual. Do NOT call
- * gatherRadarCandidates() from a page render or server component. It belongs
- * exclusively in /api/radar/refresh (POST).
+ * any function in this module from a page render or server component.
+ */
+export async function gatherFromCuriosityPlan(
+  ctx: GatherContext,
+  plan: CuriosityPlan,
+): Promise<RadarLaneResult[]> {
+  const results: RadarLaneResult[] = [];
+  let total = 0;
+
+  // Group plan entries by source so each adapter is hit in batches.
+  const bySource = groupBySource(plan.sourcePlan);
+
+  function addLane(source: string, candidates: CreateIndexedItemInput[]) {
+    if (candidates.length === 0) return;
+    const remaining = MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH - total;
+    if (remaining <= 0) return;
+    const trimmed = candidates.slice(0, remaining);
+    total += trimmed.length;
+    results.push({ source, candidates: trimmed });
+  }
+
+  // ── localRadar (Tavily/Brave through LocalRadar's normalizer) ───────────
+  const localEntries = bySource.localRadar ?? [];
+  if (localEntries.length > 0 && (hasTavily() || hasBrave())) {
+    const laneQueries: LocalRadarLaneQuery[] = [];
+    for (const entry of localEntries) {
+      const lane = plan.lanes.find((l) => l.id === entry.lane_id);
+      const type = inferType(lane?.interest_area);
+      const category = inferCategory(lane?.interest_area);
+      const tags = buildLaneTags(lane, entry);
+      for (const q of entry.queries) {
+        laneQueries.push({
+          laneId: entry.lane_id,
+          query: q,
+          type,
+          category,
+          tags,
+          preferredDomains: entry.preferred_domains,
+          excludedDomains: entry.excluded_domains,
+          maxResults: entry.max_results,
+        });
+      }
+    }
+    try {
+      const laneResults = await gatherLocalRadarLanes(laneQueries);
+      for (const lr of laneResults) {
+        addLane(`local-radar:${lr.laneId}`, lr.candidates);
+      }
+    } catch (err) {
+      console.error("[gather.plan] localRadar", err);
+    }
+  }
+
+  // ── googlePlaces ────────────────────────────────────────────────────────
+  for (const entry of bySource.googlePlaces ?? []) {
+    if (!hasGooglePlaces()) break;
+    if (total >= MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH) break;
+    const lane = plan.lanes.find((l) => l.id === entry.lane_id);
+    const category = inferCategory(lane?.interest_area);
+    const places: CreateIndexedItemInput[] = [];
+    for (const query of entry.queries) {
+      try {
+        const found = await searchPlaces({
+          query: `${query} near ${ctx.city ?? "Chicago"}`,
+          lat: ctx.homeLat,
+          lng: ctx.homeLng,
+          radiusMeters: 24_000,
+          maxResults: entry.max_results,
+        });
+        for (const p of found) {
+          const norm = normalizeGooglePlace(p, { category });
+          if (norm) places.push(norm);
+        }
+      } catch (err) {
+        console.error("[gather.plan] googlePlaces", query, err);
+      }
+    }
+    addLane(`google-places:${entry.lane_id}`, places);
+  }
+
+  // ── ticketmaster ────────────────────────────────────────────────────────
+  for (const entry of bySource.ticketmaster ?? []) {
+    if (!hasTicketmaster()) break;
+    if (total >= MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH) break;
+    const now = new Date();
+    const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const events: CreateIndexedItemInput[] = [];
+    try {
+      const found = await searchEvents({
+        lat: ctx.homeLat,
+        lng: ctx.homeLng,
+        radiusMiles: 25,
+        startDateTime: tmDate(now),
+        endDateTime: tmDate(week),
+        size: entry.max_results,
+        keyword: entry.queries[0],
+      });
+      for (const e of found) {
+        const norm = normalizeTicketmasterEvent(e);
+        if (norm) events.push(norm);
+      }
+    } catch (err) {
+      console.error("[gather.plan] ticketmaster", err);
+    }
+    addLane(`ticketmaster:${entry.lane_id}`, events);
+  }
+
+  // ── tavily / brave (direct, not via localRadar) ────────────────────────
+  // Only used when the strategist explicitly chose "tavily" or "brave" as
+  // the source (most lanes go through localRadar instead).
+  for (const entry of bySource.tavily ?? []) {
+    if (!hasTavily()) break;
+    if (total >= MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH) break;
+    const lane = plan.lanes.find((l) => l.id === entry.lane_id);
+    const category = inferCategory(lane?.interest_area);
+    const items: CreateIndexedItemInput[] = [];
+    for (const q of entry.queries) {
+      try {
+        const data = await searchWeb({ query: q, maxResults: entry.max_results, days: 30 });
+        for (const r of data.results) {
+          const norm = normalizeTavilyResult(r, { category });
+          if (norm) items.push(norm);
+        }
+      } catch (err) {
+        console.error("[gather.plan] tavily", q, err);
+      }
+    }
+    addLane(`tavily:${entry.lane_id}`, items);
+  }
+  for (const entry of bySource.brave ?? []) {
+    if (!hasBrave() || hasTavily()) break; // never use Brave if Tavily exists
+    if (total >= MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH) break;
+    const lane = plan.lanes.find((l) => l.id === entry.lane_id);
+    const category = inferCategory(lane?.interest_area);
+    const items: CreateIndexedItemInput[] = [];
+    for (const q of entry.queries) {
+      try {
+        const data = await webSearch({ query: q, count: entry.max_results, freshness: "pm" });
+        for (const r of data) {
+          const norm = normalizeBraveResult(r, { category });
+          if (norm) items.push(norm);
+        }
+      } catch (err) {
+        console.error("[gather.plan] brave", q, err);
+      }
+    }
+    addLane(`brave:${entry.lane_id}`, items);
+  }
+
+  // ── serpapi (gated: explicit product lanes only) ───────────────────────
+  for (const entry of bySource.serpapi ?? []) {
+    if (!hasSerpapi()) break;
+    if (total >= MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH) break;
+    const items: CreateIndexedItemInput[] = [];
+    for (const q of entry.queries) {
+      try {
+        const data = await searchSerpProducts({ query: q, maxResults: entry.max_results });
+        for (const r of data) {
+          const norm = normalizeShoppingResult(r);
+          if (norm) items.push(norm);
+        }
+      } catch (err) {
+        console.error("[gather.plan] serpapi", q, err);
+      }
+    }
+    addLane(`serpapi:${entry.lane_id}`, items);
+  }
+
+  return results;
+}
+
+// ── Static / fallback gather (kept for no-Anthropic mode) ───────────────────
+
+/**
+ * Static-default gather. Used as the fallback when the Taste Strategist
+ * produces no lanes (e.g. no Anthropic key AND empty Interest Graph).
+ *
+ * Identical behavior to Sprint 2.1 — bounded queries from each available
+ * source.
  */
 export async function gatherRadarCandidates(
   ctx: GatherContext,
@@ -64,7 +256,6 @@ export async function gatherRadarCandidates(
     results.push({ source, candidates: trimmed });
   }
 
-  // ── Google Places (structured place data) ──────────────────────────────────
   if (!capReached() && hasGooglePlaces()) {
     const queries: { query: string; category: string }[] = [
       { query: "atmospheric dining", category: "dining" },
@@ -89,13 +280,12 @@ export async function gatherRadarCandidates(
           if (norm) places.push(norm);
         }
       } catch (err) {
-        console.error("[gather] google-places", q.query, err);
+        console.error("[gather.static] google-places", q.query, err);
       }
     }
     addLane("google-places", places);
   }
 
-  // ── Ticketmaster (next 7 days, ~25 mile radius) ────────────────────────────
   if (!capReached() && hasTicketmaster()) {
     const now = new Date();
     const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -114,14 +304,11 @@ export async function gatherRadarCandidates(
         if (norm) events.push(norm);
       }
     } catch (err) {
-      console.error("[gather] ticketmaster", err);
+      console.error("[gather.static] ticketmaster", err);
     }
     addLane("ticketmaster", events);
   }
 
-  // ── Tavily (cultural research, small batches) ──────────────────────────────
-  // If Tavily is not configured, Brave serves as fallback for this lane only
-  // (LocalRadar runs its own Tavily-first/Brave-fallback logic separately).
   if (!capReached()) {
     if (hasTavily()) {
       const queries: { query: string; category: string }[] = [
@@ -148,12 +335,11 @@ export async function gatherRadarCandidates(
             if (norm) research.push(norm);
           }
         } catch (err) {
-          console.error("[gather] tavily", q.query, err);
+          console.error("[gather.static] tavily", q.query, err);
         }
       }
       addLane("tavily", research);
     } else if (hasBrave()) {
-      // Brave fallback: only runs when Tavily is missing (never both)
       const queries = [
         { query: `cultural events ${ctx.city ?? "Chicago"} this week`, category: "culture" },
         { query: `new restaurant openings ${ctx.city ?? "Chicago"} 2025`, category: "dining" },
@@ -168,15 +354,13 @@ export async function gatherRadarCandidates(
             if (norm) braveResults.push(norm);
           }
         } catch (err) {
-          console.error("[gather] brave-fallback", q.query, err);
+          console.error("[gather.static] brave-fallback", q.query, err);
         }
       }
       addLane("brave", braveResults);
     }
   }
 
-  // ── Local Cultural Radar (web research, 6 focused groups) ─────────────────
-  // Runs its own Tavily-first / Brave-fallback internally.
   if (!capReached()) {
     try {
       const localLanes = await gatherLocalRadarCandidates();
@@ -185,11 +369,24 @@ export async function gatherRadarCandidates(
         addLane(`local-radar:${lane.group}`, lane.candidates);
       }
     } catch (err) {
-      console.error("[gather] local-radar", err);
+      console.error("[gather.static] local-radar", err);
     }
   }
 
   return results;
+}
+
+// ── Source availability snapshot ────────────────────────────────────────────
+
+export function describeAvailableSources(): Partial<Record<SourceName, boolean>> {
+  return {
+    localRadar: hasTavily() || hasBrave(),
+    googlePlaces: hasGooglePlaces(),
+    ticketmaster: hasTicketmaster(),
+    tavily: hasTavily(),
+    brave: hasBrave(),
+    serpapi: hasSerpapi(),
+  };
 }
 
 export function describeSourceHealth(): SourceHealth {
@@ -198,10 +395,69 @@ export function describeSourceHealth(): SourceHealth {
     ticketmaster: hasTicketmaster() ? "available" : "not_configured",
     tavily: hasTavily() ? "available" : "not_configured",
     brave: hasBrave() ? "available" : "not_configured",
+    serpapi: hasSerpapi() ? "available" : "not_configured",
   };
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function groupBySource(
+  entries: SourcePlanEntry[],
+): Partial<Record<SourceName, SourcePlanEntry[]>> {
+  const out: Partial<Record<SourceName, SourcePlanEntry[]>> = {};
+  for (const e of entries) {
+    if (e.source === "none") continue;
+    (out[e.source] ??= []).push(e);
+  }
+  return out;
+}
+
+function buildLaneTags(
+  lane: { interest_area?: string; subinterests?: string[]; mode?: string } | undefined,
+  entry: SourcePlanEntry,
+): string[] {
+  const tags = ["local-radar", "strategist-lane", entry.lane_id];
+  if (lane?.interest_area) tags.push(lane.interest_area);
+  if (lane?.mode) tags.push(`mode:${lane.mode}`);
+  for (const s of lane?.subinterests ?? []) tags.push(s);
+  return tags.slice(0, 12);
+}
+
+function inferType(interestArea?: string): IndexItemType {
+  if (!interestArea) return "recommendation";
+  if (interestArea.startsWith("dining")) return "restaurant";
+  if (interestArea === "culture_nightlife") return "event";
+  if (interestArea === "style_menswear" || interestArea === "watches") return "product";
+  if (interestArea === "real_estate_wealth") return "real_estate";
+  if (interestArea === "land_homestead") return "real_estate";
+  if (interestArea === "creative_craft") return "creative";
+  if (interestArea === "travel_italy") return "travel";
+  if (interestArea === "health_discipline") return "health";
+  if (interestArea === "faith_meaning") return "recommendation";
+  if (interestArea === "tech_ai_tools") return "recommendation";
+  if (interestArea === "outdoors_nature") return "place";
+  return "recommendation";
+}
+
+function inferCategory(interestArea?: string): string {
+  if (!interestArea) return "culture";
+  const map: Record<string, string> = {
+    dining: "dining",
+    culture_nightlife: "culture",
+    style_menswear: "style",
+    watches: "style",
+    real_estate_wealth: "opportunity",
+    land_homestead: "opportunity",
+    creative_craft: "culture",
+    travel_italy: "travel",
+    health_discipline: "places",
+    faith_meaning: "culture",
+    tech_ai_tools: "opportunity",
+    outdoors_nature: "places",
+  };
+  return map[interestArea] ?? "culture";
+}
+
 function tmDate(date: Date): string {
-  // Ticketmaster ISO format excludes ms.
   return date.toISOString().split(".")[0] + "Z";
 }

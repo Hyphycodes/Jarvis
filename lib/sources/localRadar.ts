@@ -19,6 +19,179 @@ import type { BraveResult } from "@/lib/sources/brave";
 import type { CreateIndexedItemInput, IndexItemType } from "@/lib/index/types";
 import { LOCAL_RADAR_MAX_RESULTS_PER_QUERY } from "@/lib/brain/constants";
 
+// ── Dynamic lane support (Sprint 2.2) ────────────────────────────────────────
+
+/**
+ * A single lane-driven search request from the Curiosity Engine.
+ * Independent of the 6 static query groups — the strategist decides what to ask.
+ */
+export type LocalRadarLaneQuery = {
+  laneId: string;
+  query: string;
+  type: IndexItemType;
+  category: string;
+  tags: string[];
+  preferredDomains?: string[];
+  excludedDomains?: string[];
+  maxResults?: number;
+};
+
+export type LocalRadarLaneResult = {
+  laneId: string;
+  query: string;
+  candidates: CreateIndexedItemInput[];
+  source: "tavily" | "brave" | "none";
+};
+
+/**
+ * Lane-driven LocalRadar gather. Used by the Curiosity Engine in Radar
+ * refresh. Honors the same per-query result cap as static groups and
+ * Tavily-first / Brave-fallback selection. Never throws; per-query failures
+ * are logged and the rest continue.
+ */
+export async function gatherLocalRadarLanes(
+  laneQueries: LocalRadarLaneQuery[],
+): Promise<LocalRadarLaneResult[]> {
+  if (laneQueries.length === 0) return [];
+  const canTavily = hasTavily();
+  const canBrave = hasBrave();
+  if (!canTavily && !canBrave) return [];
+
+  const out: LocalRadarLaneResult[] = [];
+  for (const lq of laneQueries) {
+    const max = Math.min(
+      lq.maxResults ?? LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
+      LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
+    );
+    try {
+      let candidates: CreateIndexedItemInput[] = [];
+      let used: "tavily" | "brave" | "none" = "none";
+
+      if (canTavily) {
+        const data = await searchWeb({
+          query: lq.query,
+          maxResults: max,
+          includeDomains:
+            lq.preferredDomains && lq.preferredDomains.length > 0
+              ? lq.preferredDomains
+              : undefined,
+          excludeDomains:
+            lq.excludedDomains && lq.excludedDomains.length > 0
+              ? lq.excludedDomains
+              : undefined,
+          days: 30,
+        });
+        candidates = data.results
+          .map((r) => normalizeLaneTavily(r, lq))
+          .filter((c): c is CreateIndexedItemInput => c !== null);
+        used = "tavily";
+      } else if (canBrave) {
+        const data = await webSearch({
+          query: lq.query,
+          count: max,
+          freshness: "pm",
+        });
+        candidates = data
+          .map((r) => normalizeLaneBrave(r, lq))
+          .filter((c): c is CreateIndexedItemInput => c !== null);
+        used = "brave";
+      }
+
+      out.push({
+        laneId: lq.laneId,
+        query: lq.query,
+        candidates,
+        source: used,
+      });
+    } catch (err) {
+      console.error("[local-radar.lane]", lq.laneId, lq.query, err);
+      out.push({
+        laneId: lq.laneId,
+        query: lq.query,
+        candidates: [],
+        source: "none",
+      });
+    }
+  }
+  return out;
+}
+
+function normalizeLaneTavily(
+  result: TavilySearchResult,
+  lq: LocalRadarLaneQuery,
+): CreateIndexedItemInput | null {
+  const title = cleanTitle(result.title);
+  if (!title) return null;
+  const leadName = extractLeadName(title, result.content);
+  return {
+    type: lq.type,
+    destination: "radar" as const,
+    source: "research" as const,
+    sourceId: `lane:${lq.laneId}:${result.url}`,
+    title: leadName ?? title,
+    subtitle: leadName ? title : undefined,
+    description: result.content?.slice(0, 400) ?? undefined,
+    url: result.url,
+    reasons: [
+      `Strategist lane: ${lq.laneId}`,
+      `Query: "${lq.query}"`,
+      ...(leadName ? [`Lead extracted: ${leadName}`] : []),
+    ],
+    tags: [
+      ...lq.tags,
+      "strategist-lane",
+      ...(leadName ? ["article-lead"] : ["web-result"]),
+    ],
+    rawPayload: {
+      lane_id: lq.laneId,
+      query: lq.query,
+      source_url: result.url,
+      source_title: result.title,
+      lead_name: leadName ?? null,
+      tavily_score: result.score ?? null,
+      published_date: result.published_date ?? null,
+    },
+  };
+}
+
+function normalizeLaneBrave(
+  result: BraveResult,
+  lq: LocalRadarLaneQuery,
+): CreateIndexedItemInput | null {
+  const title = cleanTitle(result.title);
+  if (!title) return null;
+  const leadName = extractLeadName(title, result.description);
+  return {
+    type: lq.type,
+    destination: "radar" as const,
+    source: "research" as const,
+    sourceId: `lane:${lq.laneId}:${result.url}`,
+    title: leadName ?? title,
+    subtitle: leadName ? title : undefined,
+    description: result.description?.slice(0, 400) ?? undefined,
+    url: result.url,
+    reasons: [
+      `Strategist lane: ${lq.laneId}`,
+      `Query: "${lq.query}"`,
+      ...(leadName ? [`Lead extracted: ${leadName}`] : []),
+    ],
+    tags: [
+      ...lq.tags,
+      "strategist-lane",
+      "brave-source",
+      ...(leadName ? ["article-lead"] : ["web-result"]),
+    ],
+    rawPayload: {
+      lane_id: lq.laneId,
+      query: lq.query,
+      source_url: result.url,
+      source_title: result.title,
+      lead_name: leadName ?? null,
+      age: result.age ?? null,
+    },
+  };
+}
+
 // ── Query group definitions ──────────────────────────────────────────────────
 
 export type LocalRadarGroup =

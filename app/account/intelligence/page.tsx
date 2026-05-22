@@ -172,6 +172,11 @@ export default async function IntelligencePage() {
         </section>
 
         {/* Recent runs */}
+        {/* Last exploration lanes (Sprint 2.2) */}
+        {lastRun ? (
+          <LastExplorationPanel run={lastRun} />
+        ) : null}
+
         <section className="mt-10">
           <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
             Recent runs
@@ -182,26 +187,30 @@ export default async function IntelligencePage() {
             </p>
           ) : (
             <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
-              {recentRuns.map((run) => (
-                <li key={run.id} className="py-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-[12px] uppercase tracking-editorial text-warm-ivory/65">
-                      {run.run_type}
-                    </span>
-                    <span className="text-[11px] text-warm-ivory/45">
-                      {new Date(run.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[12px] leading-[1.5] text-warm-ivory/55">
-                    {run.input_summary ?? ""}
-                  </p>
-                  <div className="mt-1 text-[11px] text-warm-ivory/55">
-                    {run.candidate_ids.length} shortlisted ·{" "}
-                    {run.selected_ids.length} selected ·{" "}
-                    {run.rejected_ids.length} rejected · {run.model}
-                  </div>
-                </li>
-              ))}
+              {recentRuns.map((run) => {
+                const lanes = readLanesFromRun(run);
+                return (
+                  <li key={run.id} className="py-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-[12px] uppercase tracking-editorial text-warm-ivory/65">
+                        {run.run_type}
+                      </span>
+                      <span className="text-[11px] text-warm-ivory/45">
+                        {new Date(run.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-[1.5] text-warm-ivory/55">
+                      {run.input_summary ?? ""}
+                    </p>
+                    <div className="mt-1 text-[11px] text-warm-ivory/55">
+                      {run.candidate_ids.length} shortlisted ·{" "}
+                      {run.selected_ids.length} selected ·{" "}
+                      {run.rejected_ids.length} rejected · {run.model}
+                      {lanes.length > 0 ? ` · ${lanes.length} lanes` : ""}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -251,6 +260,93 @@ async function safeRecentRuns(): Promise<BrainDecisionRunRow[]> {
     console.error("[surface-loader] account.intelligence.runs", error);
     return [];
   }
+}
+
+type LaneSummary = {
+  id: string;
+  title: string;
+  mode: string;
+  why_now: string;
+  suggested_destination: string;
+};
+
+function readLanesFromRun(run: BrainDecisionRunRow): LaneSummary[] {
+  const raw = run.raw_output as unknown;
+  if (!raw || typeof raw !== "object") return [];
+  const strategy = (raw as Record<string, unknown>).strategy;
+  if (!strategy || typeof strategy !== "object") return [];
+  const lanes = (strategy as Record<string, unknown>).lanes;
+  if (!Array.isArray(lanes)) return [];
+  return lanes
+    .map((l) => {
+      if (!l || typeof l !== "object") return null;
+      const o = l as Record<string, unknown>;
+      return {
+        id: typeof o.id === "string" ? o.id : "?",
+        title: typeof o.title === "string" ? o.title : "Lane",
+        mode: typeof o.mode === "string" ? o.mode : "aligned",
+        why_now: typeof o.why_now === "string" ? o.why_now : "",
+        suggested_destination:
+          typeof o.suggested_destination === "string"
+            ? o.suggested_destination
+            : "radar",
+      };
+    })
+    .filter((x): x is LaneSummary => x !== null);
+}
+
+function LastExplorationPanel({ run }: { run: BrainDecisionRunRow }) {
+  const lanes = readLanesFromRun(run);
+  if (lanes.length === 0) {
+    return (
+      <section className="mt-10">
+        <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
+          Last exploration
+        </h2>
+        <p className="mt-2 text-[13px] text-warm-ivory/45">
+          The Strategist returned no lanes for the last run. Quiet is valid.
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section className="mt-10">
+      <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
+        Last exploration
+      </h2>
+      <p className="mt-2 text-[12px] text-warm-ivory/45">
+        What Jarvis chose to be curious about on the last refresh.
+      </p>
+      <ul className="mt-3 flex flex-col divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+        {lanes.map((lane) => (
+          <li key={lane.id} className="px-5 py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[13px] text-warm-ivory/85">
+                {lane.title}
+              </span>
+              <span
+                className={
+                  "text-[10px] uppercase tracking-editorial " +
+                  (lane.mode === "aligned"
+                    ? "text-[#7BC4A0]"
+                    : lane.mode === "adjacent"
+                      ? "text-muted-gold"
+                      : "text-[#9AB6E2]")
+                }
+              >
+                {lane.mode} → {lane.suggested_destination}
+              </span>
+            </div>
+            {lane.why_now ? (
+              <p className="mt-1 text-[11px] leading-[1.5] text-warm-ivory/55">
+                {lane.why_now}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 async function safeRadarStats(): Promise<{
