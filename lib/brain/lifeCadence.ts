@@ -26,6 +26,16 @@ export type LifeCadenceSignal = {
   shouldSuggestNow: boolean;
 };
 
+export type NorthLifeCadenceLane = {
+  id: string;
+  title: string;
+  status: "active" | "warm" | "cooling" | "due" | "protected";
+  cadenceTarget: string;
+  lastTouched?: string;
+  nextUsefulRep: string;
+  whyItMatters: string;
+};
+
 const CADENCES: Array<{
   key: LifeCadenceKey;
   label: string;
@@ -56,7 +66,14 @@ export function evaluateLifeCadence(
 
   return CADENCES.map((cadence) => {
     const matched = recent.some((entry) => cadence.match.test(entry));
-    const daysSince = matched ? cadence.cooldownDays : cadence.desiredFrequencyDays + 2;
+    const signalTouch = context.recentSignals.find((signal) =>
+      signal.signal_type.includes(cadence.key),
+    );
+    const daysSince = signalTouch
+      ? daysBetween(signalTouch.created_at, context.now)
+      : matched
+        ? cadence.cooldownDays
+        : cadence.desiredFrequencyDays + 2;
     const overdueScore = Math.max(
       0,
       Math.min(1, daysSince / cadence.desiredFrequencyDays),
@@ -73,8 +90,69 @@ export function evaluateLifeCadence(
       desiredFrequencyDays: cadence.desiredFrequencyDays,
       cooldownDays: cadence.cooldownDays,
       overdueScore,
-      lastTouchedAt: matched ? context.now : undefined,
+      lastTouchedAt: signalTouch?.created_at ?? (matched ? context.now : undefined),
       shouldSuggestNow: overdueScore >= 0.72 && !coolingDown,
     };
   }).sort((a, b) => b.overdueScore - a.overdueScore);
+}
+
+export function buildNorthLifeCadence(
+  context: BrainContextPacket,
+): NorthLifeCadenceLane[] {
+  const signals = evaluateLifeCadence(context);
+  const byKey = new Map(signals.map((signal) => [signal.key, signal]));
+  return [
+    lane("body_performance", "Body / Performance", "basketball", "Every 1-2 weeks", "Play basketball outside or get a recovery block in.", "Keeps the body sharp enough to carry the rest of the build.", byKey),
+    lane("skill_competence", "Skill / Competence", "gun_range", "Weekly to monthly", "Gun range session, Spanish song study, or one build-skill rep.", "Competence compounds when the reps stay warm.", byKey),
+    lane("creative_hyphy", "Creative / Hyphy", "dj_crates", "Weekly", "DJ crate cleanup or one camera framing practice.", "Keeps the Hyphy world visually and musically alive.", byKey),
+    lane("ownership_land_wealth", "Ownership / Land / Wealth", "land_review", "Weekly", "Review one land listing or real estate comp.", "Ownership stays real when the research thread stays active.", byKey),
+    lane("taste_culture", "Taste / Culture", "social_room", "1-2x per month", "Find one tasteful room, dinner, watch, or menswear reference.", "Taste is a filter, not decoration.", byKey),
+    lane("relationships_social", "Relationships / Social", "social_room", "Every 2-3 weeks", "Text or invite one person worth keeping close.", "The real network is built through intentional rooms.", byKey),
+    {
+      id: "peace_discipline",
+      title: "Peace / Discipline",
+      status: "protected",
+      cadenceTarget: "Daily posture",
+      nextUsefulRep: "Keep the board clean and protect focus.",
+      whyItMatters: "Not every empty space needs to be filled.",
+    },
+  ];
+}
+
+function lane(
+  id: string,
+  title: string,
+  signalKey: LifeCadenceKey,
+  cadenceTarget: string,
+  nextUsefulRep: string,
+  whyItMatters: string,
+  byKey: Map<LifeCadenceKey, LifeCadenceSignal>,
+): NorthLifeCadenceLane {
+  const signal = byKey.get(signalKey);
+  return {
+    id,
+    title,
+    status: statusForSignal(signal),
+    cadenceTarget,
+    lastTouched: signal?.lastTouchedAt,
+    nextUsefulRep,
+    whyItMatters,
+  };
+}
+
+function statusForSignal(
+  signal: LifeCadenceSignal | undefined,
+): NorthLifeCadenceLane["status"] {
+  if (!signal) return "warm";
+  if (signal.shouldSuggestNow || signal.overdueScore >= 0.95) return "due";
+  if (signal.lastTouchedAt && signal.overdueScore <= 0.35) return "active";
+  if (signal.overdueScore >= 0.65) return "cooling";
+  return "warm";
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  const from = new Date(fromIso).getTime();
+  const to = new Date(toIso).getTime();
+  if (Number.isNaN(from) || Number.isNaN(to)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, (to - from) / (24 * 60 * 60 * 1000));
 }

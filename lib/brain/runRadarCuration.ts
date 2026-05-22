@@ -161,7 +161,7 @@ export async function runRadarCuration(options: {
   );
 
   // Post-critique gates (code-enforced, not just prompt hints)
-  const qualityGated = enforceBriefingQuality(briefed, shortlist);
+  const qualityGated = enforceBriefingQuality(briefed, shortlist, context);
   const gated = enforceGates(qualityGated, shortlist, now);
   if (gated.fallbackUsed) {
     console.warn("[brain.curation] fallback brain applied", {
@@ -392,6 +392,7 @@ async function attachBriefings(
 function enforceBriefingQuality(
   decision: BrainDecision,
   shortlist: ScoredItem[],
+  context: Awaited<ReturnType<typeof buildBrainContext>>,
 ): BrainDecision {
   const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
   const selected: BrainDecision["selected"] = [];
@@ -411,7 +412,7 @@ function enforceBriefingQuality(
     const majorFlags = briefing.quality_flags.filter(isMajorQualityFlag);
     const scored = scoreByItemId.get(sel.itemId);
     const frontRoom = scored
-      ? evaluateActiveRadarItem(scored.item, briefing)
+      ? evaluateActiveRadarItem(scored.item, briefing, context)
       : null;
     const terminal =
       briefing.suggested_destination === "archived" ||
@@ -465,6 +466,7 @@ function enforceBriefingQuality(
           confidence: nextConfidence,
           reason: briefing.why_it_matters,
           displayAngle: briefing.jarvis_take,
+          radarDecision: frontRoom?.council,
           tags: [
             ...(briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags),
             ...(frontRoom?.flags ?? []),
@@ -488,6 +490,7 @@ function enforceBriefingQuality(
       confidence: nextConfidence,
       reason: briefing.why_it_matters,
       displayAngle: briefing.jarvis_take,
+      radarDecision: frontRoom?.council,
       tags: [
         ...(briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags),
         ...(frontRoom?.purposeLabel ? [frontRoom.purposeLabel] : []),
@@ -528,7 +531,14 @@ async function applyDecision(
       sel.displayAngle,
     ]).filter(Boolean);
     const tags = uniq([...existing.tags, ...sel.tags]).filter(Boolean);
-    const payload = sel.briefing
+    const payload = sel.radarDecision
+      ? mergeObjectPayload(
+          sel.briefing
+            ? mergeBriefingIntoPayload(existing.rawPayload, sel.briefing, sel.briefingMeta)
+            : existing.rawPayload,
+          { radar_decision: sel.radarDecision },
+        )
+      : sel.briefing
       ? mergeBriefingIntoPayload(existing.rawPayload, sel.briefing, sel.briefingMeta)
       : existing.rawPayload;
 
@@ -712,6 +722,18 @@ async function logDecisionRun(input: {
 
 function uniq<T>(values: T[]): T[] {
   return Array.from(new Set(values));
+}
+
+function mergeObjectPayload(
+  payload: IndexedItem["rawPayload"],
+  patch: Record<string, unknown>,
+): IndexedItem["rawPayload"] {
+  const base = isRecord(payload) ? payload : {};
+  return { ...base, ...patch } as IndexedItem["rawPayload"];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function listRadarPool(): Promise<IndexedItem[]> {

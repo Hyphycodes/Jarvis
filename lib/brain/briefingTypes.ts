@@ -21,6 +21,7 @@ export const briefingDestinationSchema = z.enum([
 export const briefingQualityFlagSchema = z.enum([
   "seo_junk",
   "instagram_noise",
+  "facebook_noise",
   "social_noise",
   "raw_comment",
   "too_literal",
@@ -39,6 +40,9 @@ export const briefingQualityFlagSchema = z.enum([
   "no_clear_move",
   "source_lead_only",
   "no_current_value",
+  "fake_luxury",
+  "corny",
+  "hype_noise",
 ]);
 
 export const itemBriefingSchema = z.object({
@@ -117,6 +121,7 @@ export function isMajorQualityFlag(flag: string): boolean {
   return [
     "seo_junk",
     "instagram_noise",
+    "facebook_noise",
     "social_noise",
     "raw_comment",
     "too_literal",
@@ -132,6 +137,9 @@ export function isMajorQualityFlag(flag: string): boolean {
     "no_clear_move",
     "source_lead_only",
     "no_current_value",
+    "fake_luxury",
+    "corny",
+    "hype_noise",
   ].includes(flag);
 }
 

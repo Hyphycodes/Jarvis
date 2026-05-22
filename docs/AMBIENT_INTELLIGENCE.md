@@ -42,13 +42,19 @@ after cadence and budget are monitored in production.
 
 ## Quality Rules
 
-Active Radar requires a clean action title, useful evidence or strong synthetic
-context, no major quality flags, and enough confidence to be decision-ready.
-Holding is for good signal with weak timing, thin evidence, or higher effort.
-Archive/discovered is for noisy, literal, expired, duplicated, low-trust, or
-unclear candidates.
+Active Radar requires Decision Council admission. That means a clean action
+title, purpose label, useful evidence or strong synthetic context, no major
+quality flags, and enough confidence to be decision-ready. Holding is for good
+signal with weak timing, thin evidence, or higher effort. Archive/discovered is
+for noisy, literal, expired, duplicated, low-trust, fake-luxury, corny,
+hype-noise, or unclear candidates.
 
 `evaluateActiveRadarItem()` is the hard front-room gate. It blocks weak evidence,
 social noise, raw comments, literal query echoes, closed/expired events,
 misclassification, unclear titles, source-lead-only rows, and no-current-value
 briefs from Active Radar.
+
+`lib/brain/tasteConstitution.ts` and `lib/brain/decisionCouncil.ts` are the
+admission layer. The constitution encodes what belongs in the owner’s world; the
+council scores Scout, Operator, Taste, Growth, and Critic roles before writing
+or rendering the item.

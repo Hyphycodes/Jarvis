@@ -9,5 +9,6 @@ export function buildNorthPayload(input?: Partial<NorthPayload>): NorthPayload {
     },
     pillars: input?.pillars ?? [],
     signals: input?.signals ?? [],
+    lifeCadence: input?.lifeCadence ?? [],
   };
 }

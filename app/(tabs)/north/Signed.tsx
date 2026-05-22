@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { AppFrame, SectionLabel } from "@/components";
 import { Arrow, Chevron } from "@/components/icons";
+import type { NorthLifeLane, NorthPayload } from "@/lib/ai/types";
 
-// TODO(intelligence): Replace signed North star, pillars, and signals with
-// NorthPayload routed from stored North data. Do not add new product mock data.
 const PILLARS: { n: string; name: string; status: string; tint: string }[] = [
   { n: "01", name: "Lifestyle", status: "Strong", tint: "rgba(184,146,74,0.10)" },
   { n: "02", name: "Health", status: "Focus", tint: "rgba(201,169,110,0.08)" },
@@ -13,12 +12,37 @@ const PILLARS: { n: string; name: string; status: string; tint: string }[] = [
 ];
 
 const STEPS: { text: string; tag: string }[] = [
-  { text: "Visit property in Spello with Luca", tag: "Ownership" },
-  { text: "Train with intention this week", tag: "Health" },
-  { text: "Book time with Marco in Umbria this summer", tag: "Relationships" },
+  { text: "Keep the body lane warm", tag: "Health" },
+  { text: "Review one ownership signal", tag: "Ownership" },
+  { text: "Clean up one creative lane", tag: "Creative" },
 ];
 
-export function NorthSigned() {
+export function NorthSigned({ payload }: { payload?: NorthPayload }) {
+  const northStar = payload?.northStar ?? {
+    title: "North",
+    subtitle: "Long-term direction.",
+  };
+  const pillars = payload?.pillars?.length
+    ? payload.pillars.map((pillar, index) => ({
+        n: String(index + 1).padStart(2, "0"),
+        name: pillar.title,
+        status: statusLabel(pillar.progress),
+        tint: PILLARS[index % PILLARS.length]?.tint ?? "rgba(184,146,74,0.10)",
+      }))
+    : PILLARS;
+  const lifeCadence = payload?.lifeCadence ?? [];
+  const steps = payload?.signals?.length
+    ? payload.signals.slice(0, 4).map((signal) => ({
+        text: signal.action ?? signal.title,
+        tag: signal.source,
+      }))
+    : lifeCadence.length
+      ? lifeCadence.slice(0, 3).map((lane) => ({
+          text: lane.nextUsefulRep,
+          tag: lane.title.split(" / ")[0] ?? lane.status,
+        }))
+    : STEPS;
+
   return (
     <AppFrame>
       <header className="flex flex-col gap-4">
@@ -27,13 +51,11 @@ export function NorthSigned() {
             North
           </h1>
           <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
-            May 17, 2025
+            {formatNorthDate()}
           </span>
         </div>
         <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/65">
-          The life you’re building.
-          <br />
-          Umbria is the destination. This is the path.
+          {northStar.subtitle || "The life you’re building."}
         </p>
         <div className="h-px w-8 bg-muted-gold/50" />
       </header>
@@ -46,15 +68,15 @@ export function NorthSigned() {
             The North Star
           </span>
           <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-            Umbria, Italy
+            {northStar.title}
           </h2>
           <div className="h-px w-6 bg-muted-gold/55" />
           <p className="mt-1 text-[14px] leading-[1.55] text-warm-ivory/65">
             A slower life. Owned.
             <br />
-            Surrounded by beauty,
+            Built through discipline,
             <br />
-            craft, and real connection.
+            taste, and real connection.
           </p>
           <button
             type="button"
@@ -68,11 +90,26 @@ export function NorthSigned() {
 
       <div className="mt-10 h-px w-full bg-white/[0.06]" />
 
+      {lifeCadence.length > 0 ? (
+        <section className="mt-8">
+          <SectionLabel>Life Cadence / Skill Stack</SectionLabel>
+          <div className="mt-4 flex flex-col border-y border-white/[0.06]">
+            {lifeCadence.map((lane, index) => (
+              <LifeCadenceRow
+                key={lane.id}
+                lane={lane}
+                divider={index !== lifeCadence.length - 1}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="mt-8">
         <SectionLabel>Pillars</SectionLabel>
         <div className="mt-4 -mx-6 overflow-x-auto">
           <ul className="flex gap-2 px-6">
-            {PILLARS.map((p) => (
+            {pillars.map((p) => (
               <li key={p.n} className="shrink-0">
                 <PillarCard {...p} />
               </li>
@@ -92,12 +129,12 @@ export function NorthSigned() {
           Next Right Steps
         </SectionLabel>
         <ul className="mt-4 flex flex-col">
-          {STEPS.map((s, i) => (
+          {steps.map((s, i) => (
             <StepRow
               key={s.text}
               text={s.text}
               tag={s.tag}
-              divider={i !== STEPS.length - 1}
+              divider={i !== steps.length - 1}
             />
           ))}
         </ul>
@@ -122,6 +159,87 @@ export function NorthSigned() {
 
     </AppFrame>
   );
+}
+
+function LifeCadenceRow({
+  lane,
+  divider,
+}: {
+  lane: NorthLifeLane;
+  divider: boolean;
+}) {
+  return (
+    <article
+      className={
+        "grid grid-cols-[1fr_auto] gap-4 py-4 " +
+        (divider ? "border-b border-white/[0.06]" : "")
+      }
+    >
+      <div>
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className={
+              "h-2 w-2 rounded-full " +
+              (lane.status === "due"
+                ? "bg-muted-gold"
+                : lane.status === "cooling"
+                  ? "bg-warm-ivory/55"
+                  : lane.status === "protected"
+                    ? "bg-warm-ivory/30"
+                    : "bg-soft-gold/70")
+            }
+          />
+          <h3 className="font-serif text-[20px] leading-tight text-warm-ivory">
+            {lane.title}
+          </h3>
+        </div>
+        <p className="mt-2 max-w-[38ch] text-[13px] leading-[1.5] text-warm-ivory/62">
+          {lane.whyItMatters}
+        </p>
+        <p className="mt-3 text-[12px] leading-[1.45] text-warm-ivory/78">
+          {lane.nextUsefulRep}
+        </p>
+      </div>
+      <div className="min-w-[88px] text-right">
+        <div className="text-[10px] uppercase tracking-editorial text-muted-gold/80">
+          {lane.status}
+        </div>
+        <div className="mt-2 text-[11px] leading-[1.35] text-warm-ivory/50">
+          {lane.cadenceTarget}
+        </div>
+        {lane.lastTouched ? (
+          <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-warm-ivory/35">
+            {formatTouched(lane.lastTouched)}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function statusLabel(progress: number | undefined): string {
+  if (typeof progress !== "number") return "Warm";
+  if (progress >= 0.75) return "Active";
+  if (progress >= 0.45) return "Building";
+  return "Warm";
+}
+
+function formatTouched(iso: string): string {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return "";
+  const days = Math.floor((Date.now() - time) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "touched today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+function formatNorthDate(): string {
+  return new Date().toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function Hero() {

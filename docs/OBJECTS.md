@@ -217,6 +217,8 @@ into existing JSON fields:
 - `surfaced_items.payload.briefing`: clean user-facing briefing
 - `surfaced_items.payload.move_title`: optional clean action title
 - `surfaced_items.payload.purpose_label`: optional purpose label
+- `surfaced_items.payload.radar_decision`: Decision Council admission, scores,
+  move title, purpose label, display depth, and positive/negative signals
 - `surfaced_items.payload.source_trust`: source trust audit for research items
 - `brain_decision_runs.raw_output.ambient`: run type and policy
 - `brain_decision_runs.raw_output.budget`: estimated cost and caps

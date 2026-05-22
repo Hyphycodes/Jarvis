@@ -298,3 +298,65 @@ have been quiet long enough to suggest a useful next move.
 Cadence copy should not guilt the owner. It should frame a useful window: "keeps
 the skill lane warm", "small rep that compounds", or "good window to get a
 session in."
+
+North also uses the same helper as a momentum map. The seeded lanes are Body /
+Performance, Skill / Competence, Creative / Hyphy, Ownership / Land / Wealth,
+Taste / Culture, Relationships / Social, and Peace / Discipline. They show
+status, cadence target, last touch when inferable, next useful rep, and why the
+lane matters. This is not a streak or habit tracker.
+
+## Taste Constitution
+
+`lib/brain/tasteConstitution.ts` is the durable internal "what belongs in this
+world" layer. It is not a keyword list. It encodes:
+
+- identity frame: Chicago-based owner/creator/operator building Hyphy
+- core lanes: health, skill, taste, ownership, creative, business, social, peace
+- taste principles: refined, masculine, cinematic, grounded, quiet luxury,
+  rugged but elegant, timeless, real, calm, useful
+- positive signals: low-lit rooms, cigar/jazz/hotel-bar energy, menswear,
+  watches, land, horseback/golf/basketball/gun range, woodworking, Spanish,
+  DJ/music/camera, relationship-building rooms
+- negative signals: fake luxury, influencer noise, generic nightlife, literal
+  query matches, random social snippets, SEO junk, closed events, weak source
+  leads, corny masculine content
+- spend posture: free/low-cost is welcome; paid and expensive moves need
+  stronger justification
+- attention posture: recommendations must earn interruption
+
+The exported helpers are `getTasteConstitution()`,
+`scoreAgainstTasteConstitution()`, `getAntiLaneFlags()`, and
+`getPurposeLabel()`.
+
+## Decision Council
+
+`lib/brain/decisionCouncil.ts` turns curation into an admission decision. The
+council is deterministic/code-first and uses existing AI-generated briefing
+copy only as input. It does not add new LLM calls.
+
+Roles:
+
+- Scout: source quality, entity clarity, freshness, trust, expired/closed/noise
+- Operator: fit with Weekly Rhythm, timing, cost, effort, workday/weekend
+- Taste Strategist: Taste Constitution fit and anti-lanes
+- Growth Coach: health, skill, ownership, creative, relationships, business,
+  discipline, peace
+- Critic: weak evidence, generic copy, literal query junk, bad title, stale,
+  not actionable
+- Briefing Editor output: action title, purpose label, one-line, best move, and
+  display depth
+
+The output is `RadarDecision`:
+
+- `admission`: `radar`, `holding`, `discovered`, or `archive`
+- `confidence`
+- `purpose_label`
+- `move_title`
+- `one_line`
+- `best_move`
+- `display_depth`
+- positive and negative signals
+- per-role council scores
+
+`lib/intelligence/radarFrontRoom.ts` adapts this decision into the hard Active
+Radar gate. Active Radar only admits `admission="radar"`.

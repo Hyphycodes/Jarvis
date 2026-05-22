@@ -257,6 +257,7 @@ export type NorthPayload = {
   };
   pillars: NorthPillar[];
   signals: NorthSignal[];
+  lifeCadence?: NorthLifeLane[];
 };
 
 export type NorthPillar = {
@@ -274,6 +275,16 @@ export type NorthSignal = {
   summary: string;
   action?: string;
   source: "memory" | "radar" | "manual" | "plan" | "reflection";
+};
+
+export type NorthLifeLane = {
+  id: string;
+  title: string;
+  status: "active" | "warm" | "cooling" | "due" | "protected";
+  cadenceTarget: string;
+  lastTouched?: string;
+  nextUsefulRep: string;
+  whyItMatters: string;
 };
 
 export type PlanDetailPayload = {

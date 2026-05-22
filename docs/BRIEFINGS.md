@@ -46,6 +46,9 @@ Supported flags:
 
 - `seo_junk`
 - `instagram_noise`
+- `facebook_noise`
+- `social_noise`
+- `raw_comment`
 - `too_literal`
 - `weak_evidence`
 - `generic`
@@ -54,6 +57,17 @@ Supported flags:
 - `too_far`
 - `not_actionable`
 - `needs_verification`
+- `closed_event`
+- `expired_event`
+- `directory_spam`
+- `misclassified`
+- `title_unclear`
+- `no_clear_move`
+- `source_lead_only`
+- `no_current_value`
+- `fake_luxury`
+- `corny`
+- `hype_noise`
 
 Major flags keep an item out of Active Radar. Medium-signal items can still go
 to Holding when they are useful but not decision-ready.
@@ -124,6 +138,7 @@ Briefing quality flags cover copy and source quality:
 
 - `seo_junk`
 - `instagram_noise`
+- `facebook_noise`
 - `social_noise`
 - `raw_comment`
 - `too_literal`
@@ -142,6 +157,9 @@ Briefing quality flags cover copy and source quality:
 - `no_clear_move`
 - `source_lead_only`
 - `no_current_value`
+- `fake_luxury`
+- `corny`
+- `hype_noise`
 
 Major flags prevent Active Radar unless the item can be safely downgraded to
 Holding.
@@ -153,6 +171,9 @@ The Consideration Brief derives `briefDisplayDepth`:
 - `minimal`: weak/watch/pass/source-thin items
 - `compact`: Holding or medium-confidence items
 - `rich`: strong decision-ready items
+
+If `payload.radar_decision.display_depth` exists, the Consideration Brief uses
+the council depth. Otherwise it falls back to the local view-model heuristic.
 
 The better the item, the more detail it earns. Source/debug detail stays lower
 on the page.

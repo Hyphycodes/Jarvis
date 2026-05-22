@@ -5,6 +5,7 @@ import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import { actionTitleForItem } from "@/lib/brain/actionTitles";
+import { buildNorthLifeCadence } from "@/lib/brain/lifeCadence";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
 import {
@@ -25,6 +26,8 @@ import {
 import type {
   CirclePersonRow,
   CircleUpdateRow,
+  BehaviorSignalRow,
+  FounderProfileRow,
   NorthPillarRow,
   NorthSignalRow,
   PlanRow,
@@ -47,6 +50,7 @@ import type {
   TodayPayload,
   TodayTimelineItem,
 } from "@/lib/ai/types";
+import type { BrainContextPacket } from "@/lib/brain/types";
 import type { IndexedItem } from "@/lib/index/types";
 
 type Loader<T> = () => Promise<T>;
@@ -300,7 +304,7 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
     if (!id) return emptyNorthPayload();
 
     const supabase = await getServerSupabase();
-    const [pillarsRes, signalsRes] = await Promise.all([
+    const [pillarsRes, signalsRes, founderRes, behaviorRes, actionsRes] = await Promise.all([
       supabase
         .from("north_pillars")
         .select("*")
@@ -311,10 +315,31 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
         .select("*")
         .eq("user_id", id)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("founder_profile")
+        .select("*")
+        .eq("user_id", id)
+        .maybeSingle(),
+      supabase
+        .from("behavior_signals")
+        .select("*")
+        .eq("user_id", id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("surfaced_items")
+        .select("title,status,category")
+        .eq("user_id", id)
+        .in("status", ["saved", "passed", "planned", "completed"])
+        .order("updated_at", { ascending: false })
+        .limit(30),
     ]);
 
     logQueryError("north.pillars", pillarsRes.error);
     logQueryError("north.signals", signalsRes.error);
+    logQueryError("north.founder", founderRes.error);
+    logQueryError("north.behavior", behaviorRes.error);
+    logQueryError("north.actions", actionsRes.error);
 
     const pillars: NorthPillar[] = ((pillarsRes.data ?? []) as NorthPillarRow[]).map(
       (row) => ({
@@ -336,6 +361,23 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
         source: (row.source as NorthSignal["source"]) ?? "manual",
       }),
     );
+    const founder = (founderRes.data ?? null) as FounderProfileRow | null;
+    const rhythm = normalizeWeeklyRhythm(founder?.weekly_rhythm);
+    const behavior = (behaviorRes.data ?? []) as BehaviorSignalRow[];
+    const actions = (actionsRes.data ?? []) as Pick<
+      SurfacedItemRow,
+      "title" | "status" | "category"
+    >[];
+    const brainContext = buildNorthContext({
+      founder,
+      rhythm,
+      behavior,
+      actions,
+      northTags: pillars.flatMap((pillar) => [
+        pillar.title,
+        ...pillar.activeSignals,
+      ]),
+    });
 
     return {
       northStar: {
@@ -344,6 +386,7 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
       },
       pillars,
       signals,
+      lifeCadence: buildNorthLifeCadence(brainContext),
     };
   } catch (error) {
     logSurfaceError("north", error);
@@ -740,6 +783,53 @@ function buildPlanDisplay(
   return { title, summary };
 }
 
+function buildNorthContext(input: {
+  founder: FounderProfileRow | null;
+  rhythm: WeeklyRhythm;
+  behavior: BehaviorSignalRow[];
+  actions: Pick<SurfacedItemRow, "title" | "status" | "category">[];
+  northTags: string[];
+}): BrainContextPacket {
+  return {
+    now: new Date().toISOString(),
+    founder: {
+      displayName: null,
+      homeCity: null,
+      timezone: input.rhythm.timezone,
+      lifeDirection: input.founder?.life_direction ?? null,
+      currentFocus: input.founder?.current_focus ?? null,
+      vibeKeywords: input.founder?.vibe_keywords ?? [],
+      avoidKeywords: input.founder?.avoid_keywords ?? [],
+      dealbreakers: input.founder?.dealbreakers ?? [],
+      pinnedPrinciples: input.founder?.pinned_principles ?? [],
+    },
+    memory: [],
+    recentSignals: input.behavior.map((signal) => ({
+      signal_type: signal.signal_type,
+      subject_id: signal.subject_id,
+      created_at: signal.created_at,
+    })),
+    recentActions: input.actions.map((action) => ({
+      title: action.title ?? "(untitled)",
+      status: action.status,
+      category: action.category,
+    })),
+    northTags: Array.from(new Set(input.northTags.filter(Boolean))),
+    weather: null,
+    activePlan: null,
+    weeklyRhythm: {
+      enabled: input.rhythm.enabled,
+      workdays: input.rhythm.workdays,
+      leaveHome: input.rhythm.leave_home,
+      workStart: input.rhythm.work_start,
+      leaveWork: input.rhythm.leave_work,
+      arriveHome: input.rhythm.arrive_home,
+      workLocation: input.rhythm.work_location,
+      timezone: input.rhythm.timezone,
+    },
+  };
+}
+
 async function listUpcomingBridgeItems(userId: string): Promise<TodayCommandItem[]> {
   try {
     const supabase = await getServerSupabase();
@@ -897,6 +987,7 @@ function emptyNorthPayload(): NorthPayload {
     northStar: { title: "North", subtitle: "" },
     pillars: [],
     signals: [],
+    lifeCadence: [],
   };
 }
 

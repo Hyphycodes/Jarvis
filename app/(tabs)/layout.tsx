@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth";
 import { TabShell } from "@/components/TabShell";
 import {
+  loadNorthSurface,
   loadRadarSurface,
   loadTodaySurface,
 } from "@/lib/dispatch/loadSurface";
@@ -28,9 +29,9 @@ export default async function TabsLayout({
   const user = await getSessionUser();
   const signedIn = !!user;
 
-  const [todayPayload, radarCards] = signedIn
-    ? await Promise.all([loadTodaySurface(), loadRadarSurface()])
-    : [null, []];
+  const [todayPayload, radarCards, northPayload] = signedIn
+    ? await Promise.all([loadTodaySurface(), loadRadarSurface(), loadNorthSurface()])
+    : [null, [], null];
 
   return (
     <TabShell
@@ -43,7 +44,7 @@ export default async function TabsLayout({
       }
       radar={signedIn ? <RadarSigned items={radarCards} /> : <RadarEmpty />}
       circle={signedIn ? <CircleSigned /> : <CircleEmpty />}
-      north={signedIn ? <NorthSigned /> : <NorthEmpty />}
+      north={signedIn ? <NorthSigned payload={northPayload ?? undefined} /> : <NorthEmpty />}
     />
   );
 }

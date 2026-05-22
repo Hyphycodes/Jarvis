@@ -45,7 +45,7 @@ Return strict JSON only:
   "effort_level": "low|medium|high",
   "spending_posture": "free|low|paid|high|unknown",
   "suggested_destination": "radar|holding|discovered|archived",
-  "quality_flags": ["seo_junk|instagram_noise|social_noise|raw_comment|too_literal|weak_evidence|generic|poor_timing|too_expensive|too_far|not_actionable|needs_verification|closed_event|expired_event|directory_spam|misclassified|title_unclear|no_clear_move|source_lead_only|no_current_value"],
+  "quality_flags": ["seo_junk|instagram_noise|facebook_noise|social_noise|raw_comment|too_literal|weak_evidence|generic|poor_timing|too_expensive|too_far|not_actionable|needs_verification|closed_event|expired_event|directory_spam|misclassified|title_unclear|no_clear_move|source_lead_only|no_current_value|fake_luxury|corny|hype_noise"],
   "evidence_summary": "string",
   "cleaned_tags": ["string"]
 }`;

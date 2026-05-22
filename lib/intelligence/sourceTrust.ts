@@ -84,6 +84,7 @@ export function scoreSourceTrust(input: {
 
   if (/instagram|facebook|tiktok|youtube|x\.com|twitter/.test(domain ?? "")) {
     flags.add("social_noise");
+    if (/facebook/.test(domain ?? "")) flags.add("facebook_noise");
     if (!/(event|ticket|opening|venue|restaurant|store|market|gallery)/i.test(haystack)) {
       flags.add("instagram_noise");
       flags.add("weak_evidence");
@@ -97,6 +98,10 @@ export function scoreSourceTrust(input: {
   if (/rugged masculine chicago|quiet luxury chicago/i.test(haystack)) {
     flags.add("too_literal");
     trustScore -= 0.22;
+  }
+  if (/alpha male|rugged maniac|manly men|sigma|bottle service|viral|hype/i.test(haystack)) {
+    flags.add(/bottle service|viral|hype/i.test(haystack) ? "hype_noise" : "corny");
+    trustScore -= 0.2;
   }
   if (/#\w+/.test(input.title ?? "") || /view all \d+ comments|profile photos|comments? and posts/i.test(haystack)) {
     flags.add("raw_comment");

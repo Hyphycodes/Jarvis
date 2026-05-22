@@ -2,9 +2,10 @@
 
 ## Philosophy
 
-Jarvis is not a feed. Radar is a small, intentional tray — not a scroll.
+Jarvis is not a feed. Radar is a small, intentional front room — not a scroll.
 An empty or near-empty result is always correct when nothing is strong enough.
-Silence is better than filler. The system is designed around **restraint**.
+Silence is better than filler. The system is designed around **restraint**:
+Jarvis should think more and show less.
 
 > "It doesn't just cap Radar and risk missing good things. It gives Jarvis a
 > front room and a back room."
@@ -13,7 +14,7 @@ Silence is better than filler. The system is designed around **restraint**.
 
 | Layer | Where | Status | Size | Description |
 |-------|-------|--------|------|-------------|
-| **Active Radar** | `destination="radar"` `status in ("discovered","shown","opened")` | visible | 7–12 | The front room. Timely, high-confidence items worth acting on this week. |
+| **Active Radar** | `destination="radar"` `status in ("shown","opened")` | visible | 0–5 | The front room. Confident moves worth attention now. |
 | **Upcoming** | `destination="upcoming"` or saved/planned with future `starts_at` | saved/planned | unbounded | The agenda. Dated saved/planned items grouped by Today/Tomorrow/This Week/Later/No Date. |
 | **Holding / Later** | `destination="holding"` `status="discovered"/"shown"` | discovered | ≤30 | The back room. Strong finds that aren't urgent right now. Eligible for promotion to Radar when timing is right. |
 | **Archive / History** | All destinations | saved, passed, planned, completed, expired, archived | Unbounded | Everything seen, acted on, or aged out. Searchable in `/account/history`. |
@@ -31,6 +32,7 @@ All constants live in `lib/brain/constants.ts`.
 | `RADAR_ACTIVE_ITEM_LIMIT` | 12 | Hard cap — items beyond this rotate to Holding |
 | `RADAR_STALE_SHOWN_DAYS` | 14 | Days before a shown item is stale |
 | `RADAR_MIN_CONFIDENCE` | 0.65 | Minimum confidence to reach Active Radar |
+| `RADAR_ADMISSION_MIN_CONFIDENCE` | 0.72 | Decision Council minimum for the visible front room |
 | `RADAR_DEFAULT_SELECTED_LIMIT` | 5 | Curator's default max selections per run |
 | `RADAR_HARD_SELECTED_LIMIT` | 9 | Absolute ceiling on Curator selections |
 | `RADAR_SHORTLIST_LIMIT` | 20 | Candidates passed to Curator from scorer |
@@ -109,7 +111,7 @@ POST /api/radar/refresh
      d. runCurator() — Claude or deterministic fallback
      e. runCritic() — Claude or deterministic fallback
      f. Briefing Editor — clean owner-facing display copy for finalists
-     g. briefing quality gate — downgrade or reject weak/noisy candidates
+     g. Decision Council / front-room gate — downgrade or reject weak/noisy candidates
      h. enforceGates() — confidence floor, category quotas, weekday limits
      i. applyDecision() — write status/destination/payload.briefing to DB
      j. enforceActiveRadarCap() — rotate excess shown→holding or discovered
@@ -124,11 +126,35 @@ See [`docs/BRAIN.md`](./BRAIN.md) for the Interest Graph + Taste Strategist + Cu
 Radar uses `surfaced_items.payload.briefing` when present. See
 [`docs/BRIEFINGS.md`](./BRIEFINGS.md).
 
-Active Radar requires clean briefing copy, adequate confidence, no major quality
-flags, and a next action other than `pass` or `ignore`. Items with useful signal
-but weak timing/evidence are routed to Holding. Low-confidence, generic,
-source-thin, literal-query, social-noise, or SEO-style results remain discovered
-or archived.
+Active Radar requires clean briefing copy, a clear action title, a purpose label,
+adequate confidence, no major quality flags, and a next action other than
+`pass`, `ignore`, `research`, or `watch`. Items with useful signal but weak
+timing/evidence are routed to Holding. Low-confidence, generic, source-thin,
+literal-query, social-noise, fake-luxury, hype-noise, corny, or SEO-style
+results remain discovered or archived.
+
+## Taste Constitution + Decision Council
+
+`lib/brain/tasteConstitution.ts` is the durable internal taste document. It
+defines the owner identity frame, core lanes, taste principles, positive
+signals, negative signals, spend posture, attention posture, and the Radar
+admission rule: do not show what is merely related; only show what creates value
+now.
+
+`lib/brain/decisionCouncil.ts` is the deterministic council that every
+Radar-visible item passes through:
+
+- Scout: source quality, entity clarity, freshness, trust, and noise.
+- Operator: fit with Weekly Rhythm, effort, cost, timing, and friction.
+- Taste Strategist: whether it belongs in the owner’s world.
+- Growth Coach: whether it sharpens health, skill, ownership, creative work,
+  relationships, business, or peace.
+- Critic: blocking flags, weak evidence, generic copy, bad titles, stale data.
+- Briefing Editor output: action title, purpose label, one-line, best move, and
+  display depth.
+
+The council returns `admission = radar | holding | discovered | archive`.
+Only `admission="radar"` reaches Active Radar.
 
 The primary card does not show raw query text, strategist lane ids, seed tags,
 raw status/destination, or source payload details.
@@ -137,16 +163,16 @@ raw status/destination, or source payload details.
 
 Signed-in Radar is database-backed only. `loadRadarSurface()` reads
 `surfaced_items` through `listIndexItems()` for the signed-in/viewable owner,
-filters to `destination="radar"` and active visible statuses
-(`discovered`, `shown`, `opened`), excludes expired items, sorts by timing,
-score, then recency, and returns at most 12 cards.
+filters to `destination="radar"` and visible statuses (`shown`, `opened`),
+then applies the Decision Council gate again before rendering. It excludes
+expired items, sorts by timing, score, then recency, and returns at most 5
+cards.
 
 Authenticated users never see fallback demo cards. If no real rows match,
 Radar renders the empty state:
 
-- "Nothing on Radar yet"
-- CTA to `/account/intelligence` so the owner can run the explicit Radar
-  refresh path
+- "Nothing made the cut."
+- "Jarvis checked the board. Nothing strong enough to interrupt the day."
 
 Logged-out users still see the separate marketing/empty Radar experience from
 `app/(tabs)/radar/Empty.tsx`; that state is intentionally gated away from the
@@ -197,8 +223,8 @@ after the window are eligible to re-enter the pool on the next refresh.
 - Let Claude directly write to the database.
 - Overwrite `saved`, `passed`, `planned`, `completed`, `archived`, or `opened` status.
 - Run SerpAPI speculatively (shopping only on explicit product request).
-- Show more than `RADAR_ACTIVE_ITEM_LIMIT` (12) items on Active Radar.
-- Route an item to Active Radar with confidence < `RADAR_MIN_CONFIDENCE` (0.65).
+- Render more than 5 front-room cards, even if more rows are technically active.
+- Route an item to Active Radar with Decision Council confidence < `RADAR_ADMISSION_MIN_CONFIDENCE` (0.72).
 - Show placeholder cards to authenticated users.
 
 ## Ambient Radar

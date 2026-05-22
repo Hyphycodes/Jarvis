@@ -95,14 +95,15 @@ export function buildConsiderationBrief(item: IndexedItem): ConsiderationBriefVi
   const sourceEvidence = readSourceEvidence(item, payload, briefing);
   const location = readLocation(item, payload);
   const media = readMedia(item, payload);
-  const facts = buildFacts(item, briefing, location, sourceEvidence);
   const indicators = buildIndicators(item, briefing, sourceEvidence);
   const whyItMatters = buildWhyItMatters(item, briefing, indicators);
   const practicalFit = buildPracticalFit(item, briefing, location);
   const bestMove = bestMoveCopy(verdict, briefing);
   const valueSignal = buildValueSignal(item, briefing, indicators);
-  const purposeLabel = purposeLabelForItem(item);
-  const briefDisplayDepth = displayDepthFor(item, briefing, verdict);
+  const purposeLabel = stringValue(payload.purpose_label) ?? purposeLabelForItem(item);
+  const briefDisplayDepth =
+    readRadarDisplayDepth(payload) ?? displayDepthFor(item, briefing, verdict);
+  const facts = buildFacts(item, briefing, location, sourceEvidence, purposeLabel);
 
   return {
     id: item.id,
@@ -244,9 +245,10 @@ function buildFacts(
   briefing: ItemBriefing,
   location: ConsiderationBriefView["location"],
   sourceEvidence: ConsiderationBriefView["sourceEvidence"],
+  purposeLabel: string,
 ): ConsiderationBriefView["facts"] {
   const facts: ConsiderationBriefView["facts"] = [
-    { label: "Purpose", value: purposeLabelForItem(item), icon: "target" },
+    { label: "Purpose", value: purposeLabel, icon: "target" },
     { label: "Category", value: cleanLabel(briefing.display_category || item.category || item.type), icon: "category" },
   ];
   const time = formatWindow(item.startsAt, item.endsAt) ?? formatDate(item.expiresAt);
@@ -285,6 +287,14 @@ function displayDepthFor(
     return "compact";
   }
   return "rich";
+}
+
+function readRadarDisplayDepth(payload: Record<string, unknown>): BriefDisplayDepth | undefined {
+  const decision = asRecord(payload.radar_decision);
+  const depth = stringValue(decision.display_depth);
+  return depth === "minimal" || depth === "compact" || depth === "rich"
+    ? depth
+    : undefined;
 }
 
 function buildIndicators(
