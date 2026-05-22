@@ -175,3 +175,13 @@ The main 4-tab carousel (Today / Radar / Circle / North) is unchanged.
 
 **None.** Destinations are plain text in `surfaced_items.destination`,
 so adding `"upcoming"` requires no migration.
+
+## Owner QA Fixtures
+
+`/account/qa` provides an owner-only/dev-only path to create real object rows
+without manual Supabase edits. Seeded rows are current-owner scoped, title
+prefixed with `[QA]`, and marked with `payload.qa_fixture=true` plus
+`payload.created_by="qa_seed"`.
+
+The helper can create Radar, Today, Upcoming, and active generated-plan
+fixtures, then clear only `[QA]` fixture rows. See [`docs/QA.md`](./QA.md).

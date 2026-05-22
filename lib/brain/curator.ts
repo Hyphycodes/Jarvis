@@ -10,7 +10,10 @@ import type {
 import {
   RADAR_DEFAULT_SELECTED_LIMIT,
   RADAR_IDEAL_ACTIVE_ITEM_LIMIT,
+  RADAR_MIN_CONFIDENCE,
 } from "@/lib/brain/constants";
+
+const FALLBACK_HOLDING_CONFIDENCE_FLOOR = 0.45;
 
 const SYSTEM_PROMPT = `You are Jarvis's CURATOR. Your job is to protect the founder's attention.
 
@@ -54,6 +57,9 @@ Return strict JSON matching the BrainDecision schema.
 
 export async function runCurator(input: CurationInput): Promise<BrainDecision> {
   if (!hasAnthropic()) {
+    console.warn("[brain.curator] using deterministic fallback", {
+      reason: "ANTHROPIC_API_KEY missing",
+    });
     return deterministicCuration(input, "ANTHROPIC_API_KEY missing");
   }
 
@@ -73,8 +79,12 @@ export async function runCurator(input: CurationInput): Promise<BrainDecision> {
       fallbackUsed: false,
     };
   } catch (error) {
-    console.error("[brain.curator] structured generation failed", error);
-    return deterministicCuration(input, "curator error");
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error("[brain.curator] structured generation failed", {
+      reason,
+      error,
+    });
+    return deterministicCuration(input, `curator error: ${reason}`);
   }
 }
 
@@ -141,24 +151,36 @@ function deterministicCuration(
   reason: string,
 ): BrainDecision {
   const max = input.maxSelected ?? RADAR_DEFAULT_SELECTED_LIMIT;
-  // Deterministic fallback: take top candidates by score, respect the limit.
-  // Route lowest-ranked of the selected set to "holding" to simulate restraint.
-  const eligible = input.shortlist.slice(0, max);
-  const radarCount = Math.ceil(eligible.length * 0.7); // 70% to radar, 30% to holding
+  // Deterministic fallback: use the scored shortlist, but stay quieter than
+  // Claude. Allow a few adequate items through, mostly to Holding, so refresh
+  // remains useful when Claude is missing without becoming a feed.
+  const selectedLimit = Math.min(max, 4);
+  const eligible = input.shortlist
+    .filter((s) => s.score >= FALLBACK_HOLDING_CONFIDENCE_FLOOR)
+    .slice(0, selectedLimit);
 
   const selected = eligible.map((s, idx) => ({
     itemId: s.item.id,
     destination:
-      (idx < radarCount ? "radar" : "holding") as BrainDecision["selected"][number]["destination"],
-    confidence: clamp01(s.score),
+      (idx === 0 && s.score >= RADAR_MIN_CONFIDENCE
+        ? "radar"
+        : "holding") as BrainDecision["selected"][number]["destination"],
+    confidence: fallbackConfidence(s.score, idx),
     reason: s.reasons[0] ?? "Top deterministic score",
-    displayAngle: idx === 0 ? "Top pick this window" : "Worth a look",
+    displayAngle:
+      idx === 0 && s.score >= RADAR_MIN_CONFIDENCE
+        ? "Top pick this window"
+        : "Worth holding for later",
     tags: s.item.tags.slice(0, 4),
   }));
 
-  const rejected = input.shortlist.slice(max).map((s) => ({
+  const selectedIds = new Set(selected.map((s) => s.itemId));
+  const rejected = input.shortlist.filter((s) => !selectedIds.has(s.item.id)).map((s) => ({
     itemId: s.item.id,
-    reason: s.reasons[0] ?? "Below cutoff in deterministic fallback",
+    reason:
+      s.score < FALLBACK_HOLDING_CONFIDENCE_FLOOR
+        ? `Below deterministic fallback holding floor (${s.score.toFixed(2)} < ${FALLBACK_HOLDING_CONFIDENCE_FLOOR})`
+        : s.reasons[0] ?? "Below cutoff in deterministic fallback",
     suggestedStatus: "discovered" as const,
   }));
 
@@ -167,11 +189,17 @@ function deterministicCuration(
     rejected,
     notes: `Deterministic fallback: ${reason}`,
     fallbackUsed: true,
+    fallbackReason: reason,
   };
 }
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function fallbackConfidence(score: number, idx: number): number {
+  if (score >= RADAR_MIN_CONFIDENCE) return clamp01(score);
+  return clamp01(Math.max(score, RADAR_MIN_CONFIDENCE - 0.01 - idx * 0.02));
 }
 
 export function summarizeContext(context: BrainContextPacket): string {

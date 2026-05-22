@@ -27,6 +27,7 @@ export type BrainDecision = {
   rejected: BrainRejection[];
   notes: string;
   fallbackUsed: boolean;
+  fallbackReason?: string;
 };
 
 export type BrainContextPacket = {

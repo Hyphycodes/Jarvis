@@ -23,18 +23,28 @@ export async function generateStructured<T>({
   temperature?: number;
 }): Promise<T> {
   const client = getAnthropicClient();
-  const response = await client.messages.create({
-    model: DEFAULT_MODEL,
-    max_tokens: 4096,
-    temperature,
-    system,
-    messages: [
-      {
-        role: "user",
-        content: `${prompt}\n\nReturn valid JSON only for schema: ${schemaName}.`,
-      },
-    ],
-  });
+  let response;
+  try {
+    response = await client.messages.create({
+      model: DEFAULT_MODEL,
+      max_tokens: 4096,
+      temperature,
+      system,
+      messages: [
+        {
+          role: "user",
+          content: `${prompt}\n\nReturn valid JSON only for schema: ${schemaName}.`,
+        },
+      ],
+    });
+  } catch (error) {
+    console.error("[ai.anthropic] request failed", {
+      schemaName,
+      model: DEFAULT_MODEL,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   const rawText = response.content
     .map((block) => (block.type === "text" ? block.text : ""))

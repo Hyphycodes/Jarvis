@@ -32,7 +32,7 @@ import {
 } from "@/lib/sources/gather";
 import { ingestCandidates, expireOldCandidates } from "@/lib/sources/ingest";
 import { runRadarCuration } from "@/lib/brain/runRadarCuration";
-import { hasAnthropic } from "@/lib/ai/anthropic";
+import { anthropicStatus, hasAnthropic } from "@/lib/ai/anthropic";
 import { buildBrainContext } from "@/lib/brain/context";
 import { buildInterestGraph } from "@/lib/brain/interestGraph";
 import { runTasteStrategist } from "@/lib/brain/tasteStrategist";
@@ -59,6 +59,7 @@ type RefreshSummary = {
   rejected: number;
   expired: number;
   fallback_used: boolean;
+  fallback_reason?: string;
   decision_run_id: string | null;
   errors: string[];
   // Sprint 2.2 additions
@@ -75,6 +76,17 @@ export async function POST(req: Request) {
   try {
     const owner = await requireOwner();
     const supabase = await getServerSupabase();
+    const anthropic = anthropicStatus();
+    if (!anthropic.available) {
+      console.warn("[radar.refresh] Anthropic unavailable", {
+        reason: anthropic.reason,
+        model: anthropic.model,
+      });
+    } else {
+      console.info("[radar.refresh] Anthropic configured", {
+        model: anthropic.model,
+      });
+    }
 
     // Optional body { force: true }
     let force = false;
@@ -166,6 +178,7 @@ export async function POST(req: Request) {
       rejected: 0,
       expired,
       fallback_used: false,
+      fallback_reason: undefined,
       decision_run_id: null,
       errors: [],
       lanes_total: strategist.output.lanes.length,
@@ -206,6 +219,11 @@ export async function POST(req: Request) {
     summary.selected = curation.appliedSelected;
     summary.rejected = curation.appliedRejected;
     summary.fallback_used = curation.decision.fallbackUsed || !hasAnthropic();
+    summary.fallback_reason = readFallbackReason(
+      curation.decision.fallbackReason,
+      strategist.fallbackUsed ? strategist.reason : undefined,
+      summary.fallback_used && !hasAnthropic() ? "ANTHROPIC_API_KEY missing" : undefined,
+    );
     summary.decision_run_id = curation.decisionRunId;
 
     return NextResponse.json(summary);
@@ -319,6 +337,12 @@ function countLanesByMode(
   return out;
 }
 
+function readFallbackReason(
+  ...reasons: Array<string | undefined>
+): string | undefined {
+  return reasons.find((reason) => typeof reason === "string" && reason.length > 0);
+}
+
 function emptySkipped(reason: string, next?: string): RefreshSummary {
   return {
     ok: true,
@@ -333,6 +357,7 @@ function emptySkipped(reason: string, next?: string): RefreshSummary {
     rejected: 0,
     expired: 0,
     fallback_used: false,
+    fallback_reason: undefined,
     decision_run_id: null,
     errors: [],
     lanes_total: 0,

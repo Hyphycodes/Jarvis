@@ -10,6 +10,19 @@ export function hasAnthropic(): boolean {
   return hasEnv("ANTHROPIC_API_KEY");
 }
 
+export function anthropicStatus(): {
+  available: boolean;
+  model: string;
+  reason?: string;
+} {
+  const available = hasAnthropic();
+  return {
+    available,
+    model: DEFAULT_MODEL,
+    reason: available ? undefined : "ANTHROPIC_API_KEY missing",
+  };
+}
+
 export function getAnthropicClient(): Anthropic {
   if (client) return client;
   const env = getEnv();
@@ -22,4 +35,4 @@ export function getAnthropicClient(): Anthropic {
   return client;
 }
 
-export const DEFAULT_MODEL = "claude-opus-4-7";
+export const DEFAULT_MODEL = "claude-sonnet-4-20250514";

@@ -136,6 +136,9 @@ Logged-out users still see the separate marketing/empty Radar experience from
 `app/(tabs)/radar/Empty.tsx`; that state is intentionally gated away from the
 signed-in owner.
 
+For repeatable owner smoke tests, `/account/qa` can create `[QA] Radar dinner
+idea` as a real `surfaced_items` row. See [`docs/QA.md`](./QA.md).
+
 ## Card Behavior
 
 Each Radar card body links to `/item/[id]`. The footer keeps the supported
