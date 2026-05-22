@@ -40,7 +40,7 @@ export function evaluateBehaviorForMemory(
     case "item.complete":
       return itemProposal("confirmed_behavior", 0.82, "strongest", signal.itemId, signal.type);
     case "item.open":
-      return itemProposal("event_history", 0.45, "weak", signal.itemId, signal.type);
+      return noProposal("Opening an item is engagement, not durable preference.");
     case "item.show":
     case "item.archive":
     case "item.restore":
