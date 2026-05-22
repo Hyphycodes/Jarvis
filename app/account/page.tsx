@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   ShieldCheck,
+  Sparkle,
   User,
 } from "@/components/icons";
 import { MotionPage } from "@/components";
@@ -135,6 +136,18 @@ export default async function AccountPage() {
           icon={<Brain size={20} />}
           title="Memory"
           description="Pinned principles, learned signals, and what Jarvis keeps."
+        />
+        <AccountNavRow
+          href="/account/memory"
+          icon={<Sparkle size={20} />}
+          title="Memory proposals"
+          description="Pending patterns Jarvis wants to remember. Accept, reject, or archive."
+        />
+        <AccountNavRow
+          href="/account/history"
+          icon={<Brain size={20} />}
+          title="History"
+          description="Everything Jarvis has shown you — saved, passed, expired, archived."
         />
         <SignOutRow />
       </nav>

@@ -44,9 +44,23 @@ function subjectFromSignal(signal: UserBehaviorSignal) {
 function proposalContent(signal: UserBehaviorSignal, subjectId: string) {
   switch (signal.type) {
     case "radar.save":
-      return `Saved radar item: ${subjectId}`;
+    case "item.save":
+      return `Saved item: ${subjectId}`;
     case "radar.pass":
-      return `Passed radar item: ${subjectId}`;
+    case "item.pass":
+      return `Passed item: ${subjectId}`;
+    case "item.plan":
+      return `Planned item: ${subjectId}`;
+    case "item.complete":
+      return `Completed item: ${subjectId}`;
+    case "item.open":
+      return `Opened item: ${subjectId}`;
+    case "item.show":
+      return `Shown item: ${subjectId}`;
+    case "item.archive":
+      return `Archived item: ${subjectId}`;
+    case "item.restore":
+      return `Restored item: ${subjectId}`;
     case "plan.open":
       return `Opened plan: ${subjectId}`;
     case "plan.activate":
@@ -59,6 +73,7 @@ function proposalContent(signal: UserBehaviorSignal, subjectId: string) {
       return `Completed timeline item: ${subjectId}`;
     case "memory.accept":
     case "memory.reject":
+    case "memory.archive":
       return `Reviewed memory proposal: ${subjectId}`;
   }
 }

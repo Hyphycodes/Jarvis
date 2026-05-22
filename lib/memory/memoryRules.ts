@@ -10,6 +10,7 @@ export function evaluateBehaviorForMemory(
   switch (signal.type) {
     case "memory.accept":
     case "memory.reject":
+    case "memory.archive":
       return noProposal("Memory approval actions update proposal state directly.");
     case "timeline.complete":
       return {
@@ -29,9 +30,21 @@ export function evaluateBehaviorForMemory(
     case "plan.cancel":
       return planProposal("avoidance", 0.58, "medium", signal.planId, signal.type);
     case "radar.save":
-      return itemProposal("taste", 0.52, "weak", signal.itemId, signal.type);
+    case "item.save":
+      return itemProposal("taste", 0.55, "weak", signal.itemId, signal.type);
     case "radar.pass":
+    case "item.pass":
       return itemProposal("avoidance", 0.48, "weak", signal.itemId, signal.type);
+    case "item.plan":
+      return itemProposal("taste", 0.7, "strong", signal.itemId, signal.type);
+    case "item.complete":
+      return itemProposal("confirmed_behavior", 0.82, "strongest", signal.itemId, signal.type);
+    case "item.open":
+      return itemProposal("event_history", 0.45, "weak", signal.itemId, signal.type);
+    case "item.show":
+    case "item.archive":
+    case "item.restore":
+      return noProposal("Surface-only lifecycle change; no inference worth proposing.");
   }
 }
 

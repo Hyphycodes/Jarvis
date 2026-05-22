@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { AppFrame } from "@/components";
 
 const FILTERS = [
@@ -21,13 +22,21 @@ type Card = {
   meta: [string, string];
   filter: Filter;
   media: "stacked" | "portrait" | "landscape";
+  persistent: boolean;
 };
 
-// TODO(intelligence): Replace signed Radar cards with RadarCard[] from
-// buildRadarPayload()/routeIntelligence. Keep these rows demo-only until then.
-const CARDS: Card[] = [
+export type RadarSignedItem = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  neighborhood: string | null;
+  startsAt: string | null;
+};
+
+const DEFAULT_CARDS: Card[] = [
   {
-    id: "sparrow",
+    id: "demo-sparrow",
     category: "DINING",
     title: (
       <>
@@ -40,9 +49,10 @@ const CARDS: Card[] = [
     meta: ["WEST LOOP", "8:30PM"],
     filter: "Dining",
     media: "stacked",
+    persistent: false,
   },
   {
-    id: "lynch",
+    id: "demo-lynch",
     category: "CULTURE",
     title: (
       <>
@@ -55,9 +65,10 @@ const CARDS: Card[] = [
     meta: ["MUSIC BOX THEATRE", "STARTS MAY 19"],
     filter: "Culture",
     media: "portrait",
+    persistent: false,
   },
   {
-    id: "umbria",
+    id: "demo-umbria",
     category: "PLACES",
     title: (
       <>
@@ -70,14 +81,90 @@ const CARDS: Card[] = [
     meta: ["UMBRIA, ITALY", "MARKET UPDATE"],
     filter: "Places",
     media: "landscape",
+    persistent: false,
   },
 ];
 
-export function RadarSigned() {
+function adaptIndexedToCard(item: RadarSignedItem, idx: number): Card {
+  const filter = mapCategoryToFilter(item.category);
+  const media = ["stacked", "portrait", "landscape"][idx % 3] as Card["media"];
+  return {
+    id: item.id,
+    category: mapCategoryToBadge(item.category),
+    title: item.title,
+    body: item.description,
+    meta: [
+      (item.neighborhood ?? "").toUpperCase(),
+      formatMeta(item.startsAt),
+    ],
+    filter,
+    media,
+    persistent: true,
+  };
+}
+
+function mapCategoryToFilter(category: string): Filter {
+  switch (category.toLowerCase()) {
+    case "dining":
+      return "Dining";
+    case "events":
+    case "event":
+      return "Events";
+    case "culture":
+      return "Culture";
+    case "places":
+    case "place":
+      return "Places";
+    case "sports":
+      return "Sports";
+    default:
+      return "All";
+  }
+}
+
+function mapCategoryToBadge(category: string): Card["category"] {
+  switch (category.toLowerCase()) {
+    case "dining":
+      return "DINING";
+    case "culture":
+      return "CULTURE";
+    case "events":
+    case "event":
+      return "EVENTS";
+    case "sports":
+      return "SPORTS";
+    default:
+      return "PLACES";
+  }
+}
+
+function formatMeta(iso: string | null): string {
+  if (!iso) return "OPEN WINDOW";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "OPEN WINDOW";
+  return date
+    .toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    .toUpperCase();
+}
+
+export function RadarSigned({ items }: { items?: RadarSignedItem[] }) {
+  const router = useRouter();
   const [filter, setFilter] = useState<Filter>("All");
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
 
-  const visible = CARDS.filter(
+  const cards = useMemo(() => {
+    if (items && items.length > 0) {
+      return items.map(adaptIndexedToCard);
+    }
+    return DEFAULT_CARDS;
+  }, [items]);
+
+  const visible = cards.filter(
     (c) =>
       !dismissed[c.id] && (filter === "All" || c.filter === filter),
   );
@@ -118,12 +205,13 @@ export function RadarSigned() {
           <RadarCard
             key={card.id}
             card={card}
-            onPass={() =>
+            onLocalPass={() =>
               setTimeout(
                 () => setDismissed((d) => ({ ...d, [card.id]: true })),
                 600,
               )
             }
+            onPersistedAction={() => router.refresh()}
           />
         ))}
         {visible.length === 0 ? (
@@ -182,22 +270,40 @@ function FilterRow({
 
 function RadarCard({
   card,
-  onPass,
+  onLocalPass,
+  onPersistedAction,
 }: {
   card: Card;
-  onPass: () => void;
+  onLocalPass: () => void;
+  onPersistedAction: () => void;
 }) {
   const [passing, setPassing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function persist(action: "save" | "pass") {
+    if (!card.persistent) return;
+    startTransition(async () => {
+      try {
+        await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
+        onPersistedAction();
+      } catch (err) {
+        console.error("radar action failed", err);
+      }
+    });
+  }
 
   function handlePass() {
     if (passing) return;
     setPassing(true);
-    onPass();
+    persist("pass");
+    onLocalPass();
   }
+
   function handleSave() {
     if (saved) return;
     setSaved(true);
+    persist("save");
     setTimeout(() => setSaved(false), 1100);
   }
 
@@ -232,14 +338,16 @@ function RadarCard({
         <button
           type="button"
           onClick={handleSave}
-          className="border-r border-white/[0.06] py-4 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+          disabled={pending}
+          className="border-r border-white/[0.06] py-4 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-60"
         >
           {saved ? "✓" : "Save"}
         </button>
         <button
           type="button"
           onClick={handlePass}
-          className="py-4 text-[11px] uppercase tracking-editorial text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
+          disabled={pending}
+          className="py-4 text-[11px] uppercase tracking-editorial text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
         >
           Pass
         </button>

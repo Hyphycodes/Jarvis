@@ -264,6 +264,63 @@ export const userBehaviorSignalSchema = z.discriminatedUnion("type", [
       memoryProposalId: z.string().min(1),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("memory.archive"),
+      memoryProposalId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.show"),
+      itemId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.open"),
+      itemId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.save"),
+      itemId: z.string().min(1),
+      category: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.pass"),
+      itemId: z.string().min(1),
+      category: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.plan"),
+      itemId: z.string().min(1),
+      planId: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.complete"),
+      itemId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.archive"),
+      itemId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("item.restore"),
+      itemId: z.string().min(1),
+    })
+    .strict(),
 ]);
 export type UserBehaviorSignalInput = z.infer<typeof userBehaviorSignalSchema>;
 
@@ -298,7 +355,7 @@ export const intelligenceResponseSchema = z
 export const memoryProposalActionSchema = z
   .object({
     id: z.string().uuid(),
-    action: z.enum(["accept", "reject"]),
+    action: z.enum(["accept", "reject", "archive"]),
   })
   .strict();
 export type MemoryProposalActionInput = z.infer<

@@ -57,7 +57,16 @@ export type UserBehaviorSignal =
   | { type: "plan.cancel"; planId: string }
   | { type: "timeline.complete"; itemId: string }
   | { type: "memory.accept"; memoryProposalId: string }
-  | { type: "memory.reject"; memoryProposalId: string };
+  | { type: "memory.reject"; memoryProposalId: string }
+  | { type: "memory.archive"; memoryProposalId: string }
+  | { type: "item.show"; itemId: string }
+  | { type: "item.open"; itemId: string }
+  | { type: "item.save"; itemId: string; category?: string }
+  | { type: "item.pass"; itemId: string; category?: string }
+  | { type: "item.plan"; itemId: string; planId?: string }
+  | { type: "item.complete"; itemId: string }
+  | { type: "item.archive"; itemId: string }
+  | { type: "item.restore"; itemId: string };
 
 export type BehaviorSignalStrength = "weak" | "medium" | "strong" | "strongest";
 

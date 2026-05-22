@@ -44,7 +44,18 @@ export type MemoryProposalType =
   | "place_history"
   | "event_history"
   | "confirmed_behavior";
-export type MemoryProposalStatus = "pending" | "accepted" | "rejected";
+export type MemoryProposalStatus = "pending" | "accepted" | "rejected" | "archived";
+
+export type IndexItemStatus =
+  | "discovered"
+  | "shown"
+  | "opened"
+  | "saved"
+  | "passed"
+  | "planned"
+  | "completed"
+  | "expired"
+  | "archived";
 export type SignalDirection = "positive" | "negative";
 export type SessionKind = "mood" | "interest" | "plan" | "energy";
 export type DecisionUserAction =
@@ -462,9 +473,26 @@ export interface Database {
           user_id: string;
           destination: string;
           source: string;
+          source_id: string | null;
           payload: Json;
           score: number | null;
-          status: string;
+          status: IndexItemStatus;
+          type: string | null;
+          category: string | null;
+          title: string | null;
+          subtitle: string | null;
+          description: string | null;
+          location_name: string | null;
+          address: string | null;
+          lat: number | null;
+          lng: number | null;
+          starts_at: string | null;
+          ends_at: string | null;
+          expires_at: string | null;
+          url: string | null;
+          image_url: string | null;
+          reasons: string[];
+          tags: string[];
           created_at: string;
           updated_at: string;
         };
@@ -472,10 +500,27 @@ export interface Database {
           id?: string;
           user_id: string;
           destination: string;
-          source: string;
+          source?: string;
+          source_id?: string | null;
           payload?: Json;
           score?: number | null;
-          status?: string;
+          status?: IndexItemStatus;
+          type?: string | null;
+          category?: string | null;
+          title?: string | null;
+          subtitle?: string | null;
+          description?: string | null;
+          location_name?: string | null;
+          address?: string | null;
+          lat?: number | null;
+          lng?: number | null;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          expires_at?: string | null;
+          url?: string | null;
+          image_url?: string | null;
+          reasons?: string[];
+          tags?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -484,9 +529,26 @@ export interface Database {
           user_id?: string;
           destination?: string;
           source?: string;
+          source_id?: string | null;
           payload?: Json;
           score?: number | null;
-          status?: string;
+          status?: IndexItemStatus;
+          type?: string | null;
+          category?: string | null;
+          title?: string | null;
+          subtitle?: string | null;
+          description?: string | null;
+          location_name?: string | null;
+          address?: string | null;
+          lat?: number | null;
+          lng?: number | null;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          expires_at?: string | null;
+          url?: string | null;
+          image_url?: string | null;
+          reasons?: string[];
+          tags?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -809,3 +871,22 @@ export type DecisionRunRow =
   Database["public"]["Tables"]["decision_runs"]["Row"];
 export type MemoryUpdateProposalRow =
   Database["public"]["Tables"]["memory_update_proposals"]["Row"];
+export type SurfacedItemRow =
+  Database["public"]["Tables"]["surfaced_items"]["Row"];
+export type SurfacedItemInsert =
+  Database["public"]["Tables"]["surfaced_items"]["Insert"];
+export type BehaviorSignalRow =
+  Database["public"]["Tables"]["behavior_signals"]["Row"];
+export type PlanRow = Database["public"]["Tables"]["plans"]["Row"];
+export type PlanSectionRow =
+  Database["public"]["Tables"]["plan_sections"]["Row"];
+export type TodayTimelineItemRow =
+  Database["public"]["Tables"]["today_timeline_items"]["Row"];
+export type CirclePersonRow =
+  Database["public"]["Tables"]["circle_people"]["Row"];
+export type CircleUpdateRow =
+  Database["public"]["Tables"]["circle_updates"]["Row"];
+export type NorthPillarRow =
+  Database["public"]["Tables"]["north_pillars"]["Row"];
+export type NorthSignalRow =
+  Database["public"]["Tables"]["north_signals"]["Row"];

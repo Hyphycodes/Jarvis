@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AppFrame,
   Checkbox,
@@ -22,30 +22,48 @@ import {
   Ticket,
   User,
 } from "@/components/icons";
+import type { TodayPayload } from "@/lib/ai/types";
 
-// TODO(intelligence): Replace the signed Today constants and hero copy with
-// buildTodayPayload()/TodayPayload once the UI is wired to /api/intelligence.
-export function TodaySigned() {
+export function TodaySigned({ payload }: { payload?: TodayPayload }) {
+  const dayItems = useMemo<TimelineItem[]>(
+    () => buildTimelineItems(payload),
+    [payload],
+  );
+  const grabItems = useMemo(
+    () => payload?.grabList ?? DEFAULT_GRAB_LIST,
+    [payload],
+  );
+
   return (
     <AppFrame>
       <header className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-4">
           <span className="text-[11px] uppercase tracking-editorial text-muted-gold/85">
-            Today
+            {payload?.hero.eyebrow ?? "Today"}
           </span>
           <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/55">
-            May 17, 2025
+            {payload?.hero.date ?? "May 17, 2025"}
           </span>
         </div>
         <h1 className="mt-1 font-serif text-[40px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-          Good evening,
-          <br />
-          <span className="italic">J.</span>
+          {payload?.hero.greeting ? (
+            payload.hero.greeting
+          ) : (
+            <>
+              Good evening,
+              <br />
+              <span className="italic">J.</span>
+            </>
+          )}
         </h1>
         <p className="mt-1 max-w-[42ch] text-[14px] leading-[1.55] text-warm-ivory/60">
-          Your day is set. Dinner at Sparrow tonight.
-          <br />
-          Leave by 7:42 PM.
+          {payload?.hero.summary ?? (
+            <>
+              Your day is set. Dinner at Sparrow tonight.
+              <br />
+              Leave by 7:42 PM.
+            </>
+          )}
         </p>
       </header>
 
@@ -65,11 +83,11 @@ export function TodaySigned() {
           The Day
         </SectionLabel>
         <div className="mt-2">
-          <Timeline items={DAY_ITEMS} />
+          <Timeline items={dayItems} />
         </div>
       </section>
 
-      <GrabList />
+      <GrabList items={grabItems} />
 
       <section className="mt-8 flex flex-col">
         <SectionLabel
@@ -109,7 +127,16 @@ export function TodaySigned() {
   );
 }
 
-const DAY_ITEMS: TimelineItem[] = [
+type GrabListEntry = { id: string; label: string; checked: boolean };
+
+const DEFAULT_GRAB_LIST: GrabListEntry[] = [
+  { id: "demo-id", label: "ID / Wallet", checked: true },
+  { id: "demo-card", label: "Card", checked: true },
+  { id: "demo-phone", label: "Phone", checked: true },
+  { id: "demo-jacket", label: "Jacket", checked: false },
+];
+
+const DEMO_TIMELINE: TimelineItem[] = [
   { id: "work", time: "5:00 PM", title: "Work block" },
   { id: "gym", time: "6:15 PM", title: "Gym" },
   {
@@ -129,6 +156,37 @@ const DAY_ITEMS: TimelineItem[] = [
   },
   { id: "walk", time: "11:00 PM", title: "Walk Home", detail: <WalkHomeDetail /> },
 ];
+
+function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
+  if (!payload || payload.timeline.length === 0) return DEMO_TIMELINE;
+
+  return payload.timeline.map((item) => {
+    const isSparrow = /sparrow/i.test(item.title);
+    const detail = item.expandable
+      ? isSparrow
+        ? (<SparrowDetail />)
+        : item.details
+          ? (
+              <div className="mt-1 text-[13px] leading-[1.55] text-warm-ivory/70">
+                {item.details}
+              </div>
+            )
+          : undefined
+      : undefined;
+
+    const base: TimelineItem = {
+      id: item.id,
+      time: item.time,
+      title: item.title,
+      defaultExpanded: isSparrow || item.id === "leave",
+    };
+    if (detail) base.detail = detail;
+    if (item.planId || isSparrow) {
+      base.href = `/plan/sparrow`;
+    }
+    return base;
+  });
+}
 
 function LeaveHomeDetail() {
   return (
@@ -237,9 +295,7 @@ function StatTile({
   );
 }
 
-function GrabList() {
-  // TODO(intelligence): Source grab-list rows from TodayPayload.grabList when
-  // persistent plan state replaces the current static Sparrow demo surface.
+function GrabList({ items }: { items: GrabListEntry[] }) {
   const [open, setOpen] = useState(true);
   return (
     <section className="mt-6 rounded-[10px] bg-soft-black/80">
@@ -252,7 +308,7 @@ function GrabList() {
         <span className="flex items-center gap-3 text-[11px] uppercase tracking-editorial text-warm-ivory/65">
           Grab List
           <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-[3px] border border-divider px-1.5 text-[10px] text-warm-ivory/70">
-            4
+            {items.length}
           </span>
         </span>
         <span className="text-warm-ivory/60">
@@ -261,10 +317,13 @@ function GrabList() {
       </button>
       {open ? (
         <div className="grid grid-cols-2 gap-y-3 gap-x-6 px-5 pb-5">
-          <Checkbox checked label="ID / Wallet" />
-          <Checkbox checked label="Card" />
-          <Checkbox checked label="Phone" />
-          <Checkbox label="Jacket" />
+          {items.map((entry) => (
+            <Checkbox
+              key={entry.id}
+              checked={entry.checked}
+              label={entry.label}
+            />
+          ))}
         </div>
       ) : null}
     </section>

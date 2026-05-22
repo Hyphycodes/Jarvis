@@ -58,7 +58,7 @@ export async function listPendingMemoryProposals(): Promise<MemoryUpdateProposal
 
 export async function decideMemoryProposal(input: {
   id: string;
-  action: "accept" | "reject";
+  action: "accept" | "reject" | "archive";
 }): Promise<void> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
@@ -82,10 +82,17 @@ export async function decideMemoryProposal(input: {
     });
   }
 
+  const nextStatus =
+    input.action === "accept"
+      ? "accepted"
+      : input.action === "archive"
+        ? "archived"
+        : "rejected";
+
   const { error: updateError } = await supabase
     .from("memory_update_proposals")
     .update({
-      status: input.action === "accept" ? "accepted" : "rejected",
+      status: nextStatus,
       decided_at: new Date().toISOString(),
     })
     .eq("id", input.id)

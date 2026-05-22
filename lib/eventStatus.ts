@@ -17,13 +17,11 @@ function read(id: string): EventStatus {
 }
 
 /**
- * Tiny client-side store for an event's lifecycle status.
- * Persisted to localStorage so the three zoom levels (Today, Plan, Active)
- * stay in sync across navigations.
+ * Thin client-side mirror of plan.live_enabled. localStorage is *only* used as
+ * an optimistic cache; the Supabase column is the source of truth. Pass a
+ * UUID `planId` to also write through to the server.
  */
-export function useEventStatus(id: string) {
-  // Start in "idle" on the server to keep SSR markup stable, then hydrate
-  // from localStorage on mount.
+export function useEventStatus(id: string, options: { planId?: string } = {}) {
   const [status, setStatus] = useState<EventStatus>("idle");
   const [hydrated, setHydrated] = useState(false);
 
@@ -37,6 +35,22 @@ export function useEventStatus(id: string) {
     return () => window.removeEventListener("storage", onStorage);
   }, [id]);
 
+  const writeServer = useCallback(
+    async (next: EventStatus) => {
+      if (!options.planId) return;
+      try {
+        await fetch(`/api/plans/${options.planId}/live`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ enabled: next === "live" }),
+        });
+      } catch (err) {
+        console.error("plan live write failed", err);
+      }
+    },
+    [options.planId],
+  );
+
   const setPersisted = useCallback(
     (next: EventStatus) => {
       setStatus(next);
@@ -45,8 +59,9 @@ export function useEventStatus(id: string) {
       } catch {
         // ignore
       }
+      void writeServer(next);
     },
-    [id],
+    [id, writeServer],
   );
 
   const begin = useCallback(() => setPersisted("live"), [setPersisted]);
