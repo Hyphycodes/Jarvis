@@ -286,3 +286,15 @@ Synthetic moves are low-noise recommendations created from Weekly Rhythm, time
 of day, current inventory, and durable interests. They use `source = ai`, a
 stable `synthetic_move:*` source id, and a normal `payload.briefing`, so Radar
 and the Consideration Brief render them like any other surfaced item.
+
+## Life Cadence
+
+`lib/brain/lifeCadence.ts` infers lightweight cadence from recent actions and
+signals. It does not add schema. It helps the Move Generator notice when lanes
+like basketball, gym recovery, gun range, golf, Spanish/music study, DJ crates,
+land review, woodworking, creative production, social rooms, or outdoor reset
+have been quiet long enough to suggest a useful next move.
+
+Cadence copy should not guilt the owner. It should frame a useful window: "keeps
+the skill lane warm", "small rep that compounds", or "good window to get a
+session in."

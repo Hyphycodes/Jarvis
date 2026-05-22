@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ItemBriefing } from "@/lib/brain/briefingTypes";
+import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
 import type { IndexedItem } from "@/lib/index/types";
 
 export type ConsiderationVerdict = "move" | "hold" | "watch" | "pass" | "plan";
@@ -12,6 +13,7 @@ export type ConsiderationPrimaryAction =
   | "upcoming"
   | "pass"
   | "archive";
+export type BriefDisplayDepth = "minimal" | "compact" | "rich";
 
 export type ConsiderationBriefView = {
   id: string;
@@ -27,6 +29,8 @@ export type ConsiderationBriefView = {
   bestMoveTitle: string;
   bestMoveBody: string;
   primaryAction: ConsiderationPrimaryAction;
+  purposeLabel: string;
+  briefDisplayDepth: BriefDisplayDepth;
   facts: Array<{ label: string; value: string; icon?: string }>;
   indicators: Array<{
     key:
@@ -97,6 +101,8 @@ export function buildConsiderationBrief(item: IndexedItem): ConsiderationBriefVi
   const practicalFit = buildPracticalFit(item, briefing, location);
   const bestMove = bestMoveCopy(verdict, briefing);
   const valueSignal = buildValueSignal(item, briefing, indicators);
+  const purposeLabel = purposeLabelForItem(item);
+  const briefDisplayDepth = displayDepthFor(item, briefing, verdict);
 
   return {
     id: item.id,
@@ -112,6 +118,8 @@ export function buildConsiderationBrief(item: IndexedItem): ConsiderationBriefVi
     bestMoveTitle: bestMove.title,
     bestMoveBody: bestMove.body,
     primaryAction: primaryActionForVerdict(verdict, item),
+    purposeLabel,
+    briefDisplayDepth,
     facts,
     indicators,
     whyItMatters,
@@ -157,6 +165,7 @@ function inferVerdict(item: IndexedItem, briefing: ItemBriefing): ConsiderationV
     case "hold":
       return "hold";
     case "research":
+    case "watch":
       return "watch";
     case "pass":
     case "ignore":
@@ -237,6 +246,7 @@ function buildFacts(
   sourceEvidence: ConsiderationBriefView["sourceEvidence"],
 ): ConsiderationBriefView["facts"] {
   const facts: ConsiderationBriefView["facts"] = [
+    { label: "Purpose", value: purposeLabelForItem(item), icon: "target" },
     { label: "Category", value: cleanLabel(briefing.display_category || item.category || item.type), icon: "category" },
   ];
   const time = formatWindow(item.startsAt, item.endsAt) ?? formatDate(item.expiresAt);
@@ -250,6 +260,31 @@ function buildFacts(
     facts.push({ label: "Source", value: sourceEvidence.domain, icon: "source" });
   }
   return facts.slice(0, 5);
+}
+
+function displayDepthFor(
+  item: IndexedItem,
+  briefing: ItemBriefing,
+  verdict: ConsiderationVerdict,
+): BriefDisplayDepth {
+  if (
+    verdict === "watch" ||
+    verdict === "pass" ||
+    briefing.quality_flags.some((flag) =>
+      ["weak_evidence", "needs_verification", "source_lead_only", "no_current_value"].includes(flag),
+    ) ||
+    briefing.confidence < 0.55
+  ) {
+    return "minimal";
+  }
+  if (
+    verdict === "hold" ||
+    briefing.confidence < 0.72 ||
+    !item.imageUrl && !item.locationName && !item.startsAt
+  ) {
+    return "compact";
+  }
+  return "rich";
 }
 
 function buildIndicators(

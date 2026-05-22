@@ -15,6 +15,7 @@ const HIGH_TRUST: Record<string, string> = {
   "timeout.com": "culture",
   "chicagomag.com": "culture",
   "resy.com": "dining",
+  "tock.com": "dining",
   "opentable.com": "dining",
   "do312.com": "events",
   "choosechicago.com": "culture",
@@ -29,6 +30,8 @@ const HIGH_TRUST: Record<string, string> = {
   "rsvpgallery.com": "style",
   "hodinkee.com": "style",
   "articlesofstyle.com": "style",
+  "gq.com": "style",
+  "highsnobiety.com": "style",
 };
 
 const LOW_TRUST = [
@@ -73,6 +76,10 @@ export function scoreSourceTrust(input: {
     sourceType = /instagram|facebook|youtube|tiktok/.test(domain)
       ? "social"
       : "low_trust";
+    if (domain.includes("houzz.com")) classificationHint = "idea";
+    if (domain.includes("youtube.com") || domain.includes("youtu.be")) {
+      classificationHint = "idea";
+    }
   }
 
   if (/instagram|facebook|tiktok|youtube|x\.com|twitter/.test(domain ?? "")) {
@@ -86,6 +93,10 @@ export function scoreSourceTrust(input: {
     flags.add("directory_spam");
     sourceType = "directory";
     trustScore -= 0.25;
+  }
+  if (/rugged masculine chicago|quiet luxury chicago/i.test(haystack)) {
+    flags.add("too_literal");
+    trustScore -= 0.22;
   }
   if (/#\w+/.test(input.title ?? "") || /view all \d+ comments|profile photos|comments? and posts/i.test(haystack)) {
     flags.add("raw_comment");

@@ -179,12 +179,17 @@ export type RadarCard = {
     | "idea"
     | "activity"
     | "outdoors"
+    | "skill"
+    | "health"
+    | "creative"
+    | "ownership"
     | "source_lead"
     | "watch"
     | "opportunity";
   title: string;
   summary: string;
   displayCategory?: string;
+  purposeLabel?: string;
   oneLine?: string;
   jarvisTake?: string;
   verdictLabel?: string;

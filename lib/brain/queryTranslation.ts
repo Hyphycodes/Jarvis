@@ -12,6 +12,9 @@ const TRANSLATIONS: Array<{ match: RegExp; queries: string[] }> = [
       "Chicago western wear boutique",
       "Chicago watch event",
       "Chicago cigar lounge event",
+      "Chicago workwear boutique",
+      "Chicago gun range",
+      "Chicago cigar lounge",
     ],
   },
   {
@@ -58,6 +61,7 @@ const TRANSLATIONS: Array<{ match: RegExp; queries: string[] }> = [
       "motocross track Illinois",
       "outdoor activities near Chicago this weekend",
       "forest preserve trails near Schaumburg",
+      "gun range near Schaumburg",
     ],
   },
   {

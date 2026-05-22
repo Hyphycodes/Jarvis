@@ -43,7 +43,7 @@ export function actionTitleForItem(item: IndexedItem): ActionTitleResult {
   }
 
   return {
-    title: clip(title, 54),
+    title: clip(title, 44),
     flags,
   };
 }

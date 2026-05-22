@@ -7,6 +7,7 @@ export const briefingActionSchema = z.enum([
   "hold",
   "plan",
   "research",
+  "watch",
   "ignore",
 ]);
 
@@ -36,6 +37,8 @@ export const briefingQualityFlagSchema = z.enum([
   "misclassified",
   "title_unclear",
   "no_clear_move",
+  "source_lead_only",
+  "no_current_value",
 ]);
 
 export const itemBriefingSchema = z.object({
@@ -120,12 +123,15 @@ export function isMajorQualityFlag(flag: string): boolean {
     "weak_evidence",
     "generic",
     "not_actionable",
+    "needs_verification",
     "closed_event",
     "expired_event",
     "directory_spam",
     "misclassified",
     "title_unclear",
     "no_clear_move",
+    "source_lead_only",
+    "no_current_value",
   ].includes(flag);
 }
 

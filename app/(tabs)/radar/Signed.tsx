@@ -25,6 +25,7 @@ type Card = {
   title: string;
   body: string;
   take?: string;
+  purposeLabel?: string;
   meta: string[];
   footerLine: string;
   imageUrl?: string;
@@ -48,6 +49,7 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
     title: item.title,
     body: item.oneLine || item.summary || item.whyItFits || "Worth a closer look.",
     take: item.bestMoveTitle ?? item.jarvisTake,
+    purposeLabel: item.purposeLabel,
     meta,
     footerLine: [
       item.effortLevel ? `Effort ${item.effortLevel}` : null,
@@ -69,6 +71,10 @@ function mapCategoryToFilter(category: string): Filter {
     case "move":
     case "activity":
     case "outdoors":
+    case "skill":
+    case "health":
+    case "creative":
+    case "ownership":
       return "Moves";
     case "events":
     case "event":
@@ -111,6 +117,14 @@ function mapCategoryToBadge(category: string): Card["category"] {
       return "ACTIVITY";
     case "outdoors":
       return "OUTDOORS";
+    case "skill":
+      return "SKILL";
+    case "health":
+      return "HEALTH";
+    case "creative":
+      return "CREATIVE";
+    case "ownership":
+      return "OWNERSHIP";
     case "travel":
       return "TRAVEL";
     case "idea":
@@ -125,9 +139,9 @@ function mapCategoryToBadge(category: string): Card["category"] {
 }
 
 function formatMeta(iso?: string): string {
-  if (!iso) return "OPEN WINDOW";
+  if (!iso) return "";
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "OPEN WINDOW";
+  if (Number.isNaN(date.getTime())) return "";
   return date
     .toLocaleString("en-US", {
       month: "short",
@@ -340,6 +354,11 @@ function RadarCard({
             <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
               {card.category}
             </span>
+            {card.purposeLabel ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-warm-ivory/38">
+                {card.purposeLabel}
+              </span>
+            ) : null}
           </div>
           <h2 className="mt-3 font-serif text-[27px] font-normal leading-[1.08] tracking-[-0.01em] text-warm-ivory">
             {card.title}
@@ -402,11 +421,10 @@ function RadarEmptyState() {
     <div className="border-t border-white/[0.08] py-12">
       <div className="max-w-[34ch]">
         <h2 className="font-serif text-[30px] leading-tight text-warm-ivory">
-          Nothing on Radar yet
+          Nothing made the cut.
         </h2>
         <p className="mt-3 text-[14px] leading-[1.55] text-warm-ivory/58">
-          Refresh Radar from Intelligence when you want Jarvis to pull new
-          candidates into view.
+          Jarvis checked the board. Nothing strong enough to interrupt the day.
         </p>
         <Link
           href="/account/intelligence"

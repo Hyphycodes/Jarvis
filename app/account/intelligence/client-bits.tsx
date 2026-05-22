@@ -22,7 +22,13 @@ type RefreshSummary = {
   run_type?: string;
   budget?: Record<string, unknown>;
   synthetic_moves?: number;
-  cleaned?: { archived?: number; moved_to_holding?: number; reviewed?: number };
+  cleaned?: {
+    archived?: number;
+    moved_to_holding?: number;
+    moved_to_discovered?: number;
+    reviewed?: number;
+    invalid_active_found?: number;
+  };
 };
 
 export function RefreshRadarButton({
@@ -185,6 +191,8 @@ export function CleanRadarButton() {
     reviewed?: number;
     archived?: number;
     moved_to_holding?: number;
+    moved_to_discovered?: number;
+    invalid_active_found?: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -204,6 +212,8 @@ export function CleanRadarButton() {
           reviewed?: number;
           archived?: number;
           moved_to_holding?: number;
+          moved_to_discovered?: number;
+          invalid_active_found?: number;
         });
         router.refresh();
       } catch (err) {
@@ -225,7 +235,8 @@ export function CleanRadarButton() {
       {result ? (
         <p className="mt-2 text-[11px] text-warm-ivory/50">
           Reviewed {result.reviewed ?? 0} · archived {result.archived ?? 0} ·
-          Holding {result.moved_to_holding ?? 0}
+          Holding {result.moved_to_holding ?? 0} · discovered{" "}
+          {result.moved_to_discovered ?? 0}
         </p>
       ) : null}
       {error ? <p className="mt-2 text-[11px] text-[#E07A6E]">{error}</p> : null}

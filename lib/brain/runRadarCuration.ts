@@ -10,6 +10,7 @@ import {
   isMajorQualityFlag,
   mergeBriefingIntoPayload,
 } from "@/lib/brain/briefingTypes";
+import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { runCurator, summarizeContext } from "@/lib/brain/curator";
 import { runCritic } from "@/lib/brain/critic";
 import { shortlistByScore } from "@/lib/brain/router";
@@ -160,7 +161,7 @@ export async function runRadarCuration(options: {
   );
 
   // Post-critique gates (code-enforced, not just prompt hints)
-  const qualityGated = enforceBriefingQuality(briefed);
+  const qualityGated = enforceBriefingQuality(briefed, shortlist);
   const gated = enforceGates(qualityGated, shortlist, now);
   if (gated.fallbackUsed) {
     console.warn("[brain.curation] fallback brain applied", {
@@ -388,7 +389,11 @@ async function attachBriefings(
   };
 }
 
-function enforceBriefingQuality(decision: BrainDecision): BrainDecision {
+function enforceBriefingQuality(
+  decision: BrainDecision,
+  shortlist: ScoredItem[],
+): BrainDecision {
+  const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
   const selected: BrainDecision["selected"] = [];
   const rejected: BrainDecision["rejected"] = [...decision.rejected];
   const notes: string[] = [];
@@ -404,6 +409,10 @@ function enforceBriefingQuality(decision: BrainDecision): BrainDecision {
     const hasCoreCopy =
       briefing.one_line.trim().length > 0 && briefing.jarvis_take.trim().length > 0;
     const majorFlags = briefing.quality_flags.filter(isMajorQualityFlag);
+    const scored = scoreByItemId.get(sel.itemId);
+    const frontRoom = scored
+      ? evaluateActiveRadarItem(scored.item, briefing)
+      : null;
     const terminal =
       briefing.suggested_destination === "archived" ||
       briefing.suggested_destination === "discovered" ||
@@ -432,8 +441,19 @@ function enforceBriefingQuality(decision: BrainDecision): BrainDecision {
       destination === "radar" &&
       (!hasCoreCopy ||
         nextConfidence < RADAR_MIN_CONFIDENCE ||
-        majorFlags.length > 0)
+        majorFlags.length > 0 ||
+        (frontRoom && !frontRoom.allowed))
     ) {
+      const frontRoomDestination = frontRoom?.suggestedDestination;
+      if (frontRoomDestination === "archived" || frontRoomDestination === "discovered") {
+        rejected.push({
+          itemId: sel.itemId,
+          reason: `Front-room gate: ${frontRoom?.reason ?? "not active-ready"}`,
+          suggestedStatus: frontRoomDestination,
+        });
+        notes.push(`${sel.itemId}: front-room rejected`);
+        continue;
+      }
       if (
         briefing.confidence >= FALLBACK_HOLDING_CONFIDENCE_FLOOR &&
         briefing.best_next_action !== "ignore" &&
@@ -445,9 +465,12 @@ function enforceBriefingQuality(decision: BrainDecision): BrainDecision {
           confidence: nextConfidence,
           reason: briefing.why_it_matters,
           displayAngle: briefing.jarvis_take,
-          tags: briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags,
+          tags: [
+            ...(briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags),
+            ...(frontRoom?.flags ?? []),
+          ],
         });
-        notes.push(`${sel.itemId}: briefing downgraded to Holding`);
+        notes.push(`${sel.itemId}: downgraded to Holding (${frontRoom?.reason ?? "briefing gate"})`);
       } else {
         rejected.push({
           itemId: sel.itemId,
@@ -465,7 +488,10 @@ function enforceBriefingQuality(decision: BrainDecision): BrainDecision {
       confidence: nextConfidence,
       reason: briefing.why_it_matters,
       displayAngle: briefing.jarvis_take,
-      tags: briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags,
+      tags: [
+        ...(briefing.cleaned_tags.length > 0 ? briefing.cleaned_tags : sel.tags),
+        ...(frontRoom?.purposeLabel ? [frontRoom.purposeLabel] : []),
+      ],
     });
   }
 

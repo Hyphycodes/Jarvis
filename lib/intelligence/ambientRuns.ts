@@ -211,7 +211,7 @@ export async function runAmbientIntelligence(input: {
     lanes = [
       ...lanes,
       {
-        source: "synthetic-move",
+        source: "ai",
         candidates: syntheticMoves.map(syntheticMoveToCandidate),
       },
     ];
@@ -223,7 +223,7 @@ export async function runAmbientIntelligence(input: {
     const ingest = await ingestCandidates({
       source: lane.source,
       candidates,
-      destination: lane.source === "synthetic-move" ? undefined : "radar",
+      destination: lane.source === "ai" ? undefined : "radar",
     });
     summary.inserted += ingest.inserted;
     summary.updated += ingest.updated;

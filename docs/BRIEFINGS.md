@@ -140,9 +140,22 @@ Briefing quality flags cover copy and source quality:
 - `misclassified`
 - `title_unclear`
 - `no_clear_move`
+- `source_lead_only`
+- `no_current_value`
 
 Major flags prevent Active Radar unless the item can be safely downgraded to
 Holding.
+
+## Display Depth
+
+The Consideration Brief derives `briefDisplayDepth`:
+
+- `minimal`: weak/watch/pass/source-thin items
+- `compact`: Holding or medium-confidence items
+- `rich`: strong decision-ready items
+
+The better the item, the more detail it earns. Source/debug detail stays lower
+on the page.
 
 ## Display Titles
 

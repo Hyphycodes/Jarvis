@@ -47,3 +47,8 @@ context, no major quality flags, and enough confidence to be decision-ready.
 Holding is for good signal with weak timing, thin evidence, or higher effort.
 Archive/discovered is for noisy, literal, expired, duplicated, low-trust, or
 unclear candidates.
+
+`evaluateActiveRadarItem()` is the hard front-room gate. It blocks weak evidence,
+social noise, raw comments, literal query echoes, closed/expired events,
+misclassification, unclear titles, source-lead-only rows, and no-current-value
+briefs from Active Radar.

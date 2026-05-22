@@ -220,9 +220,27 @@ old results, and unclear titles are demoted or rejected. Cleanup archives obviou
 bad Active Radar items or moves medium-confidence watch items into Holding. It
 never deletes records and preserves saved/planned/completed items.
 
+## Front Room Rule
+
+Active Radar is the front room. It only renders `destination="radar"` rows in
+`shown` or `opened` state that pass `evaluateActiveRadarItem()`. Raw
+`discovered` candidates, Holding items, Watch items, source leads, weak evidence,
+social snippets, literal query matches, and "watch for stronger evidence" briefs
+do not render on Radar.
+
+Zero cards is a valid outcome. The signed-in empty state says: "Nothing made the
+cut."
+
 ## Action Titles
 
 Radar titles should answer "what is the move?" rather than echo a source
 headline. The action-title helper strips queries, platform suffixes, hashtags,
 lane ids, and raw comment text. If a clear move cannot be generated, the item is
 demoted.
+
+## Purpose Labels
+
+Every Radar card carries a derived purpose label such as Health reset, Skill
+rep, Taste development, Ownership lane, Creative fuel, Social room, Outdoor
+reset, or Culture signal. The label answers why the item exists in the owner's
+life.

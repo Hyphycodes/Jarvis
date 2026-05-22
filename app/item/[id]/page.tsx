@@ -51,6 +51,8 @@ export default async function ItemDetailPage({
   if (!item) notFound();
 
   const brief = buildConsiderationBrief(item);
+  const isCompact = brief.briefDisplayDepth === "compact" || brief.briefDisplayDepth === "rich";
+  const isRich = brief.briefDisplayDepth === "rich";
   const planContext = readPlanContext(item);
   const showActions = !["completed", "expired"].includes(item.status);
   const showDebug = user.role === "owner";
@@ -76,15 +78,15 @@ export default async function ItemDetailPage({
           </p>
         </section>
 
-        <HeroMedia media={brief.media} title={brief.title} />
+        {isRich ? <HeroMedia media={brief.media} title={brief.title} /> : null}
 
         <QuickFacts facts={brief.facts} />
 
         <BestMoveCard brief={brief} />
 
-        <IndicatorPanel indicators={brief.indicators.slice(0, 4)} />
+        {isCompact ? <IndicatorPanel indicators={brief.indicators.slice(0, 4)} /> : null}
 
-        {brief.whyItMatters.length > 0 ? (
+        {isCompact && brief.whyItMatters.length > 0 ? (
           <EditorialSection title="Why It Matters">
             <div className="divide-y divide-white/[0.06]">
               {brief.whyItMatters.map((reason) => (
@@ -94,7 +96,7 @@ export default async function ItemDetailPage({
           </EditorialSection>
         ) : null}
 
-        {brief.practicalFit.length > 0 ? (
+        {isRich && brief.practicalFit.length > 0 ? (
           <EditorialSection title="Practical Fit">
             <div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.08] bg-white/[0.018]">
               {brief.practicalFit.map((row) => (
@@ -104,9 +106,9 @@ export default async function ItemDetailPage({
           </EditorialSection>
         ) : null}
 
-        {brief.location ? <LocationModule location={brief.location} /> : null}
+        {isRich && brief.location ? <LocationModule location={brief.location} /> : null}
 
-        {brief.valueSignal ? <ValueSignal signal={brief.valueSignal} /> : null}
+        {isRich && brief.valueSignal ? <ValueSignal signal={brief.valueSignal} /> : null}
 
         {brief.sourceEvidence ? (
           <SourceEvidence evidence={brief.sourceEvidence} />

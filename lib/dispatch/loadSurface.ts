@@ -5,6 +5,8 @@ import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import { actionTitleForItem } from "@/lib/brain/actionTitles";
+import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
+import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
 import {
   buildConsiderationBrief,
   heroImageForItem,
@@ -278,12 +280,13 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
   try {
     const items = await listIndexItems({
       destination: "radar",
-      status: ["discovered", "shown", "opened"],
+      status: ["shown", "opened"],
       limit: 24,
     });
     return items
+      .filter((item) => evaluateActiveRadarItem(item).allowed)
       .sort(compareRadarItems)
-      .slice(0, 12)
+      .slice(0, 5)
       .map(toRadarCard);
   } catch (error) {
     logSurfaceError("radar", error);
@@ -513,6 +516,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
   const briefing = item.briefing;
   const consideration = buildConsiderationBrief(item);
   const actionTitle = actionTitleForItem(item).title;
+  const purposeLabel = purposeLabelForItem(item);
   return {
     id: item.id,
     source: item.source,
@@ -524,6 +528,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
     title: actionTitle || briefing?.display_title || item.title,
     summary: briefing?.one_line ?? item.description ?? item.subtitle ?? "",
     displayCategory: briefing?.display_category,
+    purposeLabel,
     oneLine: briefing?.one_line,
     jarvisTake: briefing?.jarvis_take,
     verdictLabel: consideration.verdictLabel,
@@ -839,9 +844,13 @@ function mapCategory(
   if (normalized === "travel") return "travel";
   if (normalized === "style" || normalized === "shopping") return "style";
   if (normalized === "product") return "product";
-  if (normalized === "idea" || normalized === "creative") return "idea";
+  if (normalized === "idea") return "idea";
+  if (normalized === "creative") return "creative";
   if (normalized === "activity") return "activity";
   if (normalized === "outdoors" || normalized === "land") return "outdoors";
+  if (normalized === "skill") return "skill";
+  if (normalized === "health") return "health";
+  if (normalized === "ownership") return "ownership";
   switch (type) {
     case "restaurant":
       return "dining";
@@ -858,8 +867,9 @@ function mapCategory(
     case "style":
       return "style";
     case "creative":
-      return "idea";
+      return "creative";
     case "health":
+      return "health";
     case "recommendation":
       return "move";
     case "real_estate":

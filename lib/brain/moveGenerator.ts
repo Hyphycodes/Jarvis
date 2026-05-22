@@ -1,6 +1,7 @@
 import "server-only";
 
 import { mergeBriefingIntoPayload } from "@/lib/brain/briefingTypes";
+import { evaluateLifeCadence, type LifeCadenceKey } from "@/lib/brain/lifeCadence";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import type { CreateIndexedItemInput } from "@/lib/index/types";
 
@@ -13,9 +14,12 @@ export type SyntheticMove = {
     | "creative"
     | "style"
     | "business"
+    | "ownership"
+    | "skill"
     | "land"
     | "social"
     | "general";
+  purpose_label: string;
   action_title: string;
   one_line: string;
   why_it_fits: string;
@@ -36,87 +40,94 @@ export function generateSyntheticMoves(input: {
   const hour = now.getHours();
   const workday = day >= 1 && day <= 5;
   const weekend = day === 0 || day === 6;
+  const cadence = evaluateLifeCadence(input.context).filter((entry) => entry.shouldSuggestNow);
   const moves: SyntheticMove[] = [];
 
   if (input.mode === "north_reflection") {
-    moves.push({
-      title: "Review one land lead",
-      type: "move",
-      category: "land",
-      action_title: "Land listing to review",
-      one_line: "A quiet north-facing review, not an urgent move.",
-      why_it_fits: "Keeps the land and independence thread alive without turning it into a fake emergency.",
-      best_window: "Weekend morning or a low-noise evening.",
-      effort_level: "low",
-      spending_posture: "free",
-      suggested_destination: "holding",
-      confidence: 0.61,
-    });
+    moves.push(cadenceMove(
+      "Land listing to review",
+      "Ownership lane",
+      "ownership",
+      "A quiet north-facing review, not an urgent move.",
+      "Keeps the land and independence thread alive without turning it into a fake emergency.",
+      "Weekend morning or a low-noise evening.",
+      "low",
+      "free",
+      "holding",
+      0.64,
+    ));
     return moves;
   }
 
   if (workday && hour < 16) {
-    moves.push({
-      title: "Workday recovery block",
-      type: "move",
-      category: "health",
-      action_title: "Recovery block after work",
-      one_line: "Low-cost reset after the Schaumburg window closes.",
-      why_it_fits: "It respects the work rhythm and keeps the evening useful without forcing a production.",
-      best_window: "After 4:30 PM.",
-      effort_level: "low",
-      spending_posture: "free",
-      suggested_destination: "holding",
-      confidence: 0.58,
-    });
+    moves.push(cadenceMove(
+      "Recovery block after work",
+      "Recovery",
+      "health",
+      "Low-cost reset after the Schaumburg window closes.",
+      "It respects the work rhythm and keeps the evening useful without forcing a production.",
+      "After 4:30 PM.",
+      "low",
+      "free",
+      "holding",
+      0.62,
+    ));
   }
 
   if (workday && hour >= 15 && input.activeRadarCount < 3) {
-    moves.push({
-      title: "Quiet coffee reset",
-      type: "move",
-      category: "general",
-      action_title: "Quiet coffee reset",
-      one_line: "A clean after-work reset if the day needs a second gear.",
-      why_it_fits: "Low friction, low spend, and useful without pretending the whole night needs a plan.",
-      best_window: "After getting home.",
-      effort_level: "low",
-      spending_posture: "low",
-      suggested_destination: "radar",
-      confidence: 0.68,
-    });
+    moves.push(cadenceMove(
+      "Quiet coffee reset",
+      "Social room",
+      "general",
+      "A clean after-work reset if the day needs a second gear.",
+      "Low friction, low spend, and useful without pretending the whole night needs a plan.",
+      "After getting home.",
+      "low",
+      "low",
+      "radar",
+      0.72,
+    ));
   }
 
   if (weekend || input.mode === "weekend_preview") {
-    moves.push({
-      title: "Horseback riding experience",
-      type: "move",
-      category: "outdoors",
-      action_title: "Horseback riding experience",
-      one_line: "A stronger weekend idea than another passive feed scroll.",
-      why_it_fits: "Outdoor, cinematic, and different enough to be worth holding for the right window.",
-      best_window: "Weekend daylight.",
-      effort_level: "medium",
-      spending_posture: "paid",
-      suggested_destination: "holding",
-      confidence: 0.64,
-    });
-    moves.push({
-      title: "Weekend golf window",
-      type: "move",
-      category: "outdoors",
-      action_title: "Weekend golf window",
-      one_line: "A simple active block if the weather and tee time line up.",
-      why_it_fits: "Clear, physical, and easy to either act on or ignore without clutter.",
-      best_window: "Saturday or Sunday morning.",
-      effort_level: "medium",
-      spending_posture: "paid",
-      suggested_destination: "holding",
-      confidence: 0.62,
-    });
+    moves.push(cadenceMove(
+      "Horseback riding experience",
+      "Outdoor reset",
+      "outdoors",
+      "A stronger weekend idea than another passive feed scroll.",
+      "Outdoor, cinematic, and different enough to be worth holding for the right window.",
+      "Weekend daylight.",
+      "medium",
+      "paid",
+      "holding",
+      0.66,
+    ));
+    moves.push(cadenceMove(
+      "Weekend golf window",
+      "Outdoor reset",
+      "outdoors",
+      "A simple active block if the weather and tee time line up.",
+      "Clear, physical, and easy to either act on or ignore without clutter.",
+      "Saturday or Sunday morning.",
+      "medium",
+      "paid",
+      "holding",
+      0.64,
+    ));
   }
 
-  return moves.slice(0, 3);
+  for (const signal of cadence.slice(0, 2)) {
+    const move = moveForCadence(signal.key);
+    if (move && !moves.some((existing) => existing.action_title === move.action_title)) {
+      moves.push(move);
+    }
+  }
+
+  return moves
+    .filter((move) =>
+      move.suggested_destination === "radar" ? move.confidence >= 0.72 : true,
+    )
+    .slice(0, 3);
 }
 
 export function syntheticMoveToCandidate(move: SyntheticMove): CreateIndexedItemInput {
@@ -141,7 +152,7 @@ export function syntheticMoveToCandidate(move: SyntheticMove): CreateIndexedItem
     suggested_destination: move.suggested_destination === "today" ? ("radar" as const) : move.suggested_destination,
     quality_flags: [],
     evidence_summary: "Generated from current rhythm and recent behavior, not an external source.",
-    cleaned_tags: ["move", move.category],
+    cleaned_tags: ["move", move.category, move.purpose_label],
   };
   return {
     type: "recommendation",
@@ -159,11 +170,19 @@ export function syntheticMoveToCandidate(move: SyntheticMove): CreateIndexedItem
     status: "discovered",
     score: move.confidence,
     reasons: [move.why_it_fits, move.best_window ?? ""].filter(Boolean),
-    tags: ["synthetic_move", "move", move.category, move.effort_level, move.spending_posture],
+    tags: [
+      "synthetic_move",
+      "move",
+      move.category,
+      move.purpose_label,
+      move.effort_level,
+      move.spending_posture,
+    ],
     rawPayload: mergeBriefingIntoPayload(
       {
         source: "synthetic_move",
         move_title: move.action_title,
+        purpose_label: move.purpose_label,
         generated_at: now,
         best_window: move.best_window ?? null,
       },
@@ -173,10 +192,65 @@ export function syntheticMoveToCandidate(move: SyntheticMove): CreateIndexedItem
   };
 }
 
+function moveForCadence(key: LifeCadenceKey): SyntheticMove | null {
+  switch (key) {
+    case "basketball":
+      return cadenceMove("Play basketball outside", "Health reset", "outdoors", "Good window to get a session in.", "Keeps the body lane warm without spending money.", "After work or weekend daylight.", "low", "free", "radar", 0.73);
+    case "gun_range":
+      return cadenceMove("Gun range session", "Skill rep", "skill", "Controlled practice, not noise.", "A monthly skill rep with discipline and focus.", "Weekend or early evening.", "medium", "paid", "holding", 0.66);
+    case "golf":
+      return cadenceMove("Golf range session", "Outdoor reset", "outdoors", "A clean outdoor rep if the weather cooperates.", "Keeps the active lane warm without overcommitting.", "Weekend morning.", "medium", "paid", "holding", 0.66);
+    case "spanish_music":
+      return cadenceMove("Spanish song study", "Skill rep", "skill", "One song, active listening, useful repetition.", "Small rep that compounds without needing a full plan.", "Quiet evening block.", "low", "free", "holding", 0.62);
+    case "dj_crates":
+      return cadenceMove("DJ crate cleanup", "Creative fuel", "creative", "Clean up one lane of records or references.", "Keeps the creative system sharp and searchable.", "45-minute evening block.", "low", "free", "holding", 0.64);
+    case "land_review":
+      return cadenceMove("Land listing to review", "Ownership lane", "ownership", "Review one serious listing or comp.", "Keeps the ownership lane warm without forcing a decision.", "Weekend morning.", "low", "free", "holding", 0.65);
+    case "woodworking":
+      return cadenceMove("Woodworking joint study", "Skill rep", "skill", "One practical build concept to understand.", "Sharpens the future homestead/build lane.", "Weekend morning.", "low", "free", "holding", 0.61);
+    case "creative_production":
+      return cadenceMove("Camera framing practice", "Creative fuel", "creative", "One small visual rep.", "Keeps the cinematic eye active without turning it into a production.", "Quiet evening.", "low", "free", "holding", 0.63);
+    case "social_room":
+      return cadenceMove("Invite someone to coffee", "Social room", "social", "A low-pressure room with someone worth keeping close.", "Builds the real network, not just the feed.", "After work or weekend.", "low", "low", "holding", 0.64);
+    case "gym_recovery":
+      return cadenceMove("Gym recovery block", "Recovery", "health", "Low-friction recovery before the day gets away.", "Keeps discipline moving even on a workday.", "After work.", "low", "free", "radar", 0.72);
+    case "outdoor_reset":
+      return cadenceMove("Sunlight walk", "Outdoor reset", "outdoors", "A simple outdoor reset.", "Small physical move that clears the board.", "Lunch or after work.", "low", "free", "radar", 0.72);
+  }
+}
+
+function cadenceMove(
+  action_title: string,
+  purpose_label: string,
+  category: SyntheticMove["category"],
+  one_line: string,
+  why_it_fits: string,
+  best_window: string,
+  effort_level: SyntheticMove["effort_level"],
+  spending_posture: SyntheticMove["spending_posture"],
+  suggested_destination: SyntheticMove["suggested_destination"],
+  confidence: number,
+): SyntheticMove {
+  return {
+    title: action_title,
+    type: "move",
+    category,
+    purpose_label,
+    action_title,
+    one_line,
+    why_it_fits,
+    best_window,
+    effort_level,
+    spending_posture,
+    suggested_destination,
+    confidence,
+  };
+}
+
 function categoryLabel(category: SyntheticMove["category"]): string {
   switch (category) {
     case "health":
-      return "Move";
+      return "Health";
     case "outdoors":
       return "Outdoors";
     case "creative":
@@ -185,8 +259,11 @@ function categoryLabel(category: SyntheticMove["category"]): string {
       return "Style";
     case "business":
       return "Business";
+    case "ownership":
     case "land":
-      return "Land";
+      return "Ownership";
+    case "skill":
+      return "Skill";
     case "social":
       return "Social";
     default:
