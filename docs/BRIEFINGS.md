@@ -117,3 +117,35 @@ The helper maps `IndexedItem` + `payload.briefing` into:
 No external APIs run on page load. Media uses already-stored URLs only.
 Location uses stored address/coordinates and a CSS map-style panel with an
 Apple Maps link.
+
+## Quality Flags
+
+Briefing quality flags cover copy and source quality:
+
+- `seo_junk`
+- `instagram_noise`
+- `social_noise`
+- `raw_comment`
+- `too_literal`
+- `weak_evidence`
+- `generic`
+- `poor_timing`
+- `too_expensive`
+- `too_far`
+- `not_actionable`
+- `needs_verification`
+- `closed_event`
+- `expired_event`
+- `directory_spam`
+- `misclassified`
+- `title_unclear`
+- `no_clear_move`
+
+Major flags prevent Active Radar unless the item can be safely downgraded to
+Holding.
+
+## Display Titles
+
+The Briefing Editor and deterministic fallback use the action-title helper to
+produce concise move titles. Internal queries, strategist lane labels, social
+comment text, platform suffixes, and hashtags stay out of primary UI.

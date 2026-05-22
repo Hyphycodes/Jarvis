@@ -270,3 +270,19 @@ Called from item-action server actions after save/pass/plan/complete/archive/res
 - No AI direct database mutation — Claude returns decisions, code applies them.
 - No automatic Radar promotion — items only reach Active Radar through the Curator + Critic + gates.
 - Empty selected[] and empty lanes[] are valid answers.
+
+## Ambient Runs
+
+The ambient intelligence layer wraps the existing brain instead of replacing it.
+Run types are `daily_maintenance`, `radar_discovery`, `weekend_preview`,
+`holding_review`, and `north_reflection`. Runs are owner-triggered today and
+cron-ready later. They never execute from page load. Metadata lives in
+`brain_decision_runs.raw_output.ambient`; estimated cost lives in
+`brain_decision_runs.raw_output.budget`.
+
+## Move Generator
+
+Synthetic moves are low-noise recommendations created from Weekly Rhythm, time
+of day, current inventory, and durable interests. They use `source = ai`, a
+stable `synthetic_move:*` source id, and a normal `payload.briefing`, so Radar
+and the Consideration Brief render them like any other surfaced item.

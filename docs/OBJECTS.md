@@ -208,3 +208,17 @@ prefixed with `[QA]`, and marked with `payload.qa_fixture=true` plus
 
 The helper can create Radar, Today, Upcoming, and active generated-plan
 fixtures, then clear only `[QA]` fixture rows. See [`docs/QA.md`](./QA.md).
+
+## Ambient Metadata
+
+No schema migration is required for ambient intelligence. Runtime metadata goes
+into existing JSON fields:
+
+- `surfaced_items.payload.briefing`: clean user-facing briefing
+- `surfaced_items.payload.move_title`: optional clean action title
+- `surfaced_items.payload.source_trust`: source trust audit for research items
+- `brain_decision_runs.raw_output.ambient`: run type and policy
+- `brain_decision_runs.raw_output.budget`: estimated cost and caps
+
+Synthetic moves are surfaced items with `source = ai`, a stable
+`synthetic_move:*` source id, and normal lifecycle status/destination.

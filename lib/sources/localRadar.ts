@@ -18,6 +18,8 @@ import type { TavilySearchResult } from "@/lib/sources/tavily";
 import type { BraveResult } from "@/lib/sources/brave";
 import type { CreateIndexedItemInput, IndexItemType } from "@/lib/index/types";
 import { LOCAL_RADAR_MAX_RESULTS_PER_QUERY } from "@/lib/brain/constants";
+import { scoreSourceTrust } from "@/lib/intelligence/sourceTrust";
+import { cleanMoveTitle } from "@/lib/brain/actionTitles";
 
 // ── Dynamic lane support (Sprint 2.2) ────────────────────────────────────────
 
@@ -132,12 +134,19 @@ function normalizeLaneTavily(
     return null;
   }
   const leadName = extractLeadName(title, result.content);
+  const trust = scoreSourceTrust({
+    url: result.url,
+    title,
+    snippet: result.content,
+    publishedDate: result.published_date,
+  });
+  const displayTitle = cleanMoveTitle(leadName ?? title);
   return {
-    type: lq.type,
+    type: refineType(lq.type, lq.category, trust.classificationHint, result.url),
     destination: "radar" as const,
     source: "research" as const,
     sourceId: `lane:${lq.laneId}:${result.url}`,
-    title: leadName ?? title,
+    title: displayTitle || leadName || title,
     subtitle: leadName ? title : undefined,
     description: result.content?.slice(0, 400) ?? undefined,
     url: result.url,
@@ -149,6 +158,8 @@ function normalizeLaneTavily(
     tags: [
       ...lq.tags,
       "strategist-lane",
+      trust.sourceType,
+      ...(trust.qualityFlags.length > 0 ? trust.qualityFlags : []),
       ...(leadName ? ["article-lead"] : ["web-result"]),
     ],
     rawPayload: {
@@ -159,6 +170,8 @@ function normalizeLaneTavily(
       lead_name: leadName ?? null,
       tavily_score: result.score ?? null,
       published_date: result.published_date ?? null,
+      source_trust: trust,
+      move_title: displayTitle || null,
     },
   };
 }
@@ -179,12 +192,19 @@ function normalizeLaneBrave(
     return null;
   }
   const leadName = extractLeadName(title, result.description);
+  const trust = scoreSourceTrust({
+    url: result.url,
+    title,
+    snippet: result.description,
+    age: result.age,
+  });
+  const displayTitle = cleanMoveTitle(leadName ?? title);
   return {
-    type: lq.type,
+    type: refineType(lq.type, lq.category, trust.classificationHint, result.url),
     destination: "radar" as const,
     source: "research" as const,
     sourceId: `lane:${lq.laneId}:${result.url}`,
-    title: leadName ?? title,
+    title: displayTitle || leadName || title,
     subtitle: leadName ? title : undefined,
     description: result.description?.slice(0, 400) ?? undefined,
     url: result.url,
@@ -197,6 +217,8 @@ function normalizeLaneBrave(
       ...lq.tags,
       "strategist-lane",
       "brave-source",
+      trust.sourceType,
+      ...(trust.qualityFlags.length > 0 ? trust.qualityFlags : []),
       ...(leadName ? ["article-lead"] : ["web-result"]),
     ],
     rawPayload: {
@@ -206,6 +228,8 @@ function normalizeLaneBrave(
       source_title: result.title,
       lead_name: leadName ?? null,
       age: result.age ?? null,
+      source_trust: trust,
+      move_title: displayTitle || null,
     },
   };
 }
@@ -421,13 +445,20 @@ function normalizeTavilyLead(
 
   const leadName = extractLeadName(title, result.content);
   const snippet = result.content?.slice(0, 400) ?? "";
+  const trust = scoreSourceTrust({
+    url: result.url,
+    title,
+    snippet,
+    publishedDate: result.published_date,
+  });
+  const displayTitle = cleanMoveTitle(leadName ?? title);
 
   return {
-    type: config.type,
+    type: refineType(config.type, config.category, trust.classificationHint, result.url),
     destination: "radar" as const,
     source: "research" as const,
     sourceId: `local-radar:${config.group}:${result.url}`,
-    title: leadName ?? title,
+    title: displayTitle || leadName || title,
     subtitle: leadName ? cleanTitle(result.title) : undefined,
     description: snippet || undefined,
     url: result.url,
@@ -437,6 +468,8 @@ function normalizeTavilyLead(
     ],
     tags: [
       ...config.tags,
+      trust.sourceType,
+      ...(trust.qualityFlags.length > 0 ? trust.qualityFlags : []),
       ...(leadName ? ["article-lead"] : ["web-result"]),
     ],
     rawPayload: {
@@ -447,6 +480,8 @@ function normalizeTavilyLead(
       lead_name: leadName ?? null,
       tavily_score: result.score ?? null,
       published_date: result.published_date ?? null,
+      source_trust: trust,
+      move_title: displayTitle || null,
     },
   };
 }
@@ -468,13 +503,20 @@ function normalizeBraveLead(
   }
 
   const leadName = extractLeadName(title, result.description);
+  const trust = scoreSourceTrust({
+    url: result.url,
+    title,
+    snippet: result.description,
+    age: result.age,
+  });
+  const displayTitle = cleanMoveTitle(leadName ?? title);
 
   return {
-    type: config.type,
+    type: refineType(config.type, config.category, trust.classificationHint, result.url),
     destination: "radar" as const,
     source: "research" as const,
     sourceId: `local-radar:${config.group}:${result.url}`,
-    title: leadName ?? title,
+    title: displayTitle || leadName || title,
     subtitle: leadName ? cleanTitle(result.title) : undefined,
     description: result.description?.slice(0, 400) ?? undefined,
     url: result.url,
@@ -485,6 +527,8 @@ function normalizeBraveLead(
     tags: [
       ...config.tags,
       "brave-source",
+      trust.sourceType,
+      ...(trust.qualityFlags.length > 0 ? trust.qualityFlags : []),
       ...(leadName ? ["article-lead"] : ["web-result"]),
     ],
     rawPayload: {
@@ -494,6 +538,8 @@ function normalizeBraveLead(
       source_title: result.title,
       lead_name: leadName ?? null,
       age: result.age ?? null,
+      source_trust: trust,
+      move_title: displayTitle || null,
     },
   };
 }
@@ -582,6 +628,20 @@ function shouldRejectSearchResult(input: {
   if (/(instagram|tiktok|facebook|x\.com|twitter)\.com/.test(domain)) {
     return !/(event|opening|tickets|venue|restaurant|store|market|gallery)/i.test(haystack);
   }
+  const trust = scoreSourceTrust({
+    url: input.url,
+    title,
+    snippet,
+    publishedDate: input.publishedDate,
+    age: input.age,
+  });
+  if (
+    trust.qualityFlags.some((flag) =>
+      ["raw_comment", "directory_spam", "closed_event", "expired_event"].includes(flag),
+    )
+  ) {
+    return true;
+  }
   if (/#\w+/.test(title) || /comments?\s+and\s+posts|profile\s+photos/i.test(title)) {
     return true;
   }
@@ -604,6 +664,22 @@ function shouldRejectSearchResult(input: {
     return true;
   }
   return false;
+}
+
+function refineType(
+  type: IndexItemType,
+  category: string,
+  hint: string | undefined,
+  url?: string,
+): IndexItemType {
+  const domain = safeDomain(url)?.toLowerCase() ?? "";
+  if (domain.includes("articlesofstyle") || /style|design/.test(category)) {
+    return type === "place" ? "style" : type;
+  }
+  if (hint === "events") return "event";
+  if (hint === "dining") return "restaurant";
+  if (hint === "style") return type === "place" ? "style" : type;
+  return type;
 }
 
 function literalOverlap(title: string, query: string): number {

@@ -5,6 +5,7 @@ import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
 import { BRIEFING_EDITOR_SYSTEM_PROMPT } from "@/lib/brain/prompts/briefingEditorPrompt";
 import {
+  briefingQualityFlagSchema,
   isMajorQualityFlag,
   itemBriefingSchema,
   readBriefingFromPayload,
@@ -12,6 +13,8 @@ import {
   type BriefingMeta,
   type ItemBriefing,
 } from "@/lib/brain/briefingTypes";
+import { actionTitleForItem } from "@/lib/brain/actionTitles";
+import { scoreSourceTrust } from "@/lib/intelligence/sourceTrust";
 import type { BrainContextPacket, BrainSelection, ScoredItem } from "@/lib/brain/types";
 import type { IndexedItem } from "@/lib/index/types";
 
@@ -115,10 +118,11 @@ export function deterministicBriefing(
   const sourceTitle =
     typeof raw.source_title === "string" ? cleanTitle(raw.source_title) : "";
   const title = cleanTitle(item.title || sourceTitle || "Untitled");
-  const displayTitle = title || "Untitled";
+  const moveTitle = actionTitleForItem(item);
+  const displayTitle = moveTitle.title || title || "Untitled";
   const description = clip(stripInternalText(item.description ?? item.subtitle ?? ""), 180);
   const tags = cleanTags(item.tags);
-  const flags = inferQualityFlags(item);
+  const flags = uniqFlags([...inferQualityFlags(item), ...moveTitle.flags]);
   const confidence = clamp01(input.selection?.confidence ?? item.score ?? input.scored.score);
   const lowQuality = flags.some(isMajorQualityFlag);
   const suggested = lowQuality
@@ -260,12 +264,25 @@ function inferQualityFlags(item: IndexedItem): ItemBriefing["quality_flags"] {
   const haystack = `${item.title} ${item.subtitle ?? ""} ${item.description ?? ""} ${item.url ?? ""}`.toLowerCase();
   const flags = new Set<ItemBriefing["quality_flags"][number]>();
   const domain = safeDomain(item.url)?.toLowerCase() ?? "";
+  const sourceTrust = scoreSourceTrust({
+    url: item.url,
+    title: item.title,
+    snippet: item.description,
+    publishedDate:
+      typeof raw.published_date === "string" ? raw.published_date : null,
+    age: typeof raw.age === "string" ? raw.age : null,
+  });
+  for (const flag of sourceTrust.qualityFlags) {
+    if (isBriefingFlag(flag)) flags.add(flag);
+  }
 
   if (/instagram\.com|tiktok\.com|facebook\.com|x\.com|twitter\.com/.test(domain)) {
     flags.add("instagram_noise");
+    flags.add("social_noise");
   }
   if (/#\w+/.test(item.title) || /comments?\s+and\s+posts|profile\s+photos/i.test(item.title)) {
     flags.add("instagram_noise");
+    flags.add("raw_comment");
   }
   if (/near me|coupon|groupon|yelp|tripadvisor|directory|best\s+\d+|top\s+\d+/i.test(haystack)) {
     flags.add("seo_junk");
@@ -286,6 +303,16 @@ function inferQualityFlags(item: IndexedItem): ItemBriefing["quality_flags"] {
     flags.add("not_actionable");
   }
   return Array.from(flags);
+}
+
+function isBriefingFlag(flag: string): flag is ItemBriefing["quality_flags"][number] {
+  return briefingQualityFlagSchema.safeParse(flag).success;
+}
+
+function uniqFlags(
+  flags: string[],
+): ItemBriefing["quality_flags"] {
+  return Array.from(new Set(flags)).filter(isBriefingFlag);
 }
 
 function cleanTags(tags: string[]): string[] {

@@ -1,0 +1,426 @@
+import "server-only";
+
+import { requireOwner } from "@/lib/auth";
+import { anthropicStatus, hasAnthropic } from "@/lib/ai/anthropic";
+import { buildBrainContext } from "@/lib/brain/context";
+import { buildCuriosityPlan } from "@/lib/brain/curiosity";
+import { buildInterestGraph } from "@/lib/brain/interestGraph";
+import { summarizeInterestGraph } from "@/lib/brain/interests";
+import { runRadarCuration } from "@/lib/brain/runRadarCuration";
+import { runTasteStrategist } from "@/lib/brain/tasteStrategist";
+import {
+  generateSyntheticMoves,
+  syntheticMoveToCandidate,
+} from "@/lib/brain/moveGenerator";
+import { RADAR_REFRESH_COOLDOWN_MINUTES } from "@/lib/brain/constants";
+import { getDefaultLocation } from "@/lib/env";
+import {
+  describeAvailableSources,
+  gatherFromCuriosityPlan,
+  gatherRadarCandidates,
+} from "@/lib/sources/gather";
+import { expireOldCandidates, ingestCandidates } from "@/lib/sources/ingest";
+import { runDayOfPromotion } from "@/lib/scheduling/promoteItems";
+import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import {
+  AMBIENT_RUN_POLICIES,
+  decisionRunType,
+  type AmbientRunType,
+} from "@/lib/intelligence/runTypes";
+import {
+  budgetForLog,
+  createIntelligenceBudget,
+  recordBudgetUsage,
+} from "@/lib/intelligence/budget";
+import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
+
+export type AmbientRunSummary = {
+  ok: boolean;
+  skipped?: boolean;
+  reason?: string;
+  next_allowed_at?: string;
+  run_type: AmbientRunType;
+  candidates_found: number;
+  inserted: number;
+  updated: number;
+  shortlisted: number;
+  selected: number;
+  rejected: number;
+  expired: number;
+  promoted_today: number;
+  cleaned?: Awaited<ReturnType<typeof cleanupRadar>>;
+  fallback_used: boolean;
+  fallback_reason?: string;
+  decision_run_id: string | null;
+  budget: Record<string, unknown>;
+  errors: string[];
+  source_plan_entries: number;
+  synthetic_moves: number;
+};
+
+export async function runAmbientIntelligence(input: {
+  runType: AmbientRunType;
+  force?: boolean;
+  testMode?: boolean;
+}): Promise<AmbientRunSummary> {
+  const owner = await requireOwner();
+  const runType = input.runType;
+  const budget = await createIntelligenceBudget({
+    userId: owner.id,
+    runType,
+    testMode: input.testMode,
+  });
+  const policy = AMBIENT_RUN_POLICIES[runType];
+  const anthropic = anthropicStatus();
+  if (!anthropic.available) {
+    console.warn("[ambient] Anthropic unavailable", {
+      runType,
+      reason: anthropic.reason,
+      model: anthropic.model,
+    });
+  }
+
+  if (!input.force) {
+    const cd = await checkCooldown(owner.id, runType);
+    if (cd.blocked) {
+      return emptySkipped(runType, cd.nextAllowedAt, budgetForLog(budget));
+    }
+  }
+
+  let workingBudget = budget;
+  const summary: AmbientRunSummary = {
+    ok: true,
+    run_type: runType,
+    candidates_found: 0,
+    inserted: 0,
+    updated: 0,
+    shortlisted: 0,
+    selected: 0,
+    rejected: 0,
+    expired: 0,
+    promoted_today: 0,
+    fallback_used: !hasAnthropic(),
+    fallback_reason: !hasAnthropic() ? "ANTHROPIC_API_KEY missing" : undefined,
+    decision_run_id: null,
+    budget: budgetForLog(workingBudget),
+    errors: [],
+    source_plan_entries: 0,
+    synthetic_moves: 0,
+  };
+
+  try {
+    summary.expired = await expireOldCandidates();
+  } catch (err) {
+    summary.errors.push(`expire: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (runType === "daily_maintenance") {
+    try {
+      const promoted = await runDayOfPromotion();
+      summary.promoted_today = promoted.promoted;
+    } catch (err) {
+      summary.errors.push(`promote: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    summary.cleaned = await cleanupRadar(owner.id);
+    summary.decision_run_id = await logAmbientRun(owner.id, runType, summary);
+    return { ...summary, budget: budgetForLog(workingBudget) };
+  }
+
+  if (runType === "holding_review") {
+    summary.cleaned = await cleanupRadar(owner.id);
+    workingBudget = recordBudgetUsage(workingBudget, {
+      claudeCalls: hasAnthropic() ? 2 : 0,
+      briefings: policy.maxBriefings,
+    });
+    const curation = await runRadarCuration({
+      maxShortlist: Math.min(policy.maxCandidates, 40),
+      maxSelected: 3,
+      maxBriefings: policy.maxBriefings,
+      runType: decisionRunType(runType),
+      rawOutputExtra: {
+        ambient: { run_type: runType, policy },
+        budget: budgetForLog(workingBudget),
+      },
+    });
+    summary.shortlisted = curation.shortlisted;
+    summary.selected = curation.appliedSelected;
+    summary.rejected = curation.appliedRejected;
+    summary.decision_run_id = curation.decisionRunId;
+    summary.fallback_used = curation.decision.fallbackUsed || !hasAnthropic();
+    summary.fallback_reason = curation.decision.fallbackReason ?? summary.fallback_reason;
+    return { ...summary, budget: budgetForLog(workingBudget) };
+  }
+
+  const context = await buildBrainContext();
+  const graph = buildInterestGraph({ context });
+  const inventory = await readInventoryCounts(owner.id);
+  const strategist = await runTasteStrategist({
+    context,
+    graph,
+    activeRadarCount: inventory.active,
+    holdingCount: inventory.holding,
+  });
+  workingBudget = recordBudgetUsage(workingBudget, {
+    claudeCalls: strategist.fallbackUsed ? 0 : 1,
+  });
+  const recentLaneIds = await readRecentLaneIds(owner.id);
+  const curiosity = buildCuriosityPlan({
+    lanes: strategist.output.lanes,
+    graph,
+    availableSources: describeAvailableSources(),
+    recentLaneIds,
+  });
+  summary.source_plan_entries = curiosity.sourcePlan.length;
+
+  const home = safeHome();
+  const useStaticFallback =
+    curiosity.sourcePlan.length === 0 && strategist.output.lanes.length === 0;
+  let lanes =
+    policy.heavyDiscovery && runType !== "north_reflection"
+      ? useStaticFallback
+        ? await gatherRadarCandidates({
+            userId: owner.id,
+            homeLat: home.lat,
+            homeLng: home.lng,
+            city: home.city,
+            state: home.state,
+          })
+        : await gatherFromCuriosityPlan(
+            {
+              userId: owner.id,
+              homeLat: home.lat,
+              homeLng: home.lng,
+              city: home.city,
+              state: home.state,
+            },
+            curiosity,
+          )
+      : [];
+  workingBudget = recordBudgetUsage(workingBudget, {
+    sourceCalls: curiosity.sourcePlan.length,
+    candidates: lanes.reduce((sum, lane) => sum + lane.candidates.length, 0),
+  });
+
+  const syntheticMoves = generateSyntheticMoves({
+    context,
+    mode: runType,
+    activeRadarCount: inventory.active,
+  });
+  summary.synthetic_moves = syntheticMoves.length;
+  if (syntheticMoves.length > 0) {
+    lanes = [
+      ...lanes,
+      {
+        source: "synthetic-move",
+        candidates: syntheticMoves.map(syntheticMoveToCandidate),
+      },
+    ];
+  }
+
+  for (const lane of lanes) {
+    const candidates = lane.candidates.slice(0, policy.maxCandidates);
+    summary.candidates_found += candidates.length;
+    const ingest = await ingestCandidates({
+      source: lane.source,
+      candidates,
+      destination: lane.source === "synthetic-move" ? undefined : "radar",
+    });
+    summary.inserted += ingest.inserted;
+    summary.updated += ingest.updated;
+    summary.errors.push(...ingest.errors);
+  }
+
+  workingBudget = recordBudgetUsage(workingBudget, {
+    claudeCalls: hasAnthropic() ? 2 : 0,
+    briefings: policy.maxBriefings,
+  });
+  const curation = await runRadarCuration({
+    maxShortlist: Math.min(policy.maxCandidates, 120),
+    maxSelected: runType === "weekend_preview" ? 5 : 4,
+    maxBriefings: policy.maxBriefings,
+    runType: decisionRunType(runType),
+    strategy: {
+      graph_summary: summarizeInterestGraph(graph),
+      lanes: strategist.output.lanes,
+      source_plan: curiosity.sourcePlan,
+      skipped_lane_ids: curiosity.skippedLaneIds,
+      strategist_fallback_used: strategist.fallbackUsed,
+      strategist_reason: strategist.reason,
+    },
+    rawOutputExtra: {
+      ambient: { run_type: runType, policy },
+      budget: budgetForLog(workingBudget),
+    },
+  });
+  summary.shortlisted = curation.shortlisted;
+  summary.selected = curation.appliedSelected;
+  summary.rejected = curation.appliedRejected;
+  summary.decision_run_id = curation.decisionRunId;
+  summary.fallback_used = curation.decision.fallbackUsed || strategist.fallbackUsed || !hasAnthropic();
+  summary.fallback_reason =
+    curation.decision.fallbackReason ??
+    (strategist.fallbackUsed ? strategist.reason : undefined) ??
+    summary.fallback_reason;
+  summary.budget = budgetForLog(workingBudget);
+  return summary;
+}
+
+async function checkCooldown(
+  userId: string,
+  runType: AmbientRunType,
+): Promise<{ blocked: boolean; nextAllowedAt?: string }> {
+  try {
+    const supabase = await getServerSupabase();
+    const policy = AMBIENT_RUN_POLICIES[runType];
+    const legacyType = runType === "radar_discovery" ? "radar.refresh" : decisionRunType(runType);
+    const { data } = await supabase
+      .from("brain_decision_runs")
+      .select("created_at")
+      .eq("user_id", userId)
+      .in("run_type", [decisionRunType(runType), legacyType])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data) return { blocked: false };
+    const lastRun = new Date((data as { created_at: string }).created_at);
+    const cooldownMs =
+      (runType === "radar_discovery"
+        ? Math.max(policy.cooldownHours * 60, RADAR_REFRESH_COOLDOWN_MINUTES)
+        : policy.cooldownHours * 60) *
+      60 *
+      1000;
+    const nextAllowed = new Date(lastRun.getTime() + cooldownMs);
+    return Date.now() < nextAllowed.getTime()
+      ? { blocked: true, nextAllowedAt: nextAllowed.toISOString() }
+      : { blocked: false };
+  } catch {
+    return { blocked: false };
+  }
+}
+
+async function logAmbientRun(
+  userId: string,
+  runType: AmbientRunType,
+  summary: AmbientRunSummary,
+): Promise<string | null> {
+  const supabase = await getServerSupabase();
+  const { data, error } = await supabase
+    .from("brain_decision_runs")
+    .insert({
+      user_id: userId,
+      run_type: decisionRunType(runType),
+      input_summary: `${AMBIENT_RUN_POLICIES[runType].label}: maintenance pass`,
+      candidate_ids: [],
+      selected_ids: [],
+      rejected_ids: [],
+      model: "deterministic",
+      raw_output: {
+        ambient: { run_type: runType },
+        summary,
+        budget: summary.budget,
+      },
+    })
+    .select("id")
+    .single();
+  if (error) {
+    console.error("[ambient.log] failed", error);
+    return null;
+  }
+  return (data as { id: string }).id;
+}
+
+async function readInventoryCounts(
+  userId: string,
+): Promise<{ active: number; holding: number }> {
+  try {
+    const supabase = await getServerSupabase();
+    const [activeRes, holdingRes] = await Promise.all([
+      supabase
+        .from("surfaced_items")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("destination", "radar")
+        .eq("status", "shown"),
+      supabase
+        .from("surfaced_items")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("destination", "holding")
+        .in("status", ["discovered", "shown"]),
+    ]);
+    return { active: activeRes.count ?? 0, holding: holdingRes.count ?? 0 };
+  } catch {
+    return { active: 0, holding: 0 };
+  }
+}
+
+async function readRecentLaneIds(userId: string): Promise<string[]> {
+  try {
+    const supabase = await getServerSupabase();
+    const { data } = await supabase
+      .from("brain_decision_runs")
+      .select("raw_output")
+      .eq("user_id", userId)
+      .in("run_type", ["radar.refresh", "ambient.radar_discovery"])
+      .order("created_at", { ascending: false })
+      .limit(3);
+    const ids = new Set<string>();
+    for (const row of (data ?? []) as Array<{ raw_output: unknown }>) {
+      for (const id of readLanesFromRawOutput(row.raw_output)) ids.add(id);
+    }
+    return Array.from(ids);
+  } catch {
+    return [];
+  }
+}
+
+function readLanesFromRawOutput(rawOutput: unknown): string[] {
+  if (!rawOutput || typeof rawOutput !== "object") return [];
+  const strategy = (rawOutput as Record<string, unknown>).strategy;
+  if (!strategy || typeof strategy !== "object") return [];
+  const lanes = (strategy as Record<string, unknown>).lanes;
+  if (!Array.isArray(lanes)) return [];
+  return lanes
+    .map((lane) => {
+      if (!lane || typeof lane !== "object") return null;
+      const id = (lane as Record<string, unknown>).id;
+      return typeof id === "string" ? id : null;
+    })
+    .filter((id): id is string => Boolean(id));
+}
+
+function emptySkipped(
+  runType: AmbientRunType,
+  next?: string,
+  budget: Record<string, unknown> = {},
+): AmbientRunSummary {
+  return {
+    ok: true,
+    skipped: true,
+    reason: "cooldown",
+    next_allowed_at: next,
+    run_type: runType,
+    candidates_found: 0,
+    inserted: 0,
+    updated: 0,
+    shortlisted: 0,
+    selected: 0,
+    rejected: 0,
+    expired: 0,
+    promoted_today: 0,
+    fallback_used: false,
+    decision_run_id: null,
+    budget,
+    errors: [],
+    source_plan_entries: 0,
+    synthetic_moves: 0,
+  };
+}
+
+function safeHome() {
+  try {
+    return getDefaultLocation();
+  } catch {
+    return { lat: 41.85, lng: -87.65, city: "Chicago", state: "IL" };
+  }
+}

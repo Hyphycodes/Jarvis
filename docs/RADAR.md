@@ -200,3 +200,29 @@ after the window are eligible to re-enter the pool on the next refresh.
 - Show more than `RADAR_ACTIVE_ITEM_LIMIT` (12) items on Active Radar.
 - Route an item to Active Radar with confidence < `RADAR_MIN_CONFIDENCE` (0.65).
 - Show placeholder cards to authenticated users.
+
+## Ambient Radar
+
+Manual Refresh now delegates to the ambient `radar_discovery` runner. The normal
+product direction is controlled background thinking, not page-load API calls and
+not a feed. Ambient runs log run type, strategy lanes, selected/rejected ids,
+fallback reason, estimated budget, and source quality metadata into
+`brain_decision_runs.raw_output`.
+
+`/account/intelligence` exposes owner-only controls for daily maintenance, Radar
+discovery, weekend preview, Holding review, North reflection, and Radar cleanup.
+
+## Source Trust And Cleanup
+
+LocalRadar scores source trust before candidates reach Active Radar. Social
+snippets, directory spam, coupon pages, literal query matches, closed events,
+old results, and unclear titles are demoted or rejected. Cleanup archives obvious
+bad Active Radar items or moves medium-confidence watch items into Holding. It
+never deletes records and preserves saved/planned/completed items.
+
+## Action Titles
+
+Radar titles should answer "what is the move?" rather than echo a source
+headline. The action-title helper strips queries, platform suffixes, hashtags,
+lane ids, and raw comment text. If a clear move cannot be generated, the item is
+demoted.

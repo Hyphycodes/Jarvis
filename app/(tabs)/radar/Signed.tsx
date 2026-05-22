@@ -8,11 +8,12 @@ import type { RadarCard as RadarPayloadCard } from "@/lib/ai/types";
 
 const FILTERS = [
   "All",
+  "Moves",
   "Events",
   "Dining",
   "Culture",
   "Places",
-  "Sports",
+  "Style",
 ] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -27,14 +28,13 @@ type Card = {
   meta: string[];
   footerLine: string;
   imageUrl?: string;
+  placeholderKind?: RadarPayloadCard["placeholderKind"];
   planSlug?: string;
   filter: Filter;
-  media: "stacked" | "portrait" | "landscape";
 };
 
-function adaptRadarToCard(item: RadarPayloadCard, idx: number): Card {
+function adaptRadarToCard(item: RadarPayloadCard): Card {
   const filter = mapCategoryToFilter(item.category);
-  const media = ["stacked", "portrait", "landscape"][idx % 3] as Card["media"];
   const meta = [
     formatMeta(item.datetime),
     item.neighborhood,
@@ -56,9 +56,9 @@ function adaptRadarToCard(item: RadarPayloadCard, idx: number): Card {
       item.sourceDomain ?? item.locationLabel,
     ].filter(Boolean).join(" · "),
     imageUrl: item.imageUrl,
+    placeholderKind: item.placeholderKind,
     planSlug: item.planSlug,
     filter,
-    media,
   };
 }
 
@@ -66,16 +66,21 @@ function mapCategoryToFilter(category: string): Filter {
   switch (category.toLowerCase()) {
     case "dining":
       return "Dining";
+    case "move":
+    case "activity":
+    case "outdoors":
+      return "Moves";
     case "events":
     case "event":
       return "Events";
     case "culture":
       return "Culture";
-    case "places":
     case "place":
+    case "places":
       return "Places";
-    case "sports":
-      return "Sports";
+    case "style":
+    case "product":
+      return "Style";
     case "music":
       return "Events";
     default:
@@ -85,23 +90,37 @@ function mapCategoryToFilter(category: string): Filter {
 
 function mapCategoryToBadge(category: string): Card["category"] {
   switch (category.toLowerCase()) {
+    case "move":
+      return "MOVE";
     case "dining":
       return "DINING";
     case "culture":
       return "CULTURE";
     case "events":
     case "event":
-      return "EVENTS";
+      return "EVENT";
     case "sports":
       return "SPORTS";
     case "music":
       return "CULTURE";
     case "style":
+      return "STYLE";
+    case "product":
+      return "PRODUCT";
+    case "activity":
+      return "ACTIVITY";
+    case "outdoors":
+      return "OUTDOORS";
     case "travel":
-    case "opportunity":
-      return "PLACES";
+      return "TRAVEL";
+    case "idea":
+      return "IDEA";
+    case "watch":
+      return "WATCH";
+    case "source_lead":
+      return "SOURCE LEAD";
     default:
-      return "PLACES";
+      return "MOVE";
   }
 }
 
@@ -172,7 +191,7 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
 
       <section
         key={filter}
-        className="mt-6 flex flex-col gap-6"
+        className="mt-6 flex flex-col gap-4"
         style={{ animation: "cross-fade 200ms var(--ease-atmospheric)" }}
       >
         {cards.length === 0 ? (
@@ -292,16 +311,21 @@ function RadarCard({
   return (
     <article
       className={
-        "border-t border-white/[0.08] bg-soft-black transition-opacity duration-500 ease-atmospheric " +
+        "rounded-[18px] border border-white/[0.08] bg-white/[0.018] transition-opacity duration-500 ease-atmospheric " +
         (passing ? "fade-up-out" : "opacity-100")
       }
     >
       <Link
         href={`/item/${card.id}`}
-        className="grid grid-cols-[1fr_42%] transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
+        className="grid grid-cols-[96px_1fr] gap-4 p-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012] sm:grid-cols-[124px_1fr]"
         aria-label={`Open ${card.title}`}
       >
-        <div className="flex flex-col gap-4 p-4">
+        <CardMedia
+          placeholderKind={card.placeholderKind}
+          imageUrl={card.imageUrl}
+          title={card.title}
+        />
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {card.verdict ? (
               <span
@@ -317,28 +341,26 @@ function RadarCard({
               {card.category}
             </span>
           </div>
-          <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
+          <h2 className="mt-3 font-serif text-[27px] font-normal leading-[1.08] tracking-[-0.01em] text-warm-ivory">
             {card.title}
           </h2>
-          <div className="h-px w-6 bg-muted-gold/50" />
-          <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
+          <p className="mt-2 text-[13px] leading-[1.45] text-warm-ivory/72">
             {card.body}
           </p>
           {card.take ? (
-            <p className="max-w-[30ch] text-[13px] leading-[1.5] text-warm-ivory/58">
+            <p className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/52">
               {card.take}
             </p>
           ) : null}
-          <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
-            {card.meta.slice(0, 3).map((line) => (
-              <div key={line}>{line}</div>
+          <div className="mt-3 text-[10px] uppercase leading-[1.55] tracking-[0.2em] text-warm-ivory/42">
+            {card.meta.slice(0, 1).map((line) => (
+              <span key={line}>{line}</span>
             ))}
             {card.footerLine ? (
-              <div className="text-muted-gold/60">{card.footerLine}</div>
+              <div className="mt-1 text-muted-gold/60">{card.footerLine}</div>
             ) : null}
           </div>
         </div>
-        <CardMedia kind={card.media} imageUrl={card.imageUrl} title={card.title} />
       </Link>
       {error ? (
         <div className="border-t border-[#E07A6E]/20 px-4 py-2 text-[11px] text-[#E07A6E]">
@@ -412,64 +434,57 @@ function verdictClass(tone?: Card["verdictTone"]): string {
 }
 
 function CardMedia({
-  kind,
   imageUrl,
   title,
+  placeholderKind,
 }: {
-  kind: Card["media"];
   imageUrl?: string;
   title: string;
+  placeholderKind?: Card["placeholderKind"];
 }) {
-  if (imageUrl) {
+  const [failed, setFailed] = useState(false);
+  if (imageUrl && !failed) {
     return (
-      <div className="h-full min-h-[220px] overflow-hidden bg-charcoal">
+      <div className="aspect-[4/5] overflow-hidden rounded-xl border border-white/[0.06] bg-charcoal">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrl} alt={title} className="h-full w-full object-cover" loading="lazy" />
-      </div>
-    );
-  }
-  if (kind === "stacked") {
-    return (
-      <div className="grid h-full grid-rows-[1fr_1.2fr] gap-1 bg-charcoal/40">
-        <div
-          aria-hidden
-          className="bg-charcoal"
-          style={{
-            backgroundImage:
-              "radial-gradient(ellipse at 30% 40%, rgba(184,146,74,0.10), transparent 60%), linear-gradient(180deg, #1A1A1C, #0F0F11)",
-          }}
-        />
-        <div
-          aria-hidden
-          className="bg-charcoal"
-          style={{
-            backgroundImage:
-              "radial-gradient(ellipse at 60% 70%, rgba(201,169,110,0.10), transparent 55%), linear-gradient(180deg, #141416, #0B0B0D)",
-          }}
+        <img
+          src={imageUrl}
+          alt={title}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setFailed(true)}
         />
       </div>
-    );
-  }
-  if (kind === "portrait") {
-    return (
-      <div
-        aria-hidden
-        className="h-full min-h-[260px] bg-charcoal"
-        style={{
-          backgroundImage:
-            "radial-gradient(ellipse at 50% 30%, rgba(232,228,168,0.06), transparent 60%), linear-gradient(180deg, #1B1B1E 0%, #0C0C0E 100%)",
-        }}
-      />
     );
   }
   return (
     <div
       aria-hidden
-      className="h-full min-h-[200px] bg-charcoal"
+      className="aspect-[4/5] overflow-hidden rounded-xl border border-white/[0.06] bg-charcoal"
       style={{
         backgroundImage:
-          "linear-gradient(180deg, rgba(184,146,74,0.08), transparent 60%), linear-gradient(180deg, #1A1A1C, #0B0B0D)",
+          placeholderGradient(placeholderKind),
       }}
-    />
+    >
+      <div className="flex h-full items-end p-3 text-[9px] uppercase tracking-[0.22em] text-muted-gold/55">
+        {placeholderKind ?? "signal"}
+      </div>
+    </div>
   );
+}
+
+function placeholderGradient(kind?: Card["placeholderKind"]): string {
+  switch (kind) {
+    case "product":
+      return "radial-gradient(ellipse at 60% 25%, rgba(201,169,110,0.18), transparent 52%), linear-gradient(180deg, #202023, #0A0A0B)";
+    case "event":
+      return "radial-gradient(ellipse at 45% 35%, rgba(123,154,196,0.16), transparent 54%), linear-gradient(180deg, #1B1B20, #08080A)";
+    case "place":
+    case "activity":
+      return "radial-gradient(ellipse at 45% 45%, rgba(184,146,74,0.16), transparent 56%), linear-gradient(180deg, #1A1A1C, #09090A)";
+    case "idea":
+      return "radial-gradient(ellipse at 30% 30%, rgba(255,250,240,0.10), transparent 55%), linear-gradient(180deg, #1B1B1B, #090909)";
+    default:
+      return "linear-gradient(180deg, rgba(184,146,74,0.10), transparent 62%), linear-gradient(180deg, #19191B, #08080A)";
+  }
 }

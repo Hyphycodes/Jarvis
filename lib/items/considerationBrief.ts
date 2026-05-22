@@ -436,6 +436,9 @@ function readMedia(
   const briefing = asRecord(payload.briefing);
   const media = Array.isArray(payload.media) ? payload.media : [];
   const rawImages = Array.isArray(payload.images) ? payload.images : [];
+  const rawPayload = asRecord(payload.raw_payload);
+  const nestedImages = Array.isArray(rawPayload.images) ? rawPayload.images : [];
+  const nestedPhotos = Array.isArray(rawPayload.photos) ? rawPayload.photos : [];
   const gallery = [
     item.imageUrl,
     stringValue(briefing.hero_image_url),
@@ -443,6 +446,11 @@ function readMedia(
     stringValue(payload.hero_image_url),
     firstMediaUrl(media),
     firstImageUrl(rawImages),
+    firstImageUrl(nestedImages),
+    firstImageUrl(nestedPhotos),
+    stringValue(rawPayload.image_url),
+    stringValue(rawPayload.photo_url),
+    stringValue(rawPayload.thumbnail),
     stringValue(payload.thumbnail),
   ]
     .filter((url): url is string => Boolean(url))

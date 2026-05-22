@@ -68,6 +68,9 @@ const PROTECTED_STATUSES = new Set([
 export async function runRadarCuration(options: {
   maxShortlist?: number;
   maxSelected?: number;
+  maxBriefings?: number;
+  runType?: string;
+  rawOutputExtra?: Record<string, unknown>;
   /** Optional snapshot from the Taste Strategist + Curiosity Engine.
    *  Logged into brain_decision_runs.raw_output for audit. */
   strategy?: StrategySnapshot;
@@ -149,7 +152,12 @@ export async function runRadarCuration(options: {
     shortlist,
   });
 
-  const briefed = await attachBriefings(critiqued, shortlist, context);
+  const briefed = await attachBriefings(
+    critiqued,
+    shortlist,
+    context,
+    options.maxBriefings ?? MAX_BRIEFINGS_PER_REFRESH,
+  );
 
   // Post-critique gates (code-enforced, not just prompt hints)
   const qualityGated = enforceBriefingQuality(briefed);
@@ -178,7 +186,7 @@ export async function runRadarCuration(options: {
 
   const decisionRunId = await logDecisionRun({
     userId: owner.id,
-    runType: "radar.refresh",
+    runType: options.runType ?? "radar.refresh",
     inputSummary: summarizeContext(context),
     candidateIds: shortlist.map((s) => s.item.id),
     selectedIds: gated.selected.map((s) => s.itemId),
@@ -188,6 +196,7 @@ export async function runRadarCuration(options: {
       decision: gated,
       strategy: options.strategy ?? null,
       fallback_reason: gated.fallbackReason,
+      ...(options.rawOutputExtra ?? {}),
     } as unknown as BrainDecision,
   });
 
@@ -340,6 +349,7 @@ async function attachBriefings(
   decision: BrainDecision,
   shortlist: ScoredItem[],
   context: Awaited<ReturnType<typeof buildBrainContext>>,
+  maxBriefings: number,
 ): Promise<BrainDecision> {
   const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
   const rejectionReasonByItemId = new Map(
@@ -350,7 +360,7 @@ async function attachBriefings(
 
   for (const sel of decision.selected) {
     const scored = scoreByItemId.get(sel.itemId);
-    if (!scored || generated >= MAX_BRIEFINGS_PER_REFRESH) {
+    if (!scored || generated >= maxBriefings) {
       selected.push(sel);
       continue;
     }

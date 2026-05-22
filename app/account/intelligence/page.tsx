@@ -10,7 +10,11 @@ import { hasTicketmaster } from "@/lib/sources/ticketmaster";
 import { hasTavily } from "@/lib/sources/tavily";
 import { hasBrave } from "@/lib/sources/brave";
 import { hasSerpapi } from "@/lib/sources/serpapi";
-import { RefreshRadarButton } from "./client-bits";
+import {
+  CleanRadarButton,
+  IntelligenceRunButton,
+  RefreshRadarButton,
+} from "./client-bits";
 import type { BrainDecisionRunRow } from "@/lib/types/database";
 import {
   RADAR_REFRESH_COOLDOWN_MINUTES,
@@ -77,7 +81,7 @@ export default async function IntelligencePage() {
             The curation brain.
           </h1>
           <p className="mt-4 max-w-[40ch] font-serif text-[22px] italic leading-[1.25] text-warm-ivory/70">
-            A small front room. A quiet back room. Nothing automatic.
+            A small front room. A quiet back room. Controlled background thinking.
           </p>
         </section>
 
@@ -111,20 +115,44 @@ export default async function IntelligencePage() {
         {/* Refresh Radar */}
         <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
           <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
-            Refresh Radar
+            Ambient Runs
           </h2>
           <p className="mt-2 text-[14px] leading-[1.55] text-warm-ivory/75">
-            Pulls a controlled batch from each configured source, normalizes,
-            scores, and runs the curator + critic. Strong but non-urgent items
-            go to Holding. Items below the confidence floor stay in the pool
-            for next time. Protected lifecycle states are always untouched.
+            Owner-controlled passes for maintenance, discovery, weekend preview,
+            Holding review, and cleanup. These are explicit/manual today and
+            cron-ready later.
           </p>
           {inCooldown ? (
             <p className="mt-3 text-[12px] text-warm-ivory/45">
-              Radar was refreshed recently — cooldown in effect.
+              Radar discovery ran recently — cooldown in effect.
             </p>
           ) : null}
-          <RefreshRadarButton forceAllowed={isOwner} />
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <IntelligenceRunButton
+              runType="daily_maintenance"
+              label="Run Daily Maintenance"
+            />
+            <IntelligenceRunButton
+              runType="radar_discovery"
+              label="Run Radar Discovery"
+            />
+            <IntelligenceRunButton
+              runType="weekend_preview"
+              label="Run Weekend Preview"
+            />
+            <IntelligenceRunButton
+              runType="holding_review"
+              label="Review Holding"
+            />
+            <IntelligenceRunButton
+              runType="north_reflection"
+              label="North Reflection"
+            />
+            <CleanRadarButton />
+          </div>
+          <div className="mt-5 border-t border-white/[0.05] pt-4">
+            <RefreshRadarButton forceAllowed={isOwner} />
+          </div>
         </section>
 
         {/* Holding / Later link */}
@@ -210,6 +238,7 @@ export default async function IntelligencePage() {
                       {run.selected_ids.length} selected ·{" "}
                       {run.rejected_ids.length} rejected · {run.model}
                       {fallbackReason ? ` · fallback: ${fallbackReason}` : ""}
+                      {readBudgetLineFromRun(run)}
                       {lanes.length > 0 ? ` · ${lanes.length} lanes` : ""}
                     </div>
                   </li>
@@ -315,6 +344,20 @@ function readFallbackReasonFromRun(run: BrainDecisionRunRow): string | undefined
     if (typeof reason === "string" && reason.length > 0) return reason;
   }
   return undefined;
+}
+
+function readBudgetLineFromRun(run: BrainDecisionRunRow): string {
+  const raw = run.raw_output as unknown;
+  if (!raw || typeof raw !== "object") return "";
+  const budget = (raw as Record<string, unknown>).budget;
+  if (!budget || typeof budget !== "object") return "";
+  const cost = (budget as Record<string, unknown>).estimated_run_cost_usd;
+  const remaining = (budget as Record<string, unknown>).budget_remaining_usd;
+  const parts = [
+    typeof cost === "number" ? `$${cost.toFixed(3)} est` : null,
+    typeof remaining === "number" ? `$${remaining.toFixed(2)} left` : null,
+  ].filter(Boolean);
+  return parts.length ? ` · ${parts.join(" · ")}` : "";
 }
 
 function LastExplorationPanel({ run }: { run: BrainDecisionRunRow }) {

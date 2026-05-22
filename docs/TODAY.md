@@ -68,3 +68,10 @@ Use `/account/qa` as an owner in development, or with
 fixtures. The active plan fixture is designed to appear once in Live Plan and
 then as timeline rows under The Day. See
 [`docs/QA.md`](./QA.md).
+
+## Ambient Maintenance
+
+Ambient daily maintenance may promote day-of items and clean Radar when invoked
+explicitly from Account Intelligence. Today itself remains a calm read path: it
+loads saved rhythm, active plan timeline rows, grab list, and surfaced items
+without triggering discovery.

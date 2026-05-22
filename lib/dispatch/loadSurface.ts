@@ -4,6 +4,7 @@ import { getViewableProfileId } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
+import { actionTitleForItem } from "@/lib/brain/actionTitles";
 import {
   buildConsiderationBrief,
   heroImageForItem,
@@ -511,6 +512,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
   const planSlug = readPlanSlug(item.rawPayload);
   const briefing = item.briefing;
   const consideration = buildConsiderationBrief(item);
+  const actionTitle = actionTitleForItem(item).title;
   return {
     id: item.id,
     source: item.source,
@@ -519,7 +521,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
     destination: item.destination,
     planSlug,
     category,
-    title: briefing?.display_title ?? item.title,
+    title: actionTitle || briefing?.display_title || item.title,
     summary: briefing?.one_line ?? item.description ?? item.subtitle ?? "",
     displayCategory: briefing?.display_category,
     oneLine: briefing?.one_line,
@@ -541,6 +543,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
     neighborhood: item.locationName ?? undefined,
     datetime: item.startsAt ?? undefined,
     imageUrl: heroImageForItem(item) ?? undefined,
+    placeholderKind: consideration.media.placeholderKind,
     score: briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
     whyItFits: briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
@@ -825,19 +828,20 @@ function mapCategory(
   type: IndexedItem["type"],
   category: IndexedItem["category"],
 ): RadarCard["category"] {
-  if (
-    category === "dining" ||
-    category === "events" ||
-    category === "culture" ||
-    category === "places" ||
-    category === "sports" ||
-    category === "music" ||
-    category === "travel" ||
-    category === "style" ||
-    category === "opportunity"
-  ) {
-    return category;
-  }
+  const normalized = category?.toLowerCase();
+  if (normalized === "move" || normalized === "health") return "move";
+  if (normalized === "dining") return "dining";
+  if (normalized === "event" || normalized === "events") return "events";
+  if (normalized === "culture") return "culture";
+  if (normalized === "music") return "music";
+  if (normalized === "place" || normalized === "places") return "place";
+  if (normalized === "sports") return "sports";
+  if (normalized === "travel") return "travel";
+  if (normalized === "style" || normalized === "shopping") return "style";
+  if (normalized === "product") return "product";
+  if (normalized === "idea" || normalized === "creative") return "idea";
+  if (normalized === "activity") return "activity";
+  if (normalized === "outdoors" || normalized === "land") return "outdoors";
   switch (type) {
     case "restaurant":
       return "dining";
@@ -846,15 +850,20 @@ function mapCategory(
     case "culture":
       return "culture";
     case "place":
-      return "places";
+      return "place";
     case "product":
-      return "style";
+      return "product";
     case "travel":
       return "travel";
     case "style":
       return "style";
     case "creative":
-      return "culture";
+      return "idea";
+    case "health":
+    case "recommendation":
+      return "move";
+    case "real_estate":
+      return "idea";
     default:
       return "opportunity";
   }

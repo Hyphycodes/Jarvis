@@ -22,6 +22,42 @@ const TRANSLATIONS: Array<{ match: RegExp; queries: string[] }> = [
       "Chicago tailoring event",
       "Chicago watch boutique event",
       "Chicago leather goods",
+      "Chicago hotel lobby bar",
+      "Chicago refined cocktail lounge",
+      "Chicago understated restaurant",
+    ],
+  },
+  {
+    match: /(dining|restaurant|steakhouse|supper|jazz dinner|food)/i,
+    queries: [
+      "Eater Chicago new restaurant",
+      "Infatuation Chicago new restaurants",
+      "Chicago Magazine best new restaurants",
+      "Chicago steakhouse opening",
+      "Chicago live jazz dinner",
+      "Chicago restaurant pop-up",
+    ],
+  },
+  {
+    match: /(culture|jazz|gallery|art|music|listening bar|resident advisor)/i,
+    queries: [
+      "Do312 Chicago jazz this week",
+      "Chicago Reader events this weekend",
+      "Choose Chicago gallery opening",
+      "Resident Advisor Chicago intimate event",
+      "Chicago listening bar",
+      "Chicago art opening this weekend",
+    ],
+  },
+  {
+    match: /(outdoors|basketball|horseback|golf|motocross|trail|active|sports)/i,
+    queries: [
+      "basketball courts near Schaumburg",
+      "horseback riding near Chicago",
+      "golf tee times near Chicago suburbs",
+      "motocross track Illinois",
+      "outdoor activities near Chicago this weekend",
+      "forest preserve trails near Schaumburg",
     ],
   },
   {

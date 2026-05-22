@@ -165,14 +165,22 @@ export type RadarCard = {
   destination?: string;
   planSlug?: string;
   category:
+    | "move"
     | "dining"
     | "events"
     | "culture"
     | "places"
+    | "place"
     | "sports"
     | "music"
     | "travel"
     | "style"
+    | "product"
+    | "idea"
+    | "activity"
+    | "outdoors"
+    | "source_lead"
+    | "watch"
     | "opportunity";
   title: string;
   summary: string;
@@ -193,6 +201,7 @@ export type RadarCard = {
   neighborhood?: string;
   datetime?: string;
   imageUrl?: string;
+  placeholderKind?: "event" | "place" | "product" | "idea" | "activity" | "general";
   score: number;
   whyItFits: string;
   whyNow: string;
