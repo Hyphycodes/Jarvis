@@ -142,6 +142,48 @@ export function ItemActionButton({
   );
 }
 
+export function RefreshBriefingButton({ itemId }: { itemId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function run() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/items/${itemId}/refresh-briefing`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const json = (await res.json()) as { ok?: true; error?: string };
+        if (!res.ok || json.error) {
+          setError(json.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        router.refresh();
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col items-start">
+      <button
+        type="button"
+        onClick={run}
+        disabled={pending}
+        className={buttonClass("ghost", pending)}
+      >
+        {pending ? "…" : "Refresh briefing"}
+      </button>
+      {error ? (
+        <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function buttonClass(
   variant: "primary" | "secondary" | "danger" | "ghost",
   pending: boolean,

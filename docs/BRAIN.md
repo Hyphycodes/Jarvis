@@ -17,10 +17,11 @@
 │  4.  buildCuriosityPlan()     ← lanes → typed source plan (code) │
 │  5.  gatherFromCuriosityPlan()← real source calls, capped        │
 │  6.  ingestCandidates()       ← upsert into surfaced_items       │
-│  7.  runRadarCuration()       ← score, curator, critic, gates    │
-│  8.  enforceActiveRadarCap()  ← rotate excess to Holding         │
-│  9.  pruneStaleHolding()      ← archive aged Holding             │
-│ 10.  logDecisionRun()         ← strategy snapshot stored         │
+│  7.  runRadarCuration()       ← score, curator, critic, briefing │
+│  8.  briefing quality gate    ← keep weak output out of Radar    │
+│  9.  enforceActiveRadarCap()  ← rotate excess to Holding         │
+│ 10.  pruneStaleHolding()      ← archive aged Holding             │
+│ 11.  logDecisionRun()         ← strategy snapshot stored         │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -161,6 +162,28 @@ type SourcePlanEntry = {
 - **Lane rotation**: lanes whose id appeared in the last 3 runs get their query count cut to 1 unless urgency is "high".
 - **Global candidate cap**: `MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH` (60). Queries are trimmed mid-plan if the cap would be exceeded.
 - **Skip-to-Holding**: lanes destined for `holding` or `north` with low urgency and confidence < 0.6 get `source: "none"` — they become Holding/discovered ideas without an API call.
+- **Query translation**: stylistic lane language is translated before source
+  calls. For example, "rugged masculine" becomes useful searches such as
+  "Chicago heritage menswear", "Chicago leather goods boutique", and "Chicago
+  vintage menswear market" instead of literal phrase searches.
+
+## Briefing Editor (`lib/brain/briefingEditor.ts`)
+
+Runs after Curator and Critic and before code gates. The editor converts raw
+candidate/source/curation data into `payload.briefing`, validates the JSON, and
+falls back deterministically when Anthropic is unavailable.
+
+The quality gate uses briefing fields to decide final placement:
+
+- Active Radar: high enough confidence, clear `one_line`, clear `jarvis_take`,
+  no major quality flags, and next action not `pass`/`ignore`.
+- Holding: medium confidence, useful but non-urgent, good signal with weak
+  evidence, or needs research.
+- Discovered/Archive: low confidence, generic, social noise, SEO junk, too
+  literal, bad source, or not actionable.
+
+See [`docs/BRIEFINGS.md`](./BRIEFINGS.md) for the payload shape and display
+policy.
 
 ## Source layer (`lib/sources/gather.ts`, `lib/sources/localRadar.ts`)
 
@@ -170,6 +193,9 @@ Two paths:
 2. **Static fallback** (`gatherRadarCandidates`) — only used when both the strategist returned zero lanes AND the curiosity engine produced no plan entries.
 
 `gatherLocalRadarLanes()` in `localRadar.ts` handles the dynamic web-research lanes — same Tavily-first/Brave-fallback logic as the static groups, with per-query domain hints.
+It rejects obvious Instagram/social noise, hashtag/profile titles, directory
+spam, coupon/near-me pages, stale results, generic listicles, and titles that
+are mostly literal query echo.
 
 All Sprint 2.1 caps remain in effect.
 

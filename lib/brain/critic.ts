@@ -21,6 +21,8 @@ if it doesn't hold up.
 REJECT if any of the following apply:
 - Too generic: chain, hotel restaurant, tourist trap, mass-market venue.
 - Weak evidence: a web article with no specific lead name; score bolstered by proximity alone.
+- Cannot be turned into a clear owner briefing: unclear object, vague source, raw query
+  match, Instagram/social noise, SEO listicle, or no confident next move.
 - Wrong timing: all-day event on a Tuesday, event already past or too far out (> 3 weeks).
 - Over-committed weekday: on Mon–Thu, reject items requiring high energy or long travel unless
   score is exceptional (> 0.80) and the founder's focus suggests an evening outing.
@@ -36,6 +38,7 @@ PRESERVE if:
 - It matches the founder's vibe and recent signals strongly.
 - destination:"holding" selections are already reserved/quiet — leave them unless they
   violate a dealbreaker.
+- Interesting but source-thin candidates belong in Holding or discovered, not Active Radar.
 
 For rejected items:
 - "archived": user should never see this again (dealbreaker, clearly wrong fit).

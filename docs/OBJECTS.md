@@ -77,18 +77,17 @@ to the source item's `payload.plan_status` and re-routes its destination
 
 Server-rendered. Reads via `getIndexItem(id)`. Shows (when present):
 
-- title, subtitle, category, type
-- status, destination
-- starts/ends/expires
-- location name + address
-- score (rounded)
-- description
-- reasons (why Jarvis surfaced it)
-- source evidence — labeled as "Lead", "LocalRadar", or "Strategist lane"
-  with source title, domain, and external link
-- tags
+- briefing category, status, destination, confidence
+- briefing title and one-line summary
+- Jarvis Take
+- Why It Matters
+- Best Next Action
+- Practical Fit: effort, spend, timing, location, confidence
+- source evidence with clean evidence summary, domain, and external link
+- cleaned tags
 - plan seam (View Plan or Plan this)
 - action grid
+- collapsed debug metadata for raw reasons, tags, item id, and timestamps
 
 Actions exposed:
 - Save / Pass
@@ -100,6 +99,9 @@ Actions exposed:
 
 All actions go through `POST /api/items/[id]/[action]` which calls
 `dispatchItemAction()` in `lib/actions/items.ts`.
+
+Raw strategist lanes, query text, seed tags, and source payload details should
+not appear in the primary hierarchy. See [`docs/BRIEFINGS.md`](./BRIEFINGS.md).
 
 ## Upcoming (`/upcoming`)
 

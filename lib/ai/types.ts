@@ -169,6 +169,15 @@ export type RadarCard = {
     | "opportunity";
   title: string;
   summary: string;
+  displayCategory?: string;
+  oneLine?: string;
+  jarvisTake?: string;
+  bestNextAction?: string;
+  confidenceLabel?: "low" | "medium" | "high";
+  effortLevel?: "low" | "medium" | "high";
+  spendingPosture?: "free" | "low" | "paid" | "high" | "unknown";
+  evidenceSummary?: string;
+  cleanedTags?: string[];
   neighborhood?: string;
   datetime?: string;
   imageUrl?: string;

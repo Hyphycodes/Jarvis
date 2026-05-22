@@ -15,6 +15,10 @@ Sparrow rows or placeholder signal cards.
 - upcoming bridge items from `surfaced_items`
 - upcoming count for the `/upcoming` route
 
+Today uses `payload.briefing` for surfaced item title, category/subtitle,
+summary, and reason when present, so it shares Radar's cleaned display layer
+instead of rendering raw source/query metadata.
+
 Draft, completed, and cancelled plans are excluded from the Live Plan module.
 
 ## Rendering Order
