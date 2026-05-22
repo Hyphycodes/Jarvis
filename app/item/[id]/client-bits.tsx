@@ -15,6 +15,76 @@ type ItemActionName =
   | "add-upcoming"
   | "remove-upcoming";
 
+export function GeneratePlanButton({
+  itemId,
+  label = "Plan this",
+  force = false,
+}: {
+  itemId: string;
+  label?: string;
+  force?: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "generating" | "ready">(
+    "idle",
+  );
+
+  function run() {
+    setError(null);
+    setStatus("generating");
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/items/${itemId}/generate-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: force ? JSON.stringify({ force: true }) : undefined,
+        });
+        const json = (await res.json()) as {
+          ok?: true;
+          plan_id?: string;
+          plan_slug?: string;
+          fallback_used?: boolean;
+          reused?: boolean;
+          error?: string;
+        };
+        if (!res.ok || json.error || !json.plan_slug) {
+          setError(json.error ?? `HTTP ${res.status}`);
+          setStatus("idle");
+          return;
+        }
+        setStatus("ready");
+        // Navigate to the new (or existing) plan
+        router.push(`/plan/${json.plan_slug}`);
+      } catch (err) {
+        setError((err as Error).message);
+        setStatus("idle");
+      }
+    });
+  }
+
+  const isWorking = pending || status === "generating";
+
+  return (
+    <div className="flex flex-col items-stretch">
+      <button
+        type="button"
+        onClick={run}
+        disabled={isWorking}
+        className={
+          "rounded-full border border-muted-gold/50 bg-muted-gold/10 px-4 py-2 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20 disabled:opacity-60"
+        }
+      >
+        {isWorking ? "Generating…" : label}
+      </button>
+      {error ? (
+        <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function ItemActionButton({
   itemId,
   action,

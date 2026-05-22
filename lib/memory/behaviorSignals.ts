@@ -34,10 +34,15 @@ export async function recordBehaviorSignal(
   });
 }
 
-function subjectFromSignal(signal: UserBehaviorSignal) {
-  if ("itemId" in signal) return signal.itemId;
-  if ("planId" in signal) return signal.planId;
-  if ("memoryProposalId" in signal) return signal.memoryProposalId;
+function subjectFromSignal(signal: UserBehaviorSignal): string {
+  if ("itemId" in signal && typeof signal.itemId === "string") return signal.itemId;
+  if ("planId" in signal && typeof signal.planId === "string") return signal.planId;
+  if (
+    "memoryProposalId" in signal &&
+    typeof signal.memoryProposalId === "string"
+  ) {
+    return signal.memoryProposalId;
+  }
   return "unknown";
 }
 
@@ -75,5 +80,17 @@ function proposalContent(signal: UserBehaviorSignal, subjectId: string) {
     case "memory.reject":
     case "memory.archive":
       return `Reviewed memory proposal: ${subjectId}`;
+    case "plan.generated":
+      return `Generated plan: ${subjectId}`;
+    case "plan.started":
+      return `Started plan: ${subjectId}`;
+    case "plan.completed":
+      return `Completed plan: ${subjectId}`;
+    case "plan.cancelled":
+      return `Cancelled plan: ${subjectId}`;
+    case "plan.viewed":
+      return `Viewed plan: ${subjectId}`;
+    case "plan.section_opened":
+      return `Opened plan section: ${subjectId}`;
   }
 }

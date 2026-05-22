@@ -66,7 +66,14 @@ export type UserBehaviorSignal =
   | { type: "item.plan"; itemId: string; planId?: string }
   | { type: "item.complete"; itemId: string }
   | { type: "item.archive"; itemId: string }
-  | { type: "item.restore"; itemId: string };
+  | { type: "item.restore"; itemId: string }
+  // Sprint 3.1 — plan as first-class object
+  | { type: "plan.generated"; planId: string; itemId?: string; fallbackUsed?: boolean }
+  | { type: "plan.started"; planId: string }
+  | { type: "plan.completed"; planId: string }
+  | { type: "plan.cancelled"; planId: string }
+  | { type: "plan.viewed"; planId: string }
+  | { type: "plan.section_opened"; planId: string; sectionKey: string };
 
 export type BehaviorSignalStrength = "weak" | "medium" | "strong" | "strongest";
 

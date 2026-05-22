@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getIndexItem } from "@/lib/index/repo";
 import { BackButton, MotionPage } from "@/components";
-import { ItemActionButton } from "./client-bits";
+import { ItemActionButton, GeneratePlanButton } from "./client-bits";
 import type { IndexedItem, IndexItemStatus } from "@/lib/index/types";
 
 export const metadata = { title: "Item · Jarvis" };
@@ -193,25 +193,40 @@ export default async function ItemDetailPage({
         {/* Plan seam */}
         <section className="mt-8">
           <SectionLabel>Plan</SectionLabel>
-          {planContext.planId ? (
-            <Link
-              href={`/plan/sparrow`}
-              className="mt-3 inline-flex items-center justify-center rounded-full border border-muted-gold/50 bg-muted-gold/10 px-5 py-2 text-[12px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20"
-            >
-              View Plan
-            </Link>
-          ) : showActions ? (
-            <div className="mt-3 flex items-center gap-3">
-              <ItemActionButton
-                itemId={item.id}
-                action="plan"
-                label="Plan this"
-                variant="primary"
-              />
+          {planContext.planSlug || planContext.planId ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Link
+                href={
+                  planContext.planSlug
+                    ? `/plan/${planContext.planSlug}`
+                    : `/plan/sparrow`
+                }
+                className="inline-flex items-center justify-center rounded-full border border-muted-gold/50 bg-muted-gold/10 px-5 py-2 text-[12px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20"
+              >
+                {planContext.planStatus === "active"
+                  ? "View Active Plan"
+                  : planContext.planStatus === "completed"
+                    ? "View Completed Plan"
+                    : "View Plan"}
+              </Link>
+              {showActions && planContext.planStatus !== "completed" ? (
+                <GeneratePlanButton
+                  itemId={item.id}
+                  label="Regenerate"
+                  force
+                />
+              ) : null}
               <span className="text-[11px] text-warm-ivory/45">
                 {planContext.planStatus
                   ? `Status: ${planContext.planStatus}`
-                  : "Creates a draft plan placeholder."}
+                  : ""}
+              </span>
+            </div>
+          ) : showActions ? (
+            <div className="mt-3 flex items-center gap-3">
+              <GeneratePlanButton itemId={item.id} />
+              <span className="text-[11px] text-warm-ivory/45">
+                Generates a draft plan you can review or activate.
               </span>
             </div>
           ) : (
@@ -434,17 +449,19 @@ function readEvidence(item: IndexedItem): EvidenceSummary | null {
 
 type PlanContext = {
   planId?: string;
+  planSlug?: string;
   planStatus?: string;
 };
 
 function readPlanContext(item: IndexedItem): PlanContext {
   const raw = isRecord(item.rawPayload) ? item.rawPayload : {};
   const planId = typeof raw.plan_id === "string" ? raw.plan_id : undefined;
+  const planSlug = typeof raw.plan_slug === "string" ? raw.plan_slug : undefined;
   const planStatus =
     typeof raw.plan_status === "string"
       ? raw.plan_status
       : item.tags.find((t) => t.startsWith("plan:"))?.slice(5);
-  return { planId, planStatus };
+  return { planId, planSlug, planStatus };
 }
 
 function safeDomain(url: string): string | undefined {

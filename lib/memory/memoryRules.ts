@@ -45,6 +45,20 @@ export function evaluateBehaviorForMemory(
     case "item.archive":
     case "item.restore":
       return noProposal("Surface-only lifecycle change; no inference worth proposing.");
+    // Sprint 3.1 — plan-as-object events. The persistent feedback loop is
+    // memory promotion; these signals just log behavior. The richer
+    // plan.complete / plan.cancel signals above already drive proposals.
+    case "plan.generated":
+      return noProposal("Generation is system-driven; user signal arrives later via start/complete.");
+    case "plan.started":
+      return planProposal("event_history", 0.7, "strong", signal.planId, signal.type);
+    case "plan.completed":
+      return planProposal("confirmed_behavior", 0.85, "strongest", signal.planId, signal.type);
+    case "plan.cancelled":
+      return planProposal("avoidance", 0.55, "medium", signal.planId, signal.type);
+    case "plan.viewed":
+    case "plan.section_opened":
+      return noProposal("Viewing is engagement, not durable preference.");
   }
 }
 

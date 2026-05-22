@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
     "typecheck": "pnpm exec tsc --noEmit",
     "smoke": "pnpm exec tsx scripts/smoke.ts"
   },

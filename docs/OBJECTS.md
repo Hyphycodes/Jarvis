@@ -51,19 +51,27 @@ When the user saves an item, the destination is inferred from its dating:
 
 Callers may pass an explicit destination to override.
 
-## Plan Status Seam
+## Plan Status (Sprint 3.1)
 
-`planItem()` sets `payload.plan_status`:
-- `"draft"` — placeholder created by clicking **Plan this**. No actual plan yet.
-- `"active"` — a real plan exists (linked via `payload.plan_id`).
+`payload.plan_status` tracks an item's relationship to a generated plan:
 
-The item detail page reads `payload.plan_id` first; if present, shows **View Plan**.
-Otherwise it offers **Plan this** which creates the draft seam without
-building the full plan generator.
+| Status | Meaning |
+|--------|---------|
+| (absent) | No plan exists |
+| `"draft"` | Plan generated, awaiting activation |
+| `"active"` | Plan in progress |
+| `"completed"` | Plan finished |
+| `"cancelled"` | Plan dropped |
 
-When the dynamic plan generator ships, it reads items with
-`plan_status="draft"` and produces a real plan record, then updates the
-item's `plan_id` and `plan_status="active"`.
+The item detail page reads `payload.plan_slug` to link to the live plan
+at `/plan/[slug]`. **Plan this** triggers `POST /api/items/[id]/generate-plan`
+which runs the Plan Generator (see [`docs/PLANS.md`](./PLANS.md)) and
+persists a `plans` row + `plan_sections` + optional `today_timeline_items`.
+
+Activate / Complete / Cancel run from the plan detail page via
+`POST /api/plans/[id]/{activate|complete|cancel}`. Each propagates back
+to the source item's `payload.plan_status` and re-routes its destination
+(today / upcoming / holding) as appropriate.
 
 ## Universal Item Detail (`/item/[id]`)
 

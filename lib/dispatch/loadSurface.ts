@@ -50,6 +50,9 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .from("plans")
           .select("*")
           .eq("user_id", id)
+          // Exclude cancelled/completed plans from the Today hero
+          .in("status", ["draft", "active"])
+          .order("live_enabled", { ascending: false })
           .order("updated_at", { ascending: false })
           .limit(1),
         supabase
