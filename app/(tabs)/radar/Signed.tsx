@@ -19,12 +19,14 @@ type Filter = (typeof FILTERS)[number];
 type Card = {
   id: string;
   category: string;
+  verdict?: string;
+  verdictTone?: "positive" | "neutral" | "caution" | "negative";
   title: string;
   body: string;
   take?: string;
   meta: string[];
-  sourceLine: string;
-  confidenceLine: string;
+  footerLine: string;
+  imageUrl?: string;
   planSlug?: string;
   filter: Filter;
   media: "stacked" | "portrait" | "landscape";
@@ -41,17 +43,19 @@ function adaptRadarToCard(item: RadarPayloadCard, idx: number): Card {
   return {
     id: item.id,
     category: (item.displayCategory ?? mapCategoryToBadge(item.category)).toUpperCase(),
+    verdict: item.verdictLabel,
+    verdictTone: item.verdictTone,
     title: item.title,
     body: item.oneLine || item.summary || item.whyItFits || "Worth a closer look.",
-    take: item.jarvisTake,
+    take: item.bestMoveTitle ?? item.jarvisTake,
     meta,
-    sourceLine: [item.source, item.type].filter(Boolean).join(" · "),
-    confidenceLine: [
+    footerLine: [
       item.effortLevel ? `Effort ${item.effortLevel}` : null,
       item.spendingPosture ? `Spend ${item.spendingPosture}` : null,
       item.confidenceLabel ? `${item.confidenceLabel} confidence` : null,
-      item.source,
+      item.sourceDomain ?? item.locationLabel,
     ].filter(Boolean).join(" · "),
+    imageUrl: item.imageUrl,
     planSlug: item.planSlug,
     filter,
     media,
@@ -299,6 +303,16 @@ function RadarCard({
       >
         <div className="flex flex-col gap-4 p-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {card.verdict ? (
+              <span
+                className={
+                  "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-editorial " +
+                  verdictClass(card.verdictTone)
+                }
+              >
+                {card.verdict}
+              </span>
+            ) : null}
             <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
               {card.category}
             </span>
@@ -319,12 +333,12 @@ function RadarCard({
             {card.meta.slice(0, 3).map((line) => (
               <div key={line}>{line}</div>
             ))}
-            {card.confidenceLine ? (
-              <div className="text-muted-gold/60">{card.confidenceLine}</div>
+            {card.footerLine ? (
+              <div className="text-muted-gold/60">{card.footerLine}</div>
             ) : null}
           </div>
         </div>
-        <CardMedia kind={card.media} />
+        <CardMedia kind={card.media} imageUrl={card.imageUrl} title={card.title} />
       </Link>
       {error ? (
         <div className="border-t border-[#E07A6E]/20 px-4 py-2 text-[11px] text-[#E07A6E]">
@@ -383,7 +397,37 @@ function RadarEmptyState() {
   );
 }
 
-function CardMedia({ kind }: { kind: Card["media"] }) {
+function verdictClass(tone?: Card["verdictTone"]): string {
+  switch (tone) {
+    case "positive":
+      return "border-muted-gold/45 text-muted-gold";
+    case "caution":
+      return "border-[#D8A85B]/35 text-[#D8A85B]";
+    case "negative":
+      return "border-[#E07A6E]/35 text-[#E07A6E]";
+    case "neutral":
+    default:
+      return "border-white/[0.12] text-warm-ivory/55";
+  }
+}
+
+function CardMedia({
+  kind,
+  imageUrl,
+  title,
+}: {
+  kind: Card["media"];
+  imageUrl?: string;
+  title: string;
+}) {
+  if (imageUrl) {
+    return (
+      <div className="h-full min-h-[220px] overflow-hidden bg-charcoal">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt={title} className="h-full w-full object-cover" loading="lazy" />
+      </div>
+    );
+  }
   if (kind === "stacked") {
     return (
       <div className="grid h-full grid-rows-[1fr_1.2fr] gap-1 bg-charcoal/40">

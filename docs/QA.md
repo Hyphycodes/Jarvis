@@ -32,13 +32,25 @@ Available buttons:
 
 | Button | Records |
 |--------|---------|
-| Create Radar item | one `surfaced_items` row, `destination="radar"`, `status="shown"` |
+| Create Radar briefs | five `surfaced_items` rows covering dining/place, event, activity, product/style, and article/idea briefs |
 | Create Today item | one `surfaced_items` row, `destination="today"`, today `starts_at`, `status="shown"` |
 | Create Upcoming item | one `surfaced_items` row, `destination="upcoming"`, future `starts_at`, `status="shown"` |
 | Create Active Plan fixture | source `surfaced_items` row, one active `plans` row, 3 `plan_sections`, 3 `today_timeline_items` |
 
 Create buttons remove the existing matching fixture first, so repeated clicks
 do not create duplicates for the same fixture type.
+
+The Radar brief fixtures include realistic `payload.briefing`, source evidence,
+and location or media fields where useful:
+
+- `[QA] Radar dinner idea`
+- `[QA] Jazz room candidate`
+- `[QA] Riding lesson candidate`
+- `[QA] Heritage jacket candidate`
+- `[QA] Workshop idea article`
+
+They are intended to test `/item/[id]` as the universal Consideration Brief
+across different item types.
 
 ## Clear Behavior
 
@@ -55,9 +67,10 @@ Real user data is not targeted.
 
 1. Open `/account/qa` as an owner in development or with
    `ENABLE_QA_TOOLS=true`.
-2. Create Radar item, then open Radar and confirm `[QA] Radar dinner idea`
-   appears.
-3. Open the Radar card body and confirm `/item/[id]` renders.
+2. Create Radar briefs, then open Radar and confirm the `[QA]` brief cards
+   appear.
+3. Open several Radar card bodies and confirm `/item/[id]` adapts across event,
+   activity/place, product/style, and article/idea cases.
 4. Use Save or Pass and confirm it does not navigate accidentally.
 5. Create Today item and confirm `[QA] Today errand` appears in Today stack.
 6. Create Upcoming item and confirm it appears in the Today Upcoming bridge

@@ -72,7 +72,7 @@ export default async function QaFixturesPage() {
             Create fixtures
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <QaActionForm action={createQaRadarItem} label="Create Radar item" />
+            <QaActionForm action={createQaRadarItem} label="Create Radar briefs" />
             <QaActionForm action={createQaTodayItem} label="Create Today item" />
             <QaActionForm
               action={createQaUpcomingItem}

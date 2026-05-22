@@ -157,8 +157,18 @@ idea` as a real `surfaced_items` row. See [`docs/QA.md`](./QA.md).
 
 ## Card Behavior
 
-Each Radar card body links to `/item/[id]`. The footer keeps the supported
-item lifecycle actions:
+Each Radar card body links to `/item/[id]`, the universal Consideration Brief.
+Cards share the same briefing contract as the detail page:
+
+- verdict or clean category
+- display title
+- one-line briefing
+- Best Move / Jarvis Take
+- stored image when available, otherwise a tasteful placeholder
+- clean footer with effort, spend, confidence, source domain, or location
+
+Cards do not show raw queries, seed lanes, internal tags, raw destination/status,
+or debug labels. The footer keeps the supported item lifecycle actions:
 
 - **Save** calls `POST /api/items/[id]/save`, updates the card state, and lets
   the server route the item to Today, Upcoming, or Holding based on date.

@@ -14,6 +14,10 @@ import type {
 
 const QA_PREFIX = "[QA]";
 const RADAR_TITLE = "[QA] Radar dinner idea";
+const EVENT_TITLE = "[QA] Jazz room candidate";
+const ACTIVITY_TITLE = "[QA] Riding lesson candidate";
+const PRODUCT_TITLE = "[QA] Heritage jacket candidate";
+const ARTICLE_TITLE = "[QA] Workshop idea article";
 const TODAY_TITLE = "[QA] Today errand";
 const UPCOMING_TITLE = "[QA] Upcoming plan candidate";
 const PLAN_TITLE = "[QA] Active plan fixture";
@@ -22,37 +26,255 @@ const PLAN_SLUG = "qa-active-plan";
 
 export async function createQaRadarItem() {
   const ownerId = await requireQaOwnerId();
-  await deleteQaSurfacedItemsByTitle(ownerId, [RADAR_TITLE]);
+  await deleteQaSurfacedItemsByTitle(ownerId, [
+    RADAR_TITLE,
+    EVENT_TITLE,
+    ACTIVITY_TITLE,
+    PRODUCT_TITLE,
+    ARTICLE_TITLE,
+  ]);
 
   const now = new Date();
   const expires = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-  await insertSurface({
-    user_id: ownerId,
-    destination: "radar",
-    source: "manual",
-    type: "restaurant",
-    category: "dining",
-    title: RADAR_TITLE,
-    subtitle: "Real Radar fixture",
-    description:
-      "A neutral dinner candidate used to verify Radar cards, item detail, and Save/Pass actions.",
-    location_name: "QA Test Kitchen",
-    starts_at: new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString(),
-    expires_at: expires.toISOString(),
-    status: "shown",
-    score: 0.82,
-    reasons: [
-      "QA fixture for the authenticated Radar surface.",
-      "Useful for testing item detail and lifecycle actions.",
-    ],
-    tags: ["qa-fixture", "dining"],
-    payload: qaPayload({
-      fixture_type: "radar_item",
-      reason: "Verify Radar renders database-backed cards.",
-    }),
-  });
+  const eventStart = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  eventStart.setHours(20, 0, 0, 0);
+  const eventEnd = new Date(eventStart.getTime() + 2 * 60 * 60 * 1000);
+  const activityStart = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
+  activityStart.setHours(10, 30, 0, 0);
+
+  const fixtures: SurfacedItemInsert[] = [
+    {
+      user_id: ownerId,
+      destination: "radar",
+      source: "manual",
+      type: "restaurant",
+      category: "dining",
+      title: RADAR_TITLE,
+      subtitle: "Dinner consideration fixture",
+      description:
+        "A neutral dinner candidate used to verify Radar cards, item detail, and Save/Pass actions.",
+      location_name: "QA Test Kitchen",
+      address: "River North, Chicago, IL",
+      lat: 41.8925,
+      lng: -87.6269,
+      starts_at: new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString(),
+      expires_at: expires.toISOString(),
+      status: "shown",
+      score: 0.82,
+      reasons: [
+        "QA fixture for the authenticated Radar surface.",
+        "Useful for testing item detail and lifecycle actions.",
+      ],
+      tags: ["qa-fixture", "dining", "low-effort"],
+      payload: qaPayload({
+        fixture_type: "radar_place",
+        source_title: "QA dining note",
+        source_url: "https://example.com/qa-dining",
+        briefing: qaBriefing({
+          display_title: "[QA] Dinner consideration",
+          display_category: "Dining",
+          one_line: "A clean dinner lead for testing the Consideration Brief layout.",
+          jarvis_take: "Strong fit, low friction. Save it if you want a simple evening option.",
+          why_it_matters: "It checks the place, timing, location, and action modules without relying on live data.",
+          why_now: "Good after-work window.",
+          best_next_action: "save",
+          confidence: 0.82,
+          confidence_label: "high",
+          effort_level: "low",
+          spending_posture: "paid",
+          suggested_destination: "radar",
+          evidence_summary: "Owner-created QA source used for layout testing.",
+          cleaned_tags: ["Dining", "Chicago", "Low Effort"],
+        }),
+      }),
+    },
+    {
+      user_id: ownerId,
+      destination: "radar",
+      source: "manual",
+      type: "event",
+      category: "music",
+      title: EVENT_TITLE,
+      subtitle: "Event consideration fixture",
+      description: "A live music candidate for event-specific timing and venue modules.",
+      location_name: "QA Listening Room",
+      address: "West Loop, Chicago, IL",
+      lat: 41.8837,
+      lng: -87.6488,
+      starts_at: eventStart.toISOString(),
+      ends_at: eventEnd.toISOString(),
+      expires_at: eventStart.toISOString(),
+      status: "shown",
+      score: 0.76,
+      reasons: ["QA event fixture.", "Verifies date, venue, and upcoming action."],
+      tags: ["qa-fixture", "music", "event", "ticketed"],
+      payload: qaPayload({
+        fixture_type: "event_brief",
+        source_title: "QA event source",
+        source_url: "https://example.com/qa-event",
+        briefing: qaBriefing({
+          display_title: "[QA] Jazz room candidate",
+          display_category: "Music",
+          one_line: "A dated event lead for testing timing, venue, and planning actions.",
+          jarvis_take: "Worth planning if the night is open. Good signal, clear window.",
+          why_it_matters: "It verifies event flow without touching Ticketmaster or live sources.",
+          why_now: "Weekend evening window.",
+          best_next_action: "plan",
+          confidence: 0.76,
+          confidence_label: "high",
+          effort_level: "medium",
+          spending_posture: "paid",
+          suggested_destination: "radar",
+          evidence_summary: "QA event evidence with a known venue and time window.",
+          cleaned_tags: ["Music", "Event", "Chicago"],
+        }),
+      }),
+    },
+    {
+      user_id: ownerId,
+      destination: "radar",
+      source: "manual",
+      type: "place",
+      category: "activity",
+      title: ACTIVITY_TITLE,
+      subtitle: "Activity consideration fixture",
+      description: "A horseback riding candidate for activity/location modules.",
+      location_name: "QA Riding Barn",
+      address: "Barrington, IL",
+      lat: 42.1539,
+      lng: -88.1362,
+      starts_at: activityStart.toISOString(),
+      status: "shown",
+      score: 0.68,
+      reasons: ["QA activity fixture.", "Verifies effort and map module."],
+      tags: ["qa-fixture", "horseback", "activity", "medium-effort"],
+      payload: qaPayload({
+        fixture_type: "activity_brief",
+        source_title: "QA activity source",
+        source_url: "https://example.com/qa-activity",
+        briefing: qaBriefing({
+          display_title: "[QA] Riding lesson candidate",
+          display_category: "Activity",
+          one_line: "A place-based activity lead for testing distance, effort, and Holding decisions.",
+          jarvis_take: "Good signal, not urgent. Better for a weekend than a workday.",
+          why_it_matters: "It exercises outdoor/activity logic without pretending the timing is effortless.",
+          why_now: "Better held until the right weekend.",
+          best_next_action: "hold",
+          confidence: 0.68,
+          confidence_label: "medium",
+          effort_level: "medium",
+          spending_posture: "paid",
+          suggested_destination: "holding",
+          evidence_summary: "QA activity source with location data and a future window.",
+          cleaned_tags: ["Activity", "Horseback Riding", "Weekend"],
+        }),
+      }),
+    },
+    {
+      user_id: ownerId,
+      destination: "radar",
+      source: "manual",
+      type: "product",
+      category: "style",
+      title: PRODUCT_TITLE,
+      subtitle: "Product consideration fixture",
+      description: "A style product candidate for product/source modules.",
+      status: "shown",
+      score: 0.72,
+      url: "https://example.com/qa-style",
+      image_url:
+        "https://images.unsplash.com/photo-1516826957135-700dedea698c?auto=format&fit=crop&w=1200&q=80",
+      reasons: ["QA product fixture.", "Verifies product and image rendering."],
+      tags: ["qa-fixture", "style", "menswear", "paid"],
+      payload: qaPayload({
+        fixture_type: "product_brief",
+        source_title: "QA style source",
+        source_url: "https://example.com/qa-style",
+        image_url:
+          "https://images.unsplash.com/photo-1516826957135-700dedea698c?auto=format&fit=crop&w=1200&q=80",
+        briefing: qaBriefing({
+          display_title: "[QA] Heritage jacket candidate",
+          display_category: "Style",
+          one_line: "A product-style lead for testing image, source, spend, and save/hold actions.",
+          jarvis_take: "Save for comparison. Strong fit, but not something to force.",
+          why_it_matters: "It checks product behavior without pretending there is a reservation or event window.",
+          best_next_action: "save",
+          confidence: 0.72,
+          confidence_label: "medium",
+          effort_level: "low",
+          spending_posture: "paid",
+          suggested_destination: "radar",
+          evidence_summary: "QA product source with image and clean style tags.",
+          cleaned_tags: ["Style", "Menswear", "Heritage"],
+        }),
+      }),
+    },
+    {
+      user_id: ownerId,
+      destination: "holding",
+      source: "manual",
+      type: "recommendation",
+      category: "creative",
+      title: ARTICLE_TITLE,
+      subtitle: "Article consideration fixture",
+      description: "A source-only idea candidate for article and evidence modules.",
+      status: "shown",
+      score: 0.61,
+      url: "https://example.com/qa-workshop-article",
+      reasons: ["QA article fixture.", "Verifies source-led idea layout."],
+      tags: ["qa-fixture", "creative", "article", "idea"],
+      payload: qaPayload({
+        fixture_type: "article_brief",
+        source_title: "A practical workshop note for testing idea briefs",
+        source_url: "https://example.com/qa-workshop-article",
+        briefing: qaBriefing({
+          display_title: "[QA] Workshop idea article",
+          display_category: "Idea",
+          one_line: "A source-led idea for testing article briefs without a location module.",
+          jarvis_take: "Watch for stronger evidence. Good idea, needs a better source.",
+          why_it_matters: "It validates article/idea pages where source evidence matters more than location.",
+          best_next_action: "research",
+          confidence: 0.61,
+          confidence_label: "medium",
+          effort_level: "low",
+          spending_posture: "unknown",
+          suggested_destination: "holding",
+          quality_flags: ["needs_verification"],
+          evidence_summary: "QA article evidence with no fake place or event data.",
+          cleaned_tags: ["Creative", "Idea", "Research"],
+        }),
+      }),
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    await insertSurface(fixture);
+  }
 
   finishQaMutation();
+}
+
+function qaBriefing(
+  input: Record<string, unknown> & {
+    display_title: string;
+    display_category: string;
+    one_line: string;
+    jarvis_take: string;
+    why_it_matters: string;
+    best_next_action: string;
+    confidence: number;
+    confidence_label: string;
+    effort_level: string;
+    spending_posture: string;
+    suggested_destination: string;
+    evidence_summary: string;
+    cleaned_tags: string[];
+  },
+): Record<string, unknown> {
+  return {
+    quality_flags: [],
+    ...input,
+  };
 }
 
 export async function createQaTodayItem() {

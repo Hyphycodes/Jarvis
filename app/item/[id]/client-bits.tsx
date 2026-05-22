@@ -73,7 +73,7 @@ export function GeneratePlanButton({
         onClick={run}
         disabled={isWorking}
         className={
-          "rounded-full border border-muted-gold/50 bg-muted-gold/10 px-4 py-2 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20 disabled:opacity-60"
+          "flex min-h-[56px] w-full items-center justify-center rounded-2xl border border-muted-gold/50 bg-muted-gold/10 px-5 py-3 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20 disabled:opacity-60"
         }
       >
         {isWorking ? "Generating…" : label}
@@ -168,7 +168,7 @@ export function RefreshBriefingButton({ itemId }: { itemId: string }) {
   }
 
   return (
-    <div className="flex flex-col items-start">
+    <div className="flex w-full flex-col items-stretch">
       <button
         type="button"
         onClick={run}
@@ -189,7 +189,7 @@ function buttonClass(
   pending: boolean,
 ): string {
   const base =
-    "rounded-full px-4 py-2 text-[11px] uppercase tracking-editorial transition-colors duration-300 ease-atmospheric";
+    "flex min-h-[56px] w-full items-center justify-center rounded-2xl px-5 py-3 text-[11px] uppercase tracking-editorial transition-colors duration-300 ease-atmospheric";
   const disabled = pending ? " opacity-60" : "";
   switch (variant) {
     case "primary":
