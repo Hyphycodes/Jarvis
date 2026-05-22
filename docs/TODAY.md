@@ -1,0 +1,52 @@
+# Today — Command Center Rules
+
+Today is the command center, not another feed. It reads real generated plans,
+timeline rows, and `surfaced_items`; signed-in users should not see demo
+Sparrow rows or placeholder signal cards.
+
+## Data Source
+
+`loadTodaySurface()` in `lib/dispatch/loadSurface.ts` builds the payload:
+
+- active/live generated plan from `plans`
+- timeline rows from `today_timeline_items`
+- real Today items from `surfaced_items` where `destination="today"` and
+  status is visible/actionable
+- upcoming bridge items from `surfaced_items`
+- upcoming count for the `/upcoming` route
+
+Draft, completed, and cancelled plans are excluded from the Live Plan module.
+
+## Rendering Order
+
+1. **Live Plan** — active generated plan, status pill, next timeline item,
+   compact context, Open plan, and Complete.
+2. **No live plan** — calm empty state with one CTA to Radar or Upcoming.
+3. **Next move** — next non-done timeline item from the active plan, otherwise
+   highest-priority Today surfaced item, otherwise first upcoming item with a
+   start time.
+4. **Timeline / grab list** — only when real active-plan data exists.
+5. **Today stack** — remaining real Today surfaced items.
+6. **Upcoming** — 2-3 upcoming items plus the route link.
+
+## Link Rules
+
+- Plan timeline / plan-linked items link to `/plan/[slug]`.
+- Unplanned surfaced items link to `/item/[id]`.
+- The Upcoming bridge links to `/upcoming`.
+
+## Empty-State Rules
+
+Empty modules stay quiet:
+
+- no active plan: "No live plan"
+- no next move: "Nothing needs your attention right now."
+- no Today stack: omit the section
+- no Upcoming items/count: omit the bridge
+
+## QA Notes
+
+No dev seed helper was added in this sprint. Use the existing explicit Radar
+refresh path at `/account/intelligence`, or create/delete QA rows manually in
+Supabase against `surfaced_items` with `destination="radar"` or
+`destination="today"` and a non-terminal status.

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
 import {
   AppFrame,
   Checkbox,
@@ -9,30 +10,17 @@ import {
   Timeline,
   type TimelineItem,
 } from "@/components";
-import {
-  Arrow,
-  ArrowRight,
-  Bell,
-  Car,
-  Chevron,
-  Cloud,
-  Fork,
-  MapPin,
-  Sparkle,
-  Ticket,
-  User,
-} from "@/components/icons";
-import type { TodayPayload } from "@/lib/ai/types";
+import { Arrow, ArrowRight, Chevron } from "@/components/icons";
+import type { TodayCommandItem, TodayPayload } from "@/lib/ai/types";
 
 export function TodaySigned({ payload }: { payload?: TodayPayload }) {
   const dayItems = useMemo<TimelineItem[]>(
     () => buildTimelineItems(payload),
     [payload],
   );
-  const grabItems = useMemo(
-    () => payload?.grabList ?? DEFAULT_GRAB_LIST,
-    [payload],
-  );
+  const grabItems = payload?.grabList ?? [];
+  const todayStack = payload?.todayStack ?? [];
+  const upcoming = payload?.upcoming ?? [];
 
   return (
     <AppFrame>
@@ -42,210 +30,86 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
             {payload?.hero.eyebrow ?? "Today"}
           </span>
           <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/55">
-            {payload?.hero.date ?? "May 17, 2025"}
+            {payload?.hero.date ?? formatToday()}
           </span>
         </div>
         <h1 className="mt-1 font-serif text-[40px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-          {payload?.hero.greeting ? (
-            payload.hero.greeting
-          ) : (
-            <>
-              Good evening,
-              <br />
-              <span className="italic">J.</span>
-            </>
-          )}
+          {payload?.hero.greeting ?? "Quiet day."}
         </h1>
         <p className="mt-1 max-w-[42ch] text-[14px] leading-[1.55] text-warm-ivory/60">
-          {payload?.hero.summary ?? (
-            <>
-              Your day is set. Dinner at Sparrow tonight.
-              <br />
-              Leave by 7:42 PM.
-            </>
-          )}
+          {payload?.hero.summary ?? "Nothing strong enough to surface yet."}
         </p>
       </header>
 
       <div className="mt-8 h-px w-full bg-divider/70" />
 
-      {payload?.livePlan ? <LivePlanCard livePlan={payload.livePlan} /> : null}
+      {payload?.livePlan ? (
+        <LivePlanCard livePlan={payload.livePlan} />
+      ) : (
+        <NoLivePlan upcomingCount={payload?.upcomingCount ?? 0} />
+      )}
 
-      <section className="mt-6 flex flex-col">
-        <SectionLabel
-          trailing={
-            <Link
-              href="/plan/sparrow"
-              className="inline-flex items-center gap-1.5 text-muted-gold"
-            >
-              View Map <Arrow size={12} />
-            </Link>
-          }
-        >
-          The Day
-        </SectionLabel>
-        <div className="mt-2">
-          <Timeline items={dayItems} />
-        </div>
-      </section>
+      <NextMoveSection item={payload?.nextMove} />
 
-      <GrabList items={grabItems} />
-
-      {payload?.onDeck && payload.onDeck.length > 0 ? (
+      {dayItems.length > 0 ? (
         <section className="mt-8 flex flex-col">
           <SectionLabel
             trailing={
-              <Link
-                href="/upcoming"
-                className="inline-flex items-center gap-1.5 text-[11px] tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-muted-gold/80"
-              >
-                Upcoming{payload.upcomingCount ? ` (${payload.upcomingCount})` : ""} →
-              </Link>
+              payload?.livePlan?.slug ? (
+                <Link
+                  href={`/plan/${payload.livePlan.slug}`}
+                  className="inline-flex items-center gap-1.5 text-muted-gold"
+                >
+                  Plan <Arrow size={12} />
+                </Link>
+              ) : null
             }
           >
-            On deck today
+            Timeline
           </SectionLabel>
-          <ul className="mt-3 flex flex-col gap-3">
-            {payload.onDeck.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={`/item/${item.id}`}
-                  className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.05] bg-white/[0.01] px-4 py-3 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.03]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] text-warm-ivory">
-                      {item.title}
-                    </div>
-                    {item.locationName ? (
-                      <div className="mt-0.5 truncate text-[11px] text-warm-ivory/45">
-                        {item.locationName}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0 text-right text-[10px] uppercase tracking-editorial text-warm-ivory/40">
-                    {item.startsAt ? formatOnDeckTime(item.startsAt) : ""}
-                    {item.category ? (
-                      <>
-                        <br />
-                        {item.category}
-                      </>
-                    ) : null}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : payload?.upcomingCount && payload.upcomingCount > 0 ? (
-        <section className="mt-8">
-          <Link
-            href="/upcoming"
-            className="inline-flex items-center gap-1.5 text-[12px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-muted-gold/80"
-          >
-            Upcoming ({payload.upcomingCount}) →
-          </Link>
+          <div className="mt-2">
+            <Timeline items={dayItems} />
+          </div>
         </section>
       ) : null}
 
-      <section className="mt-8 flex flex-col">
-        <SectionLabel
-          trailing={
-            <span className="text-[11px] tracking-editorial text-muted-gold">
-              2 NEW
-            </span>
-          }
-        >
-          Signals
-        </SectionLabel>
-        <ul className="mt-3 flex flex-col gap-2">
-          <SignalRow
-            text={
-              <>
-                Rain clears after 7:10 PM.
-                <br />
-                Best arriving after sunset.
-              </>
-            }
-            ago="8m ago"
-          />
-          <SignalRow
-            text={
-              <>
-                Construction on Ashland.
-                <br />
-                Consider the north route.
-              </>
-            }
-            ago="32m ago"
-          />
-        </ul>
-      </section>
+      {grabItems.length > 0 ? <GrabList items={grabItems} /> : null}
 
+      <TodayStack items={todayStack} />
+
+      <UpcomingBridge
+        items={upcoming}
+        count={payload?.upcomingCount ?? upcoming.length}
+      />
     </AppFrame>
   );
 }
 
 type GrabListEntry = { id: string; label: string; checked: boolean };
 
-const DEFAULT_GRAB_LIST: GrabListEntry[] = [
-  { id: "demo-id", label: "ID / Wallet", checked: true },
-  { id: "demo-card", label: "Card", checked: true },
-  { id: "demo-phone", label: "Phone", checked: true },
-  { id: "demo-jacket", label: "Jacket", checked: false },
-];
-
-const DEMO_TIMELINE: TimelineItem[] = [
-  { id: "work", time: "5:00 PM", title: "Work block" },
-  { id: "gym", time: "6:15 PM", title: "Gym" },
-  {
-    id: "leave",
-    time: "7:42 PM",
-    title: "Leave Home",
-    defaultExpanded: true,
-    detail: <LeaveHomeDetail />,
-  },
-  {
-    id: "sparrow",
-    time: "8:30 PM",
-    title: "Dinner at Sparrow",
-    defaultExpanded: true,
-    href: "/plan/sparrow",
-    detail: <SparrowDetail />,
-  },
-  { id: "walk", time: "11:00 PM", title: "Walk Home", detail: <WalkHomeDetail /> },
-];
-
 function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
-  if (!payload || payload.timeline.length === 0) return DEMO_TIMELINE;
+  if (!payload || payload.timeline.length === 0) return [];
 
-  return payload.timeline.map((item) => {
-    const isSparrow = /sparrow/i.test(item.title);
-    const detail = item.expandable
-      ? isSparrow
-        ? (<SparrowDetail />)
-        : item.details
-          ? (
-              <div className="mt-1 text-[13px] leading-[1.55] text-warm-ivory/70">
-                {item.details}
-              </div>
-            )
-          : undefined
-      : undefined;
+  return payload.timeline
+    .filter((item) => !payload.livePlan || item.planId === payload.livePlan.planId)
+    .map((item, idx) => {
+      const detail = item.details ? (
+        <div className="mt-1 text-[13px] leading-[1.55] text-warm-ivory/70">
+          {item.details}
+        </div>
+      ) : undefined;
 
-    const base: TimelineItem = {
-      id: item.id,
-      time: item.time,
-      title: item.title,
-      defaultExpanded: isSparrow || item.id === "leave",
-    };
-    if (detail) base.detail = detail;
-    if (item.planSlug) {
-      base.href = `/plan/${item.planSlug}`;
-    } else if (isSparrow) {
-      base.href = "/plan/sparrow";
-    }
-    return base;
-  });
+      const base: TimelineItem = {
+        id: item.id,
+        time: item.time,
+        title: item.title,
+        active: item.status === "active",
+        defaultExpanded: idx === 0 && Boolean(detail),
+      };
+      if (detail) base.detail = detail;
+      if (item.planSlug) base.href = `/plan/${item.planSlug}`;
+      return base;
+    });
 }
 
 function LivePlanCard({
@@ -253,142 +117,262 @@ function LivePlanCard({
 }: {
   livePlan: NonNullable<TodayPayload["livePlan"]>;
 }) {
-  const href = livePlan.slug ? `/plan/${livePlan.slug}` : "/plan/sparrow";
+  const href = livePlan.slug ? `/plan/${livePlan.slug}` : undefined;
   return (
-    <section className="mt-6">
-      <Link
-        href={href}
-        className="block rounded-[10px] border border-muted-gold/25 bg-soft-black/75 px-5 py-4 transition-colors duration-300 ease-atmospheric hover:bg-soft-black"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-editorial text-muted-gold">
-              <span
-                aria-hidden
-                className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
-              />
-              Live
-            </div>
-            <div className="mt-2 truncate font-serif text-[24px] leading-tight text-warm-ivory">
-              {livePlan.title ?? "Active plan"}
-            </div>
-            {livePlan.nextTimelineItem ? (
-              <div className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/55">
-                Next · {livePlan.nextTimelineItem.time} ·{" "}
-                {livePlan.nextTimelineItem.title}
-              </div>
+    <section className="mt-6 rounded-[10px] border border-muted-gold/25 bg-soft-black/75 px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-editorial text-muted-gold">
+            <span
+              aria-hidden
+              className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
+            />
+            Live
+            {livePlan.status ? (
+              <span className="text-warm-ivory/35">{livePlan.status}</span>
             ) : null}
           </div>
-          <ArrowRight size={14} className="mt-1 shrink-0 text-muted-gold" />
+          <div className="mt-2 font-serif text-[24px] leading-tight text-warm-ivory">
+            {livePlan.title ?? "Active plan"}
+          </div>
+          {livePlan.nextTimelineItem ? (
+            <div className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/60">
+              Next: {livePlan.nextTimelineItem.time} -{" "}
+              {livePlan.nextTimelineItem.title}
+            </div>
+          ) : null}
+          <PlanContext livePlan={livePlan} />
         </div>
+        {href ? (
+          <Link
+            href={href}
+            aria-label={`Open ${livePlan.title ?? "plan"}`}
+            className="mt-1 shrink-0 text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+          >
+            <ArrowRight size={14} />
+          </Link>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {href ? (
+          <Link
+            href={href}
+            className="inline-flex items-center justify-center rounded-full border border-muted-gold/50 bg-muted-gold/10 px-5 py-2 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20"
+          >
+            Open plan
+          </Link>
+        ) : null}
+        <CompletePlanButton planId={livePlan.planId} />
+      </div>
+    </section>
+  );
+}
+
+function PlanContext({
+  livePlan,
+}: {
+  livePlan: NonNullable<TodayPayload["livePlan"]>;
+}) {
+  const parts = [
+    livePlan.timeWindow,
+    livePlan.sourceItemType,
+    livePlan.destination,
+  ].filter(Boolean);
+  if (parts.length === 0 && !livePlan.summary) return null;
+  return (
+    <div className="mt-3 text-[11px] leading-[1.6] text-warm-ivory/45">
+      {parts.length > 0 ? (
+        <div className="uppercase tracking-editorial">{parts.join(" · ")}</div>
+      ) : null}
+      {livePlan.summary ? (
+        <div className="mt-1 line-clamp-2 text-[12px] normal-case tracking-normal text-warm-ivory/55">
+          {livePlan.summary}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function NoLivePlan({ upcomingCount }: { upcomingCount: number }) {
+  const href = upcomingCount > 0 ? "/upcoming" : "/radar";
+  const label = upcomingCount > 0 ? "Open Upcoming" : "Open Radar";
+  return (
+    <section className="mt-6 rounded-[10px] border border-white/[0.06] bg-soft-black/55 px-5 py-4">
+      <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/38">
+        Live
+      </div>
+      <h2 className="mt-2 font-serif text-[24px] leading-tight text-warm-ivory">
+        No live plan
+      </h2>
+      <Link
+        href={href}
+        className="mt-4 inline-flex items-center gap-1.5 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+      >
+        {label} <ArrowRight size={12} />
       </Link>
     </section>
   );
 }
 
-function LeaveHomeDetail() {
+function NextMoveSection({ item }: { item?: TodayCommandItem }) {
   return (
-    <div className="mt-1 flex flex-col gap-2 text-[13px] leading-[1.55] text-warm-ivory/70">
-      <div>Best arrival window before 8:15 PM.</div>
-      <div className="flex items-center gap-2 text-warm-ivory/80">
-        <MapPin size={14} className="text-muted-gold/85" />
-        West Loop, Chicago
-      </div>
-    </div>
+    <section className="mt-8">
+      <SectionLabel>Next move</SectionLabel>
+      {item ? (
+        <CommandItemLink item={item} prominent />
+      ) : (
+        <p className="mt-3 text-[14px] leading-[1.55] text-warm-ivory/50">
+          Nothing needs your attention right now.
+        </p>
+      )}
+    </section>
   );
 }
 
-function WalkHomeDetail() {
+function TodayStack({ items }: { items: TodayCommandItem[] }) {
+  if (items.length === 0) return null;
   return (
-    <div className="mt-1 text-[13px] leading-[1.55] text-warm-ivory/65">
-      Route clears by 11:15 PM.
-    </div>
-  );
-}
-
-function SparrowDetail() {
-  return (
-    <div className="mt-2 flex flex-col gap-5 rounded-[8px] border border-white/[0.06] border-l-2 border-l-muted-gold/40 bg-soft-black/45 px-4 py-4">
-      <div className="text-[12px] leading-[1.65] text-warm-ivory/65">
-        2121 W Division St, Chicago, IL 60622
-      </div>
-
-      <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-        <StatTile
-          icon={<Bell size={14} className="text-muted-gold/85" />}
-          label="Reservation"
-          value="8:30 PM"
-          sub="Party of 2"
-        />
-        <StatTile
-          icon={<Car size={14} className="text-muted-gold/85" />}
-          label="Parking"
-          value="Valet"
-          sub="Before 8:15"
-        />
-        <StatTile
-          icon={<Cloud size={14} className="text-muted-gold/85" />}
-          label="Weather"
-          value="61°"
-          sub="Clearing"
-        />
-        <StatTile
-          icon={<User size={14} className="text-muted-gold/85" />}
-          label="In the Area"
-          value="Marco C."
-          sub="West Loop"
-        />
-      </div>
-
-      <ul className="flex flex-col gap-3 text-[13px] leading-[1.6] text-warm-ivory/75">
-        <li className="flex items-start gap-3">
-          <Fork size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
-          <span>Ask for patio if available.</span>
-        </li>
-        <li className="flex items-start gap-3">
-          <Ticket size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
-          <span>Valet ticket in your pocket.</span>
-        </li>
-        <li className="flex items-start gap-3">
-          <Sparkle size={13} className="mt-[2px] shrink-0 text-muted-gold/80" />
-          <span>Walk home route clears by 11:15 PM.</span>
-        </li>
+    <section className="mt-8">
+      <SectionLabel>Today stack</SectionLabel>
+      <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
+        {items.map((item) => (
+          <li key={item.id}>
+            <CommandItemLink item={item} />
+          </li>
+        ))}
       </ul>
-
-      <div
-        aria-hidden
-        className="inline-flex items-center gap-1.5 self-start text-[13px] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric"
-      >
-        View full plan
-        <ArrowRight size={12} />
-      </div>
-    </div>
+    </section>
   );
 }
 
-function StatTile({
-  icon,
-  label,
-  value,
-  sub,
+function UpcomingBridge({
+  items,
+  count,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub: string;
+  items: TodayCommandItem[];
+  count: number;
 }) {
+  if (items.length === 0 && count === 0) return null;
   return (
-    <div className="min-w-0 border-t border-white/[0.05] pt-3 first:border-t-0 first:pt-0">
-      <div className="mb-2">{icon}</div>
-      <div className="text-[9px] uppercase tracking-editorial text-warm-ivory/45">
-        {label}
+    <section className="mt-10">
+      <SectionLabel
+        trailing={
+          <Link
+            href="/upcoming"
+            className="inline-flex items-center gap-1.5 text-[11px] tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+          >
+            Upcoming{count ? ` (${count})` : ""} <Arrow size={12} />
+          </Link>
+        }
+      >
+        Upcoming
+      </SectionLabel>
+      {items.length > 0 ? (
+        <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
+          {items.slice(0, 3).map((item) => (
+            <li key={item.id}>
+              <CommandItemLink item={item} compact />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function CommandItemLink({
+  item,
+  compact = false,
+  prominent = false,
+}: {
+  item: TodayCommandItem;
+  compact?: boolean;
+  prominent?: boolean;
+}) {
+  const href = item.planSlug ? `/plan/${item.planSlug}` : `/item/${item.id}`;
+  const eyebrow = [
+    formatWhen(item.startsAt),
+    item.source ?? item.category ?? item.type,
+  ].filter(Boolean);
+  return (
+    <Link
+      href={href}
+      className={
+        "flex items-start justify-between gap-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012] " +
+        (prominent
+          ? "mt-3 rounded-[10px] border border-white/[0.06] bg-white/[0.012] px-4 py-4"
+          : compact
+            ? "py-3"
+            : "py-4")
+      }
+    >
+      <div className="min-w-0 flex-1">
+        <div
+          className={
+            prominent
+              ? "font-serif text-[22px] leading-tight text-warm-ivory"
+              : "font-serif text-[18px] leading-tight text-warm-ivory"
+          }
+        >
+          {item.title}
+        </div>
+        {item.reason ?? item.summary ?? item.subtitle ? (
+          <div className="mt-1 line-clamp-2 text-[12px] leading-[1.45] text-warm-ivory/55">
+            {item.reason ?? item.summary ?? item.subtitle}
+          </div>
+        ) : null}
+        {item.locationName ? (
+          <div className="mt-1 truncate text-[11px] text-warm-ivory/38">
+            {item.locationName}
+          </div>
+        ) : null}
       </div>
-      <div className="mt-1 font-serif text-[16px] leading-[1.15] text-warm-ivory">
-        {value}
+      <div className="shrink-0 text-right text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/38">
+        {eyebrow.length > 0 ? <div>{eyebrow.join(" · ")}</div> : null}
+        <div className="text-muted-gold/60">
+          {item.planSlug ? "plan" : item.destination} · {item.status}
+        </div>
       </div>
-      <div className="mt-1 text-[11px] leading-[1.35] text-warm-ivory/45">
-        {sub}
-      </div>
+    </Link>
+  );
+}
+
+function CompletePlanButton({ planId }: { planId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function run() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/plans/${planId}/complete`, {
+          method: "POST",
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok || json.error) {
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        router.refresh();
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={run}
+        disabled={pending}
+        className="rounded-full border border-white/[0.10] bg-white/[0.025] px-5 py-2 text-[11px] uppercase tracking-editorial text-warm-ivory/70 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.06] disabled:opacity-60"
+      >
+        {pending ? "..." : "Complete"}
+      </button>
+      {error ? (
+        <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
+      ) : null}
     </div>
   );
 }
@@ -428,35 +412,26 @@ function GrabList({ items }: { items: GrabListEntry[] }) {
   );
 }
 
-function SignalRow({
-  text,
-  ago,
-}: {
-  text: React.ReactNode;
-  ago: string;
-}) {
-  return (
-    <li className="flex items-start justify-between gap-4 border-l-2 border-muted-gold/40 bg-soft-black/70 px-4 py-3">
-      <p className="text-[14px] leading-[1.5] text-warm-ivory/85">{text}</p>
-      <div className="flex shrink-0 items-center gap-2 pt-[2px] text-[12px] text-warm-ivory/55">
-        {ago}
-        <Chevron direction="right" size={14} />
-      </div>
-    </li>
-  );
-}
-
-function formatOnDeckTime(iso: string): string {
+function formatWhen(iso?: string): string | undefined {
+  if (!iso) return undefined;
   try {
     const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d
-      .toLocaleString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      })
-      .toUpperCase();
+    if (Number.isNaN(d.getTime())) return undefined;
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
   } catch {
-    return "";
+    return undefined;
   }
+}
+
+function formatToday(): string {
+  return new Date().toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }

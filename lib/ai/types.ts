@@ -85,6 +85,11 @@ export type TodayPayload = {
     enabled: boolean;
     title?: string;
     slug?: string;
+    status?: string;
+    summary?: string;
+    timeWindow?: string;
+    sourceItemType?: string;
+    destination?: string;
     nextTimelineItem?: {
       time: string;
       title: string;
@@ -96,6 +101,26 @@ export type TodayPayload = {
   onDeck?: OnDeckItem[];
   /** Count of items in Upcoming, for the small entry link. */
   upcomingCount?: number;
+  nextMove?: TodayCommandItem;
+  todayStack?: TodayCommandItem[];
+  upcoming?: TodayCommandItem[];
+};
+
+export type TodayCommandItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  summary?: string;
+  source?: string;
+  type?: string;
+  category?: string;
+  destination: string;
+  status: string;
+  startsAt?: string;
+  locationName?: string;
+  planSlug?: string;
+  reason?: string;
+  score?: number;
 };
 
 export type OnDeckItem = {
@@ -127,6 +152,11 @@ export type GrabListItem = {
 
 export type RadarCard = {
   id: string;
+  source?: string;
+  type?: string;
+  status?: string;
+  destination?: string;
+  planSlug?: string;
   category:
     | "dining"
     | "events"

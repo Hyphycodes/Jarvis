@@ -6,7 +6,7 @@ import {
 } from "@/lib/dispatch/loadSurface";
 import { TodaySigned } from "./TodaySigned";
 import { TodayEmpty } from "./TodayEmpty";
-import { RadarSigned, type RadarSignedItem } from "./radar/Signed";
+import { RadarSigned } from "./radar/Signed";
 import { RadarEmpty } from "./radar/Empty";
 import { CircleSigned } from "./circle/Signed";
 import { CircleEmpty } from "./circle/Empty";
@@ -32,15 +32,6 @@ export default async function TabsLayout({
     ? await Promise.all([loadTodaySurface(), loadRadarSurface()])
     : [null, []];
 
-  const radarItems: RadarSignedItem[] = radarCards.map((card) => ({
-    id: card.id,
-    title: typeof card.title === "string" ? card.title : "Untitled",
-    description: card.summary,
-    category: card.category,
-    neighborhood: card.neighborhood ?? null,
-    startsAt: card.datetime ?? null,
-  }));
-
   return (
     <TabShell
       today={
@@ -50,7 +41,7 @@ export default async function TabsLayout({
           <TodayEmpty />
         )
       }
-      radar={signedIn ? <RadarSigned items={radarItems} /> : <RadarEmpty />}
+      radar={signedIn ? <RadarSigned items={radarCards} /> : <RadarEmpty />}
       circle={signedIn ? <CircleSigned /> : <CircleEmpty />}
       north={signedIn ? <NorthSigned /> : <NorthEmpty />}
     />

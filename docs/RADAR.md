@@ -13,7 +13,7 @@ Silence is better than filler. The system is designed around **restraint**.
 
 | Layer | Where | Status | Size | Description |
 |-------|-------|--------|------|-------------|
-| **Active Radar** | `destination="radar"` `status="shown"` | shown | 7–12 | The front room. Timely, high-confidence items worth acting on this week. |
+| **Active Radar** | `destination="radar"` `status in ("discovered","shown","opened")` | visible | 7–12 | The front room. Timely, high-confidence items worth acting on this week. |
 | **Upcoming** | `destination="upcoming"` or saved/planned with future `starts_at` | saved/planned | unbounded | The agenda. Dated saved/planned items grouped by Today/Tomorrow/This Week/Later/No Date. |
 | **Holding / Later** | `destination="holding"` `status="discovered"/"shown"` | discovered | ≤30 | The back room. Strong finds that aren't urgent right now. Eligible for promotion to Radar when timing is right. |
 | **Archive / History** | All destinations | saved, passed, planned, completed, expired, archived | Unbounded | Everything seen, acted on, or aged out. Searchable in `/account/history`. |
@@ -117,6 +117,41 @@ POST /api/radar/refresh
 
 See [`docs/BRAIN.md`](./BRAIN.md) for the Interest Graph + Taste Strategist + Curiosity Engine details.
 
+## Surface Rendering
+
+Signed-in Radar is database-backed only. `loadRadarSurface()` reads
+`surfaced_items` through `listIndexItems()` for the signed-in/viewable owner,
+filters to `destination="radar"` and active visible statuses
+(`discovered`, `shown`, `opened`), excludes expired items, sorts by timing,
+score, then recency, and returns at most 12 cards.
+
+Authenticated users never see fallback demo cards. If no real rows match,
+Radar renders the empty state:
+
+- "Nothing on Radar yet"
+- CTA to `/account/intelligence` so the owner can run the explicit Radar
+  refresh path
+
+Logged-out users still see the separate marketing/empty Radar experience from
+`app/(tabs)/radar/Empty.tsx`; that state is intentionally gated away from the
+signed-in owner.
+
+## Card Behavior
+
+Each Radar card body links to `/item/[id]`. The footer keeps the supported
+item lifecycle actions:
+
+- **Save** calls `POST /api/items/[id]/save`, updates the card state, and lets
+  the server route the item to Today, Upcoming, or Holding based on date.
+- **Pass** calls `POST /api/items/[id]/pass`, updates the card state, and
+  records the rejection signal.
+- **View plan** appears only when `payload.plan_slug` exists and links to
+  `/plan/[slug]`.
+
+Save/Pass controls are outside the card body link, so they do not navigate
+accidentally. Radar only surfaces the plan indicator; it does not force
+plan-linked items straight into the plan.
+
 ## Memory of Rejections
 
 When a user taps **Pass** on a Radar card:
@@ -135,3 +170,4 @@ after the window are eligible to re-enter the pool on the next refresh.
 - Run SerpAPI speculatively (shopping only on explicit product request).
 - Show more than `RADAR_ACTIVE_ITEM_LIMIT` (12) items on Active Radar.
 - Route an item to Active Radar with confidence < `RADAR_MIN_CONFIDENCE` (0.65).
+- Show placeholder cards to authenticated users.
