@@ -15,6 +15,7 @@ import {
   type UpdateFounderProfileInput,
   type UpdateProfileInput,
 } from "@/lib/schemas";
+import { z } from "zod";
 import type {
   FounderProfileRow,
   ProfileRow,
@@ -24,6 +25,24 @@ export type ProfileBundle = {
   profile: ProfileRow | null;
   founder: FounderProfileRow | null;
 };
+
+export type WeeklyRhythmActionState = {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  savedAt?: string;
+};
+
+const weeklyRhythmFormSchema = z.object({
+  enabled: z.boolean(),
+  workdays: z.array(z.string()).min(1),
+  leave_home: z.string().regex(/^\d{2}:\d{2}$/),
+  work_start: z.string().regex(/^\d{2}:\d{2}$/),
+  leave_work: z.string().regex(/^\d{2}:\d{2}$/),
+  arrive_home: z.string().regex(/^\d{2}:\d{2}$/),
+  work_location: z.string().trim().min(1).max(80),
+  timezone: z.string().trim().min(1).max(80),
+});
 
 /**
  * Returns the profile + founder_profile for the surface the current user is
@@ -85,34 +104,88 @@ export async function updateFounderProfile(input: UpdateFounderProfileInput) {
   revalidatePath("/profile");
 }
 
-export async function updateWeeklyRhythm(formData: FormData) {
-  const owner = await requireOwner();
-  const supabase = await getServerSupabase();
-  const rawDays = formData.getAll("workdays").map(String);
-  const workdays = rawDays.length > 0
-    ? rawDays
-    : DEFAULT_WEEKLY_RHYTHM.workdays;
-  const rhythm = normalizeWeeklyRhythm({
-    enabled: formData.get("enabled") === "on",
-    workdays: workdays as Weekday[],
-    leave_home: String(formData.get("leave_home") ?? ""),
-    work_start: String(formData.get("work_start") ?? ""),
-    leave_work: String(formData.get("leave_work") ?? ""),
-    arrive_home: String(formData.get("arrive_home") ?? ""),
-    work_location: String(formData.get("work_location") ?? ""),
-    timezone: String(formData.get("timezone") ?? ""),
-  });
+export async function updateWeeklyRhythm(
+  _previousState: WeeklyRhythmActionState,
+  formData: FormData,
+): Promise<WeeklyRhythmActionState> {
+  try {
+    const owner = await requireOwner();
+    const supabase = await getServerSupabase();
+    const parsed = weeklyRhythmFormSchema.parse({
+      enabled: formData.get("enabled") === "on",
+      workdays: formData.getAll("workdays").map(String),
+      leave_home: String(formData.get("leave_home") ?? ""),
+      work_start: String(formData.get("work_start") ?? ""),
+      leave_work: String(formData.get("leave_work") ?? ""),
+      arrive_home: String(formData.get("arrive_home") ?? ""),
+      work_location: String(formData.get("work_location") ?? ""),
+      timezone: String(formData.get("timezone") ?? ""),
+    });
+    const rhythm = normalizeWeeklyRhythm({
+      ...parsed,
+      workdays: parsed.workdays as Weekday[],
+    });
+    const payload = weeklyRhythmToJson(rhythm);
+    console.info("[settings.weekly_rhythm.save.start]", {
+      userId: owner.id,
+      email: owner.email,
+      table: "founder_profile",
+      selector: { user_id: owner.id },
+      weekly_rhythm: payload,
+    });
 
-  const { error } = await supabase.from("founder_profile").upsert(
-    {
-      user_id: owner.id,
-      weekly_rhythm: weeklyRhythmToJson(rhythm),
-    },
-    { onConflict: "user_id" },
-  );
-  if (error) throw new Error(error.message);
-  revalidatePath("/settings");
-  revalidatePath("/");
+    const { error } = await supabase.from("founder_profile").upsert(
+      {
+        user_id: owner.id,
+        weekly_rhythm: payload,
+      },
+      { onConflict: "user_id" },
+    );
+    if (error) {
+      console.error("[settings.weekly_rhythm.save.error]", {
+        userId: owner.id,
+        email: owner.email,
+        message: error.message,
+      });
+      return {
+        ok: false,
+        error: friendlyWeeklyRhythmError(error.message),
+      };
+    }
+    revalidatePath("/settings");
+    revalidatePath("/");
+    const savedAt = new Date().toISOString();
+    console.info("[settings.weekly_rhythm.save.success]", {
+      userId: owner.id,
+      email: owner.email,
+      savedAt,
+    });
+    return { ok: true, message: "Saved.", savedAt };
+  } catch (error) {
+    console.error("[settings.weekly_rhythm.save.exception]", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    if (error instanceof z.ZodError) {
+      return {
+        ok: false,
+        error: "Check the days, times, location, and timezone before saving.",
+      };
+    }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Weekly rhythm save failed.",
+    };
+  }
+}
+
+function friendlyWeeklyRhythmError(message: string): string {
+  if (
+    /weekly_rhythm|schema cache|column/i.test(message) ||
+    /Could not find.*weekly_rhythm/i.test(message)
+  ) {
+    return "Weekly rhythm storage is not available yet. Apply migration 0005_weekly_rhythm.sql, then save again.";
+  }
+  return message;
 }
 
 export async function seedFounderProfile() {

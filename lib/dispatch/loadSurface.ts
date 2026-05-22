@@ -15,6 +15,7 @@ import {
   DEFAULT_WEEKLY_RHYTHM,
   getDayRhythmState,
   normalizeWeeklyRhythm,
+  planWeeklyRhythmTodayRows,
   type DayRhythmState,
   type WeeklyRhythm,
 } from "@/lib/schedule/weeklyRhythm";
@@ -49,7 +50,7 @@ type Loader<T> = () => Promise<T>;
 
 export const loadTodaySurface: Loader<TodayPayload> = async () => {
   try {
-    const { id } = await getViewableProfileId();
+    const { id, viewer } = await getViewableProfileId();
     if (!id) return emptyTodayPayload();
 
     const supabase = await getServerSupabase();
@@ -156,9 +157,25 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         : undefined,
       canPersistStatus: true,
     }));
-    const activeTimeline = planRow && timeline.length === 0
+    const planTimeline = planRow && timeline.length === 0
       ? [fallbackTimelineForPlan(planRow, planKeyStats, planSlug, activePlanDisplay)]
       : timeline;
+    const { rows: rhythmRowPlans, hiddenReasons: rhythmHiddenReasons, state: rhythmState } =
+      planWeeklyRhythmTodayRows(weeklyRhythm);
+    const rhythmTimeline = buildRhythmTimelineRows(weeklyRhythm);
+    console.info("[today.weekly_rhythm.load]", {
+      userId: id,
+      viewerEmail: viewer.email,
+      found: Boolean(rhythmRes.data?.weekly_rhythm),
+      enabled: weeklyRhythm.enabled,
+      workdays: weeklyRhythm.workdays,
+      todayWeekday: rhythmState.weekday,
+      phase: rhythmState.phase,
+      minuteOfDay: rhythmState.minuteOfDay,
+      rowsAdded: rhythmRowPlans.map((row) => row.key),
+      hiddenReasons: rhythmHiddenReasons,
+    });
+    const activeTimeline = [...rhythmTimeline, ...planTimeline];
 
     const grabList: GrabListItem[] = planRow
       ? readPlanGrabList(planKeyStats).map((entry, idx) => ({
@@ -524,6 +541,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
     neighborhood: item.locationName ?? undefined,
     datetime: item.startsAt ?? undefined,
     imageUrl: heroImageForItem(item) ?? undefined,
+    placeholderKind: consideration.media.placeholderKind,
     score: briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
     whyItFits: briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
@@ -603,6 +621,21 @@ function fallbackTimelineForPlan(
     prepNote: cleanDisplayText(readFirstGrabListLabel(keyStats)),
     canPersistStatus: false,
   };
+}
+
+function buildRhythmTimelineRows(rhythm: WeeklyRhythm): TodayTimelineItem[] {
+  const { rows } = planWeeklyRhythmTodayRows(rhythm);
+  return rows.map((row) => ({
+    id: `weekly-rhythm-${row.key}`,
+    time: row.time,
+    title: row.title,
+    status: "pending",
+    expandable: true,
+    details: row.details,
+    locationLine: row.locationLine,
+    timingNote: row.timingNote,
+    canPersistStatus: false,
+  }));
 }
 
 function buildTodayHero(

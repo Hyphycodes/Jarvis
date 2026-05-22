@@ -72,7 +72,6 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
   if (!payload || payload.timeline.length === 0) return [];
 
   return payload.timeline
-    .filter((item) => !payload.livePlan || item.planId === payload.livePlan.planId)
     .map((item) => {
       const hasDetailContent = Boolean(item.details || item.locationLine || item.planSlug);
       const detail = hasDetailContent ? (
