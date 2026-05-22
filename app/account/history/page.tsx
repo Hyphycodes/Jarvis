@@ -132,7 +132,7 @@ export default async function HistoryPage() {
                 {holdingItems.map((item) => (
                   <li key={item.id}>
                     <Link
-                      href={`/item/${item.id}`}
+                      href={hrefForItem(item)}
                       className="flex items-center justify-between gap-3 py-3 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
                     >
                       <div className="min-w-0 flex-1">
@@ -151,7 +151,7 @@ export default async function HistoryPage() {
                         ) : null}
                       </div>
                       <span className="shrink-0 text-[11px] text-warm-ivory/30">
-                        {item.category ?? item.type}
+                        {planSlugForItem(item) ? "plan" : item.category ?? item.type}
                       </span>
                     </Link>
                   </li>
@@ -237,7 +237,7 @@ function HistoryGroup({
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 py-3">
               <Link
-                href={`/item/${item.id}`}
+                href={hrefForItem(item)}
                 className="min-w-0 flex-1 transition-colors duration-300 ease-atmospheric hover:opacity-80"
               >
                 <div className="truncate font-serif text-[18px] leading-tight text-warm-ivory">
@@ -275,4 +275,20 @@ function pickStatuses(
   statuses: IndexItemStatus[],
 ): IndexedItem[] {
   return statuses.flatMap((status) => grouped.get(status) ?? []);
+}
+
+function hrefForItem(item: IndexedItem): string {
+  const planSlug = planSlugForItem(item);
+  return planSlug ? `/plan/${planSlug}` : `/item/${item.id}`;
+}
+
+function planSlugForItem(item: IndexedItem): string | undefined {
+  if (!isRecord(item.rawPayload)) return undefined;
+  return typeof item.rawPayload.plan_slug === "string"
+    ? item.rawPayload.plan_slug
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

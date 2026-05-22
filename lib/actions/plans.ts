@@ -126,6 +126,8 @@ export async function generatePlanForItem(input: {
   // Insert plan row
   const keyStats: Record<string, unknown> = {
     slug: uniqueSlug,
+    starts_at: plan.starts_at,
+    ends_at: plan.ends_at,
     effort_level: plan.effort_level,
     spending_posture: plan.spending_posture,
     confidence: plan.confidence,
@@ -133,6 +135,8 @@ export async function generatePlanForItem(input: {
     why_this_fits: plan.why_this_fits,
     plan_type: plan.plan_type,
     source_item_id: item.id,
+    source_item_type: item.type,
+    source_item_category: item.category,
     fallback_used: fallbackUsed,
     cautions: plan.cautions ?? [],
     grab_list: plan.grab_list ?? [],
@@ -292,8 +296,10 @@ export async function activatePlan(input: {
   // Update source item if linked
   const sourceItemId = readSourceItemId(plan.key_stats);
   if (sourceItemId) {
-    const today = isFutureOrToday(plan.date ? null : null);
-    const nextDestination = today ? "today" : "upcoming";
+    const startsAt = readStartsAt(plan.key_stats);
+    const nextDestination = startsAt
+      ? inferItemDestination(startsAt)
+      : "today";
     const item = await getIndexItem(sourceItemId);
     const currentPayload = item && isRecord(item.rawPayload) ? item.rawPayload : {};
     const nextPayload: Json = {
@@ -485,6 +491,11 @@ function readSourceItemId(keyStats: Json): string | undefined {
   return typeof keyStats.source_item_id === "string"
     ? keyStats.source_item_id
     : undefined;
+}
+
+function readStartsAt(keyStats: Json): string | undefined {
+  if (!isRecord(keyStats)) return undefined;
+  return typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined;
 }
 
 function inferItemDestination(

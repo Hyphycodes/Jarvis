@@ -21,9 +21,9 @@ Never automatic. Never on page load.
 | Status | Meaning | Trigger |
 |--------|---------|---------|
 | `draft` | Generated, not yet started | `POST /api/items/[id]/generate-plan` |
-| `active` | User chose to begin | `POST /api/plans/[id]/activate` |
-| `completed` | Done | `POST /api/plans/[id]/complete` |
-| `cancelled` | Not doing it | `POST /api/plans/[id]/cancel` |
+| `active` | Live plan; user chose Start plan | `POST /api/plans/[id]/activate` |
+| `completed` | Done; no longer shown as Today live content | `POST /api/plans/[id]/complete` |
+| `cancelled` | Archived/cancelled; source item returns to Holding | `POST /api/plans/[id]/cancel` |
 
 Status is stored in `plans.status` (text, no constraint — pre-existing column).
 
@@ -149,6 +149,8 @@ When `ANTHROPIC_API_KEY` is missing or Claude returns invalid JSON:
 | `POST /api/plans/[id]/live` | (Pre-existing — Sparrow only) toggle live state |
 
 Response envelopes are clean — no raw Claude JSON is ever exposed to the UI.
+The UI calls these endpoints from plan/action buttons, then refreshes the
+current route. Lifecycle actions do not create duplicate plans.
 
 ## Dynamic plan route (`/plan/[slug]`)
 
@@ -157,31 +159,46 @@ lookup in `plans.key_stats.slug`. Sparrow's hardcoded `/plan/sparrow`
 route is preserved alongside — Next.js prefers the static `sparrow`
 segment over the dynamic `[slug]` at the same level, so no collision.
 
-Page shows: hero, plan-type/status pills, when/where/effort/spend stats,
-why-this-fits card, action buttons (Begin / Complete / Cancel),
-sections (rendered with type-aware structure), timeline (if present),
-grab list (if present), cautions (if any).
+Page shows: back/Today/source navigation, hero, plan-type/status pills,
+source/context line, effort/spending/window/source stats, why-this-fits card,
+lifecycle actions, sections, timeline, grab list, cautions, and quiet empty
+states when sections or timeline rows are missing.
+
+Primary action labels by status:
+
+| Status | Primary display |
+|--------|-----------------|
+| `draft` | Start plan |
+| `active` | Live + Complete |
+| `completed` | Completed |
+| `cancelled` | Cancelled |
 
 ## Item detail integration
 
 `/item/[id]` Plan section now:
 
 - **No plan** → "Plan this" button (calls `POST /api/items/[id]/generate-plan`)
-- **Plan exists** → "View Plan" link to `/plan/[slug]` + "Regenerate" button
-  (forces regeneration with `force: true`)
+- **Plan exists** → attached-plan panel with "View Plan" link to `/plan/[slug]`
+  and current `payload.plan_status`
+- **Regenerate** → secondary action only; uses `force: true` and does not run
+  automatically
 - **Active plan** → "View Active Plan"
 - **Completed plan** → "View Completed Plan" (no regenerate offered)
 
 ## Today + Upcoming integration
 
 Already automatic via Sprint 3's surface loaders:
-- **Today hero** — `loadTodaySurface()` queries the most-recent `draft` or
-  `active` plan (cancelled/completed excluded). Live-enabled plans take
-  priority over recency.
+- **Today live card** — `loadTodaySurface()` queries live-enabled or `active`
+  plans only. Draft generated plans do not appear as live hero content.
+  Completed/cancelled plans remain excluded.
+- **Timeline links** — generated plan timeline rows link to `/plan/[slug]` when
+  the plan slug is present; Sparrow still links to `/plan/sparrow`.
 - **Today on-deck** — items with today's `starts_at` (read-only inclusion,
   max 3) include any item the user has planned for today.
 - **Upcoming** — items with future `starts_at` OR `destination="upcoming"`
   show grouped by Today/Tomorrow/This Week/Later/No Date.
+- **Upcoming/Holding** — plan-linked items prefer `/plan/[slug]`; unplanned
+  items preserve existing `/item/[id]` behavior.
 - **Sparrow** — completely preserved as a static demo route.
 
 ## Behavior signals

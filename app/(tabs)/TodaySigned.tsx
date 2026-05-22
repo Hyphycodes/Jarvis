@@ -69,6 +69,8 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
 
       <div className="mt-8 h-px w-full bg-divider/70" />
 
+      {payload?.livePlan ? <LivePlanCard livePlan={payload.livePlan} /> : null}
+
       <section className="mt-6 flex flex-col">
         <SectionLabel
           trailing={
@@ -237,11 +239,51 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
       defaultExpanded: isSparrow || item.id === "leave",
     };
     if (detail) base.detail = detail;
-    if (item.planId || isSparrow) {
-      base.href = `/plan/sparrow`;
+    if (item.planSlug) {
+      base.href = `/plan/${item.planSlug}`;
+    } else if (isSparrow) {
+      base.href = "/plan/sparrow";
     }
     return base;
   });
+}
+
+function LivePlanCard({
+  livePlan,
+}: {
+  livePlan: NonNullable<TodayPayload["livePlan"]>;
+}) {
+  const href = livePlan.slug ? `/plan/${livePlan.slug}` : "/plan/sparrow";
+  return (
+    <section className="mt-6">
+      <Link
+        href={href}
+        className="block rounded-[10px] border border-muted-gold/25 bg-soft-black/75 px-5 py-4 transition-colors duration-300 ease-atmospheric hover:bg-soft-black"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-editorial text-muted-gold">
+              <span
+                aria-hidden
+                className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
+              />
+              Live
+            </div>
+            <div className="mt-2 truncate font-serif text-[24px] leading-tight text-warm-ivory">
+              {livePlan.title ?? "Active plan"}
+            </div>
+            {livePlan.nextTimelineItem ? (
+              <div className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/55">
+                Next · {livePlan.nextTimelineItem.time} ·{" "}
+                {livePlan.nextTimelineItem.title}
+              </div>
+            ) : null}
+          </div>
+          <ArrowRight size={14} className="mt-1 shrink-0 text-muted-gold" />
+        </div>
+      </Link>
+    </section>
+  );
 }
 
 function LeaveHomeDetail() {

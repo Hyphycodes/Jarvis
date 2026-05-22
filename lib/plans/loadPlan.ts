@@ -49,6 +49,8 @@ export type LoadedPlan = {
   whyThisFits?: string;
   effortLevel?: "low" | "medium" | "high";
   spendingPosture?: "free" | "low" | "paid" | "high";
+  timeWindow?: string;
+  sourceItemType?: string;
   confidence?: number;
   sourceItemId?: string;
   fallbackUsed: boolean;
@@ -195,6 +197,11 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
     spendingPosture: isPosture(keyStats.spending_posture)
       ? keyStats.spending_posture
       : undefined,
+    timeWindow: formatTimeWindow(keyStats.starts_at, keyStats.ends_at),
+    sourceItemType:
+      typeof keyStats.source_item_type === "string"
+        ? keyStats.source_item_type
+        : undefined,
     confidence:
       typeof keyStats.confidence === "number" ? keyStats.confidence : undefined,
     sourceItemId:
@@ -248,6 +255,22 @@ function isPosture(
   value: unknown,
 ): value is "free" | "low" | "paid" | "high" {
   return value === "free" || value === "low" || value === "paid" || value === "high";
+}
+
+function formatTimeWindow(startsAt: unknown, endsAt: unknown): string | undefined {
+  const start = typeof startsAt === "string" ? formatTime(startsAt) : undefined;
+  const end = typeof endsAt === "string" ? formatTime(endsAt) : undefined;
+  if (start && end) return `${start}–${end}`;
+  return start ?? end;
+}
+
+function formatTime(iso: string): string | undefined {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

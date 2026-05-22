@@ -25,6 +25,19 @@ export default async function DynamicPlanPage({
   const isActive = plan.status === "active";
   const isCompleted = plan.status === "completed";
   const isCancelled = plan.status === "cancelled";
+  const stats = [
+    plan.effortLevel
+      ? { label: "Effort", value: formatLabel(plan.effortLevel) }
+      : null,
+    plan.spendingPosture
+      ? { label: "Spending", value: formatLabel(plan.spendingPosture) }
+      : null,
+    plan.timeWindow ? { label: "Window", value: plan.timeWindow } : null,
+    plan.sourceItemType
+      ? { label: "Source", value: formatLabel(plan.sourceItemType) }
+      : null,
+    plan.dateLabel ? { label: "Date", value: plan.dateLabel } : null,
+  ].filter((item): item is { label: string; value: string } => Boolean(item));
 
   return (
     <main
@@ -39,14 +52,22 @@ export default async function DynamicPlanPage({
           <BackButton
             fallbackHref={plan.sourceItemId ? `/item/${plan.sourceItemId}` : "/"}
           />
-          {plan.sourceItemId ? (
+          <div className="flex items-baseline gap-5">
             <Link
-              href={`/item/${plan.sourceItemId}`}
-              className="text-[12px] uppercase tracking-editorial text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
+              href="/"
+              className="text-[12px] uppercase tracking-editorial text-warm-ivory/45 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/75"
             >
-              Back to item
+              Today
             </Link>
-          ) : null}
+            {plan.sourceItemId ? (
+              <Link
+                href={`/item/${plan.sourceItemId}`}
+                className="text-[12px] uppercase tracking-editorial text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
+              >
+                Source
+              </Link>
+            ) : null}
+          </div>
         </header>
 
         {/* Hero */}
@@ -63,6 +84,12 @@ export default async function DynamicPlanPage({
           <h1 className="mt-4 font-serif text-[44px] italic leading-[1.05] tracking-[-0.01em] text-warm-ivory">
             {plan.title}
           </h1>
+          <p className="mt-2 text-[11px] uppercase tracking-editorial text-warm-ivory/40">
+            {plan.sourceItemType
+              ? `From ${formatLabel(plan.sourceItemType)}`
+              : "Generated plan"}
+            {plan.locationLine ? ` · ${plan.locationLine}` : ""}
+          </p>
           {plan.heroAngle ? (
             <p className="mt-3 max-w-[44ch] font-serif text-[20px] italic leading-[1.3] text-warm-ivory/70">
               {plan.heroAngle}
@@ -72,16 +99,9 @@ export default async function DynamicPlanPage({
 
         {/* Quick stats */}
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {plan.dateLabel ? <Stat label="When" value={plan.dateLabel} /> : null}
-          {plan.locationLine ? (
-            <Stat label="Where" value={plan.locationLine} />
-          ) : null}
-          {plan.effortLevel ? (
-            <Stat label="Effort" value={plan.effortLevel} />
-          ) : null}
-          {plan.spendingPosture ? (
-            <Stat label="Spend" value={plan.spendingPosture} />
-          ) : null}
+          {stats.slice(0, 4).map((stat) => (
+            <Stat key={stat.label} label={stat.label} value={stat.value} />
+          ))}
         </section>
 
         {plan.whyThisFits ? (
@@ -101,17 +121,26 @@ export default async function DynamicPlanPage({
             <PlanActionButton
               planId={plan.id}
               action="activate"
-              label="Begin"
+              label="Start plan"
               variant="primary"
             />
           ) : null}
           {isActive ? (
-            <PlanActionButton
-              planId={plan.id}
-              action="complete"
-              label="Complete"
-              variant="primary"
-            />
+            <>
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#7BC4A0]/35 bg-[#7BC4A0]/5 px-5 py-2.5 text-[11px] uppercase tracking-editorial text-[#7BC4A0]">
+                <span
+                  aria-hidden
+                  className="pulse-dot h-1.5 w-1.5 rounded-full bg-[#7BC4A0]"
+                />
+                Live
+              </span>
+              <PlanActionButton
+                planId={plan.id}
+                action="complete"
+                label="Complete"
+                variant="primary"
+              />
+            </>
           ) : null}
           {(isDraft || isActive) ? (
             <PlanActionButton
@@ -140,7 +169,12 @@ export default async function DynamicPlanPage({
               <PlanSection key={s.id} section={s} />
             ))}
           </div>
-        ) : null}
+        ) : (
+          <EmptyBlock
+            title="No sections yet."
+            body="This plan exists, but Jarvis did not save section detail for it."
+          />
+        )}
 
         {/* Timeline */}
         {plan.timeline.length > 0 ? (
@@ -170,7 +204,12 @@ export default async function DynamicPlanPage({
               ))}
             </ul>
           </section>
-        ) : null}
+        ) : (
+          <EmptyBlock
+            title="No timeline yet."
+            body="Start with the plan sections above; timing can be added later."
+          />
+        )}
 
         {/* Grab list */}
         {plan.grabList.length > 0 ? (
@@ -209,14 +248,10 @@ export default async function DynamicPlanPage({
           </section>
         ) : null}
 
-        <footer className="mt-12 text-[11px] text-warm-ivory/35">
-          <div>plan · {plan.id}</div>
-          <div>
-            status · {plan.status}
-            {plan.confidence != null
-              ? ` · confidence ${Math.round(plan.confidence * 100)}%`
-              : ""}
-          </div>
+        <footer className="mt-12 border-t border-white/[0.05] pt-5 text-[11px] uppercase tracking-editorial text-warm-ivory/30">
+          {plan.confidence != null
+            ? `Confidence ${Math.round(plan.confidence * 100)}%`
+            : "Generated plan"}
         </footer>
       </MotionPage>
     </main>
@@ -259,6 +294,19 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+function EmptyBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <section className="mt-10 rounded-2xl border border-white/[0.05] bg-white/[0.01] px-5 py-4">
+      <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
+        {title}
+      </h2>
+      <p className="mt-2 text-[13px] leading-[1.55] text-warm-ivory/50">
+        {body}
+      </p>
+    </section>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] px-3 py-2">
@@ -296,4 +344,8 @@ function PlanStatusPill({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function formatLabel(value: string): string {
+  return value.replace(/_/g, " ");
 }

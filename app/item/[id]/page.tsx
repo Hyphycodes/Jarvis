@@ -194,7 +194,18 @@ export default async function ItemDetailPage({
         <section className="mt-8">
           <SectionLabel>Plan</SectionLabel>
           {planContext.planSlug || planContext.planId ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div className="mt-3 rounded-2xl border border-muted-gold/20 bg-muted-gold/[0.03] px-4 py-4">
+              <div className="mb-3 flex items-baseline justify-between gap-3">
+                <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+                  Plan attached
+                </span>
+                {planContext.planStatus ? (
+                  <span className="text-[10px] uppercase tracking-editorial text-warm-ivory/45">
+                    {planContext.planStatus}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
               <Link
                 href={
                   planContext.planSlug
@@ -216,11 +227,7 @@ export default async function ItemDetailPage({
                   force
                 />
               ) : null}
-              <span className="text-[11px] text-warm-ivory/45">
-                {planContext.planStatus
-                  ? `Status: ${planContext.planStatus}`
-                  : ""}
-              </span>
+              </div>
             </div>
           ) : showActions ? (
             <div className="mt-3 flex items-center gap-3">

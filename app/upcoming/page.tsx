@@ -127,7 +127,7 @@ function BucketSection({
         {items.map((item) => (
           <li key={item.id}>
             <Link
-              href={`/item/${item.id}`}
+              href={hrefForItem(item)}
               className="flex items-start justify-between gap-3 py-3 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
             >
               <div className="min-w-0 flex-1">
@@ -149,7 +149,9 @@ function BucketSection({
                 {formatWhen(item.startsAt)}
                 <br />
                 <span className="text-warm-ivory/30">
-                  {(item.category ?? item.type).toUpperCase()}
+                  {planSlugForItem(item)
+                    ? "PLAN"
+                    : (item.category ?? item.type).toUpperCase()}
                 </span>
               </div>
             </Link>
@@ -266,4 +268,20 @@ function formatWhen(iso?: string): string {
   } catch {
     return "";
   }
+}
+
+function hrefForItem(item: IndexedItem): string {
+  const planSlug = planSlugForItem(item);
+  return planSlug ? `/plan/${planSlug}` : `/item/${item.id}`;
+}
+
+function planSlugForItem(item: IndexedItem): string | undefined {
+  if (!isRecord(item.rawPayload)) return undefined;
+  return typeof item.rawPayload.plan_slug === "string"
+    ? item.rawPayload.plan_slug
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

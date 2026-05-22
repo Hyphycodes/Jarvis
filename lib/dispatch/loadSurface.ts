@@ -50,8 +50,9 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .from("plans")
           .select("*")
           .eq("user_id", id)
-          // Exclude cancelled/completed plans from the Today hero
-          .in("status", ["draft", "active"])
+          // Today hero is for live/active plans only. Draft generated plans
+          // remain reviewable through their item/plan route.
+          .or("status.eq.active,live_enabled.eq.true")
           .order("live_enabled", { ascending: false })
           .order("updated_at", { ascending: false })
           .limit(1),
@@ -82,6 +83,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       title: row.title,
       status: row.status as TodayTimelineItem["status"],
       planId: row.plan_id ?? undefined,
+      planSlug: row.plan_id === planRow?.id ? readSlugFromKeyStats(planRow.key_stats) : undefined,
       expandable: row.expandable,
       details: row.details ?? undefined,
     }));
@@ -112,6 +114,10 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         locationName: it.locationName,
         category: it.category ?? it.type,
       }));
+    const planSlug = planRow ? readSlugFromKeyStats(planRow.key_stats) : undefined;
+    const nextPlanTimelineItem = planRow
+      ? timeline.find((item) => item.planId === planRow.id && item.status !== "done")
+      : undefined;
 
     return {
       hero: {
@@ -133,6 +139,14 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
             planId: planRow.id,
             label: planRow.live_label as "LIVE" | "BEGIN" | "UPCOMING",
             enabled: planRow.live_enabled,
+            title: planRow.title,
+            slug: planSlug,
+            nextTimelineItem: nextPlanTimelineItem
+              ? {
+                  time: nextPlanTimelineItem.time,
+                  title: nextPlanTimelineItem.title,
+                }
+              : undefined,
           }
         : undefined,
       onDeck: onDeck.length > 0 ? onDeck : undefined,
@@ -463,6 +477,11 @@ function formatToday(): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readSlugFromKeyStats(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  return typeof value.slug === "string" ? value.slug : undefined;
 }
 
 function logQueryError(scope: string, error: unknown) {

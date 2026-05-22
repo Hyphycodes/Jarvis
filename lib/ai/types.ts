@@ -83,6 +83,12 @@ export type TodayPayload = {
     planId: string;
     label: "LIVE" | "BEGIN" | "UPCOMING";
     enabled: boolean;
+    title?: string;
+    slug?: string;
+    nextTimelineItem?: {
+      time: string;
+      title: string;
+    };
   };
   /** Day-of items whose starts_at is today but that may live elsewhere
    *  (Upcoming/Holding/Radar). Surfaced read-only; promotion to
@@ -107,6 +113,7 @@ export type TodayTimelineItem = {
   title: string;
   status: "pending" | "active" | "done" | "skipped";
   planId?: string;
+  planSlug?: string;
   expandable: boolean;
   details?: string;
 };
