@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppFrame } from "@/components";
+import type { RadarCard as RadarPayloadCard } from "@/lib/ai/types";
 
 const FILTERS = [
   "All",
@@ -18,89 +19,35 @@ type Filter = (typeof FILTERS)[number];
 type Card = {
   id: string;
   category: "DINING" | "CULTURE" | "PLACES" | "EVENTS" | "SPORTS";
-  title: ReactNode;
+  title: string;
   body: string;
-  meta: [string, string];
+  meta: string[];
+  sourceLine: string;
+  statusLine: string;
+  planSlug?: string;
   filter: Filter;
   media: "stacked" | "portrait" | "landscape";
-  persistent: boolean;
 };
 
-export type RadarSignedItem = {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  neighborhood: string | null;
-  startsAt: string | null;
-};
-
-const DEFAULT_CARDS: Card[] = [
-  {
-    id: "demo-sparrow",
-    category: "DINING",
-    title: (
-      <>
-        Sparrow
-        <br />
-        Tonight
-      </>
-    ),
-    body: "New jazz trio residency. Low light, outstanding bourbon, late kitchen.",
-    meta: ["WEST LOOP", "8:30PM"],
-    filter: "Dining",
-    media: "stacked",
-    persistent: false,
-  },
-  {
-    id: "demo-lynch",
-    category: "CULTURE",
-    title: (
-      <>
-        David Lynch
-        <br />
-        Retrospective
-      </>
-    ),
-    body: "Week-long screening of unreleased works and interviews.",
-    meta: ["MUSIC BOX THEATRE", "STARTS MAY 19"],
-    filter: "Culture",
-    media: "portrait",
-    persistent: false,
-  },
-  {
-    id: "demo-umbria",
-    category: "PLACES",
-    title: (
-      <>
-        Umbria Property
-        <br />
-        Intel
-      </>
-    ),
-    body: "Prices softened 2.1% this month. Several off-market listings worth review.",
-    meta: ["UMBRIA, ITALY", "MARKET UPDATE"],
-    filter: "Places",
-    media: "landscape",
-    persistent: false,
-  },
-];
-
-function adaptIndexedToCard(item: RadarSignedItem, idx: number): Card {
+function adaptRadarToCard(item: RadarPayloadCard, idx: number): Card {
   const filter = mapCategoryToFilter(item.category);
   const media = ["stacked", "portrait", "landscape"][idx % 3] as Card["media"];
+  const meta = [
+    item.neighborhood,
+    formatMeta(item.datetime),
+    item.whyNow,
+  ].filter((value): value is string => Boolean(value));
   return {
     id: item.id,
     category: mapCategoryToBadge(item.category),
     title: item.title,
-    body: item.description,
-    meta: [
-      (item.neighborhood ?? "").toUpperCase(),
-      formatMeta(item.startsAt),
-    ],
+    body: item.summary || item.whyItFits || "Worth a closer look.",
+    meta,
+    sourceLine: [item.source, item.type].filter(Boolean).join(" · "),
+    statusLine: [item.destination, item.status].filter(Boolean).join(" · "),
+    planSlug: item.planSlug,
     filter,
     media,
-    persistent: true,
   };
 }
 
@@ -118,6 +65,8 @@ function mapCategoryToFilter(category: string): Filter {
       return "Places";
     case "sports":
       return "Sports";
+    case "music":
+      return "Events";
     default:
       return "All";
   }
@@ -134,12 +83,18 @@ function mapCategoryToBadge(category: string): Card["category"] {
       return "EVENTS";
     case "sports":
       return "SPORTS";
+    case "music":
+      return "CULTURE";
+    case "style":
+    case "travel":
+    case "opportunity":
+      return "PLACES";
     default:
       return "PLACES";
   }
 }
 
-function formatMeta(iso: string | null): string {
+function formatMeta(iso?: string): string {
   if (!iso) return "OPEN WINDOW";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "OPEN WINDOW";
@@ -153,16 +108,23 @@ function formatMeta(iso: string | null): string {
     .toUpperCase();
 }
 
-export function RadarSigned({ items }: { items?: RadarSignedItem[] }) {
+function formatToday(): string {
+  return new Date()
+    .toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+    .toUpperCase();
+}
+
+export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("All");
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
 
   const cards = useMemo(() => {
-    if (items && items.length > 0) {
-      return items.map(adaptIndexedToCard);
-    }
-    return DEFAULT_CARDS;
+    return items.map(adaptRadarToCard);
   }, [items]);
 
   const visible = cards.filter(
@@ -184,13 +146,13 @@ export function RadarSigned({ items }: { items?: RadarSignedItem[] }) {
             />
           </div>
           <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
-            May 17, 2025
+            {formatToday()}
           </span>
         </div>
         <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/65">
           Curated signal for your taste and trajectory.
           <br />
-          Not everything. Just what’s worth your time.
+          Not everything. Just what&apos;s worth your time.
         </p>
         <div className="h-px w-8 bg-muted-gold/40" />
       </header>
@@ -202,24 +164,24 @@ export function RadarSigned({ items }: { items?: RadarSignedItem[] }) {
         className="mt-6 flex flex-col gap-6"
         style={{ animation: "cross-fade 200ms var(--ease-atmospheric)" }}
       >
-        {visible.map((card) => (
-          <RadarCard
-            key={card.id}
-            card={card}
-            onLocalPass={() =>
-              setTimeout(
-                () => setDismissed((d) => ({ ...d, [card.id]: true })),
-                600,
-              )
-            }
-            onPersistedAction={() => router.refresh()}
-          />
-        ))}
-        {visible.length === 0 ? (
+        {cards.length === 0 ? (
+          <RadarEmptyState />
+        ) : visible.length === 0 ? (
           <div className="py-12 text-center text-[13px] uppercase tracking-editorial text-warm-ivory/40">
-            Nothing on the radar
+            Nothing in this lane
           </div>
-        ) : null}
+        ) : (
+          visible.map((card) => (
+            <RadarCard
+              key={card.id}
+              card={card}
+              onDismiss={() =>
+                setDismissed((d) => ({ ...d, [card.id]: true }))
+              }
+              onPersistedAction={() => router.refresh()}
+            />
+          ))
+        )}
       </section>
 
     </AppFrame>
@@ -271,24 +233,33 @@ function FilterRow({
 
 function RadarCard({
   card,
-  onLocalPass,
+  onDismiss,
   onPersistedAction,
 }: {
   card: Card;
-  onLocalPass: () => void;
+  onDismiss: () => void;
   onPersistedAction: () => void;
 }) {
   const [passing, setPassing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function persist(action: "save" | "pass") {
-    if (!card.persistent) return;
+    setError(null);
     startTransition(async () => {
       try {
-        await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
+        const res = await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok || json.error) {
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        setTimeout(onDismiss, action === "pass" ? 380 : 180);
         onPersistedAction();
       } catch (err) {
+        setPassing(false);
+        setSaved(false);
+        setError((err as Error).message);
         console.error("radar action failed", err);
       }
     });
@@ -298,7 +269,6 @@ function RadarCard({
     if (passing) return;
     setPassing(true);
     persist("pass");
-    onLocalPass();
   }
 
   function handleSave() {
@@ -315,54 +285,46 @@ function RadarCard({
         (passing ? "fade-up-out" : "opacity-100")
       }
     >
-      {card.persistent ? (
-        <Link
-          href={`/item/${card.id}`}
-          className="grid grid-cols-[1fr_42%] transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
-          aria-label={`Open ${typeof card.title === "string" ? card.title : "item"}`}
-        >
-          <div className="flex flex-col gap-4 p-4">
+      <Link
+        href={`/item/${card.id}`}
+        className="grid grid-cols-[1fr_42%] transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
+        aria-label={`Open ${card.title}`}
+      >
+        <div className="flex flex-col gap-4 p-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
               {card.category}
             </span>
-            <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-              {card.title}
-            </h2>
-            <div className="h-px w-6 bg-muted-gold/50" />
-            <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
-              {card.body}
-            </p>
-            <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
-              {card.meta[0]}
-              <br />
-              {card.meta[1]}
-            </div>
+            {card.sourceLine ? (
+              <span className="text-[10px] uppercase tracking-editorial text-warm-ivory/35">
+                {card.sourceLine}
+              </span>
+            ) : null}
           </div>
-          <CardMedia kind={card.media} />
-        </Link>
-      ) : (
-        <div className="grid grid-cols-[1fr_42%]">
-          <div className="flex flex-col gap-4 p-4">
-            <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
-              {card.category}
-            </span>
-            <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-              {card.title}
-            </h2>
-            <div className="h-px w-6 bg-muted-gold/50" />
-            <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
-              {card.body}
-            </p>
-            <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
-              {card.meta[0]}
-              <br />
-              {card.meta[1]}
-            </div>
+          <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
+            {card.title}
+          </h2>
+          <div className="h-px w-6 bg-muted-gold/50" />
+          <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
+            {card.body}
+          </p>
+          <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
+            {card.meta.slice(0, 3).map((line) => (
+              <div key={line}>{line}</div>
+            ))}
+            {card.statusLine ? (
+              <div className="text-muted-gold/60">{card.statusLine}</div>
+            ) : null}
           </div>
-          <CardMedia kind={card.media} />
         </div>
-      )}
-      <div className="grid grid-cols-2 border-t border-white/[0.06]">
+        <CardMedia kind={card.media} />
+      </Link>
+      {error ? (
+        <div className="border-t border-[#E07A6E]/20 px-4 py-2 text-[11px] text-[#E07A6E]">
+          {error}
+        </div>
+      ) : null}
+      <div className={`grid border-t border-white/[0.06] ${card.planSlug ? "grid-cols-3" : "grid-cols-2"}`}>
         <button
           type="button"
           onClick={handleSave}
@@ -371,6 +333,14 @@ function RadarCard({
         >
           {saved ? "✓" : "Save"}
         </button>
+        {card.planSlug ? (
+          <Link
+            href={`/plan/${card.planSlug}`}
+            className="border-r border-white/[0.06] py-4 text-center text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+          >
+            View plan
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={handlePass}
@@ -381,6 +351,28 @@ function RadarCard({
         </button>
       </div>
     </article>
+  );
+}
+
+function RadarEmptyState() {
+  return (
+    <div className="border-t border-white/[0.08] py-12">
+      <div className="max-w-[34ch]">
+        <h2 className="font-serif text-[30px] leading-tight text-warm-ivory">
+          Nothing on Radar yet
+        </h2>
+        <p className="mt-3 text-[14px] leading-[1.55] text-warm-ivory/58">
+          Refresh Radar from Intelligence when you want Jarvis to pull new
+          candidates into view.
+        </p>
+        <Link
+          href="/account/intelligence"
+          className="mt-5 inline-flex items-center text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+        >
+          Open Intelligence →
+        </Link>
+      </div>
+    </div>
   );
 }
 

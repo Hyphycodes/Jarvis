@@ -187,14 +187,16 @@ Primary action labels by status:
 
 ## Today + Upcoming integration
 
-Already automatic via Sprint 3's surface loaders:
-- **Today live card** — `loadTodaySurface()` queries live-enabled or `active`
-  plans only. Draft generated plans do not appear as live hero content.
-  Completed/cancelled plans remain excluded.
+Already automatic via the surface loaders:
+- **Today Live Plan** — `loadTodaySurface()` queries live-enabled or `active`
+  plans, explicitly excluding draft/completed/cancelled plans. Draft generated
+  plans do not appear as live hero content.
+- **Today Next Move** — the next non-done timeline item from the active plan is
+  the highest-priority command-center item and links back to `/plan/[slug]`.
 - **Timeline links** — generated plan timeline rows link to `/plan/[slug]` when
-  the plan slug is present; Sparrow still links to `/plan/sparrow`.
-- **Today on-deck** — items with today's `starts_at` (read-only inclusion,
-  max 3) include any item the user has planned for today.
+  the plan slug is present. Sparrow remains preserved at `/plan/sparrow`.
+- **Today stack** — plan-linked surfaced items prefer `/plan/[slug]`; unplanned
+  surfaced items link to `/item/[id]`.
 - **Upcoming** — items with future `starts_at` OR `destination="upcoming"`
   show grouped by Today/Tomorrow/This Week/Later/No Date.
 - **Upcoming/Holding** — plan-linked items prefer `/plan/[slug]`; unplanned

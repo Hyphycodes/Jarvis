@@ -26,6 +26,7 @@ import type {
   PlanDetailPayload,
   PlanDetailSection,
   RadarCard,
+  TodayCommandItem,
   TodayPayload,
   TodayTimelineItem,
 } from "@/lib/ai/types";
@@ -39,7 +40,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     if (!id) return emptyTodayPayload();
 
     const supabase = await getServerSupabase();
-    const [timelineRes, primaryPlanRes, grabRes, upcomingCountRes, dayOf] =
+    const [timelineRes, primaryPlanRes, todayItemsRes, upcomingItemsRes, upcomingCountRes, dayOf] =
       await Promise.all([
         supabase
           .from("today_timeline_items")
@@ -50,8 +51,10 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .from("plans")
           .select("*")
           .eq("user_id", id)
-          // Today hero is for live/active plans only. Draft generated plans
-          // remain reviewable through their item/plan route.
+          // Today live module is only for truly active generated plans.
+          // Draft/completed/cancelled plans remain reachable through their
+          // source item and plan route, but they are not "live right now".
+          .not("status", "in", "(draft,completed,cancelled)")
           .or("status.eq.active,live_enabled.eq.true")
           .order("live_enabled", { ascending: false })
           .order("updated_at", { ascending: false })
@@ -61,8 +64,13 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .select("*")
           .eq("user_id", id)
           .eq("destination", "today")
-          .in("status", ["discovered", "shown", "saved", "planned"])
-          .limit(8),
+          .in("status", ["discovered", "shown", "opened", "saved", "planned"])
+          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+          .order("starts_at", { ascending: true, nullsFirst: false })
+          .order("score", { ascending: false, nullsFirst: false })
+          .order("updated_at", { ascending: false })
+          .limit(12),
+        listUpcomingBridgeItems(id),
         // Count of upcoming items (saved/planned + future starts_at)
         countUpcoming(id),
         // Day-of items (read-only inclusion — no mutation here)
@@ -71,11 +79,14 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
 
     logQueryError("today.timeline", timelineRes.error);
     logQueryError("today.plan", primaryPlanRes.error);
-    logQueryError("today.grabList", grabRes.error);
+    logQueryError("today.items", todayItemsRes.error);
 
     const timelineRows = (timelineRes.data ?? []) as TodayTimelineItemRow[];
     const planRow = (primaryPlanRes.data?.[0] ?? null) as PlanRow | null;
-    const grabRows = (grabRes.data ?? []) as SurfacedItemRow[];
+    const todayRows = (todayItemsRes.data ?? []) as SurfacedItemRow[];
+    const todayItems = todayRows.map(rowToTodayCommandItem);
+    const upcomingItems = upcomingItemsRes;
+    const planKeyStats = isRecord(planRow?.key_stats) ? planRow.key_stats : {};
 
     const timeline: TodayTimelineItem[] = timelineRows.map((row) => ({
       id: row.id,
@@ -88,15 +99,14 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       details: row.details ?? undefined,
     }));
 
-    const grabList: GrabListItem[] = grabRows.map((row) => ({
-      id: row.id,
-      label: row.title ?? "Item",
-      checked: row.status === "completed",
-      sourcePlanId:
-        isRecord(row.payload) && typeof row.payload.plan_id === "string"
-          ? row.payload.plan_id
-          : undefined,
-    }));
+    const grabList: GrabListItem[] = planRow
+      ? readPlanGrabList(planKeyStats).map((entry, idx) => ({
+          id: `${planRow.id}-grab-${idx}`,
+          label: entry,
+          checked: false,
+          sourcePlanId: planRow.id,
+        }))
+      : [];
 
     // Build on-deck list (max 3, no flood). Excludes items already in
     // the timeline (matched by title — best-effort dedupe).
@@ -118,6 +128,25 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const nextPlanTimelineItem = planRow
       ? timeline.find((item) => item.planId === planRow.id && item.status !== "done")
       : undefined;
+    const activePlanNextMove = planRow && nextPlanTimelineItem
+      ? {
+          id: nextPlanTimelineItem.id,
+          title: nextPlanTimelineItem.title,
+          subtitle: nextPlanTimelineItem.time,
+          source: "plan",
+          type: "timeline",
+          destination: "today",
+          status: nextPlanTimelineItem.status,
+          planSlug,
+          reason: planRow.title,
+        }
+      : undefined;
+    const topTodayItem = todayItems[0];
+    const firstUpcomingWithTime = upcomingItems.find((item) => item.startsAt);
+    const nextMove = activePlanNextMove ?? topTodayItem ?? firstUpcomingWithTime;
+    const todayStack = todayItems
+      .filter((item) => item.id !== nextMove?.id)
+      .slice(0, 6);
 
     return {
       hero: {
@@ -141,6 +170,21 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
             enabled: planRow.live_enabled,
             title: planRow.title,
             slug: planSlug,
+            status: planRow.status,
+            summary: planRow.summary ?? undefined,
+            timeWindow: formatTimeWindow(
+              typeof planKeyStats.starts_at === "string"
+                ? planKeyStats.starts_at
+                : undefined,
+              typeof planKeyStats.ends_at === "string"
+                ? planKeyStats.ends_at
+                : undefined,
+            ),
+            sourceItemType:
+              typeof planKeyStats.source_item_type === "string"
+                ? planKeyStats.source_item_type
+                : undefined,
+            destination: "today",
             nextTimelineItem: nextPlanTimelineItem
               ? {
                   time: nextPlanTimelineItem.time,
@@ -151,6 +195,9 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         : undefined,
       onDeck: onDeck.length > 0 ? onDeck : undefined,
       upcomingCount: upcomingCountRes,
+      nextMove,
+      todayStack: todayStack.length > 0 ? todayStack : undefined,
+      upcoming: upcomingItems.slice(0, 3),
     };
   } catch (error) {
     logSurfaceError("today", error);
@@ -162,9 +209,13 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
   try {
     const items = await listIndexItems({
       destination: "radar",
-      status: ["discovered", "shown"],
+      status: ["discovered", "shown", "opened"],
+      limit: 24,
     });
-    return items.map(toRadarCard);
+    return items
+      .sort(compareRadarItems)
+      .slice(0, 12)
+      .map(toRadarCard);
   } catch (error) {
     logSurfaceError("radar", error);
     return [];
@@ -389,8 +440,14 @@ export async function loadPlanBySlug(
 
 function toRadarCard(item: IndexedItem): RadarCard {
   const category = mapCategory(item.type, item.category);
+  const planSlug = readPlanSlug(item.rawPayload);
   return {
     id: item.id,
+    source: item.source,
+    type: item.type,
+    status: item.status,
+    destination: item.destination,
+    planSlug,
     category,
     title: item.title,
     summary: item.description ?? item.subtitle ?? "",
@@ -401,10 +458,91 @@ function toRadarCard(item: IndexedItem): RadarCard {
 
     whyItFits: item.reasons[0] ?? "Matches your taste profile.",
     whyNow: item.reasons[1] ?? "Available now.",
-    actions: { save: true, pass: true, openPlan: false },
+    actions: { save: true, pass: true, openPlan: Boolean(planSlug) },
     routeOnSave: ["radar.saved"],
     routeOnPass: ["radar.passed"],
   };
+}
+
+function compareRadarItems(a: IndexedItem, b: IndexedItem): number {
+  const aTime = sortTime(a.startsAt);
+  const bTime = sortTime(b.startsAt);
+  if (aTime !== bTime) return aTime - bTime;
+  const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
+  if (scoreDiff !== 0) return scoreDiff;
+  return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+}
+
+function sortTime(iso?: string): number {
+  if (!iso) return Number.MAX_SAFE_INTEGER;
+  const time = Date.parse(iso);
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+}
+
+function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
+  const planSlug = readPlanSlug(row.payload);
+  const reason = row.reasons?.[0] ?? row.subtitle ?? undefined;
+  return {
+    id: row.id,
+    title: row.title ?? "Untitled",
+    subtitle: row.subtitle ?? undefined,
+    summary: row.description ?? undefined,
+    source: row.source ?? undefined,
+    type: row.type ?? undefined,
+    category: row.category ?? undefined,
+    destination: row.destination,
+    status: row.status,
+    startsAt: row.starts_at ?? undefined,
+    locationName: row.location_name ?? undefined,
+    planSlug,
+    reason,
+    score: row.score ?? undefined,
+  };
+}
+
+async function listUpcomingBridgeItems(userId: string): Promise<TodayCommandItem[]> {
+  try {
+    const supabase = await getServerSupabase();
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("surfaced_items")
+      .select("*")
+      .eq("user_id", userId)
+      .not("status", "in", "(passed,completed,expired,archived)")
+      .or(
+        [
+          "destination.eq.upcoming",
+          `and(status.in.(saved,planned),starts_at.gte.${nowIso})`,
+        ].join(","),
+      )
+      .order("starts_at", { ascending: true, nullsFirst: false })
+      .order("score", { ascending: false, nullsFirst: false })
+      .limit(3);
+    if (error) {
+      console.error("[surface-loader] today.upcoming", error);
+      return [];
+    }
+    return ((data ?? []) as SurfacedItemRow[]).map(rowToTodayCommandItem);
+  } catch (error) {
+    console.error("[surface-loader] today.upcoming", error);
+    return [];
+  }
+}
+
+function readPlanGrabList(value: unknown): string[] {
+  if (!isRecord(value) || !Array.isArray(value.grab_list)) return [];
+  return value.grab_list
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (isRecord(entry) && typeof entry.label === "string") return entry.label;
+      return null;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+function readPlanSlug(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  return typeof value.plan_slug === "string" ? value.plan_slug : undefined;
 }
 
 function mapCategory(
@@ -482,6 +620,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readSlugFromKeyStats(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   return typeof value.slug === "string" ? value.slug : undefined;
+}
+
+function formatTimeWindow(
+  startsAt: string | undefined,
+  endsAt: string | undefined,
+): string | undefined {
+  const start = startsAt ? formatShortTime(startsAt) : undefined;
+  const end = endsAt ? formatShortTime(endsAt) : undefined;
+  if (start && end) return `${start}–${end}`;
+  return start ?? end;
+}
+
+function formatShortTime(iso: string): string | undefined {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function logQueryError(scope: string, error: unknown) {

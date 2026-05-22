@@ -134,15 +134,19 @@ Pulls saved + planned items with future dates, plus everything where
 ## Today Integration
 
 Today now shows:
-1. Hero (active plan if any)
-2. The Day timeline (existing)
-3. Grab list (existing)
-4. **On deck today** (new) — up to 3 day-of items linking to detail
-5. Upcoming link with count
-6. Signals (existing)
+1. Hero summary for the current day
+2. **Live Plan** — active/live generated plans only; draft/completed/cancelled
+   plans are excluded
+3. **Next move** — next active-plan timeline item first, then highest-priority
+   Today surfaced item, then the first upcoming item with a clear start time
+4. Active plan timeline and grab list when present
+5. **Today stack** — remaining real `destination="today"` surfaced items
+6. **Upcoming** bridge — 2-3 upcoming items, not a feed
 
-The Today loader injects on-deck items read-only. No promotion happens
-automatically — that's an explicit owner action.
+The Today loader injects day-of items read-only for compatibility with the
+existing promotion model, but signed-in Today does not render fake Sparrow
+timeline, grab-list, or signal rows. No promotion happens automatically —
+that's an explicit owner action.
 
 ## Navigation
 
@@ -152,7 +156,7 @@ automatically — that's an explicit owner action.
 - Item detail is reachable from:
   - Any Radar card body
   - Any History/Holding list item
-  - "On deck today" item rows
+  - Today stack / Next move item rows
   - Any Upcoming bucket item
 
 The main 4-tab carousel (Today / Radar / Circle / North) is unchanged.
