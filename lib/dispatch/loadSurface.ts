@@ -4,6 +4,7 @@ import { getViewableProfileId } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
+import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
 import type {
   CirclePersonRow,
   CircleUpdateRow,
@@ -21,6 +22,7 @@ import type {
   NorthPayload,
   NorthPillar,
   NorthSignal,
+  OnDeckItem,
   PlanDetailPayload,
   PlanDetailSection,
   RadarCard,
@@ -37,26 +39,31 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     if (!id) return emptyTodayPayload();
 
     const supabase = await getServerSupabase();
-    const [timelineRes, primaryPlanRes, grabRes] = await Promise.all([
-      supabase
-        .from("today_timeline_items")
-        .select("*")
-        .eq("user_id", id)
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("plans")
-        .select("*")
-        .eq("user_id", id)
-        .order("updated_at", { ascending: false })
-        .limit(1),
-      supabase
-        .from("surfaced_items")
-        .select("*")
-        .eq("user_id", id)
-        .eq("destination", "today")
-        .in("status", ["discovered", "shown", "saved", "planned"])
-        .limit(8),
-    ]);
+    const [timelineRes, primaryPlanRes, grabRes, upcomingCountRes, dayOf] =
+      await Promise.all([
+        supabase
+          .from("today_timeline_items")
+          .select("*")
+          .eq("user_id", id)
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("plans")
+          .select("*")
+          .eq("user_id", id)
+          .order("updated_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("surfaced_items")
+          .select("*")
+          .eq("user_id", id)
+          .eq("destination", "today")
+          .in("status", ["discovered", "shown", "saved", "planned"])
+          .limit(8),
+        // Count of upcoming items (saved/planned + future starts_at)
+        countUpcoming(id),
+        // Day-of items (read-only inclusion — no mutation here)
+        findDayOfItems(id),
+      ]);
 
     logQueryError("today.timeline", timelineRes.error);
     logQueryError("today.plan", primaryPlanRes.error);
@@ -86,6 +93,23 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           : undefined,
     }));
 
+    // Build on-deck list (max 3, no flood). Excludes items already in
+    // the timeline (matched by title — best-effort dedupe).
+    const timelineTitles = new Set(
+      timelineRows.map((r) => r.title?.toLowerCase().trim()).filter(Boolean),
+    );
+    const onDeck: OnDeckItem[] = dayOf.dayOf
+      .filter((it) => !timelineTitles.has(it.title.toLowerCase().trim()))
+      .slice(0, MAX_DAY_OF_ON_TODAY)
+      .map((it) => ({
+        id: it.id,
+        title: it.title,
+        subtitle: it.subtitle,
+        startsAt: it.startsAt,
+        locationName: it.locationName,
+        category: it.category ?? it.type,
+      }));
+
     return {
       hero: {
         eyebrow: "Today",
@@ -108,6 +132,8 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
             enabled: planRow.live_enabled,
           }
         : undefined,
+      onDeck: onDeck.length > 0 ? onDeck : undefined,
+      upcomingCount: upcomingCountRes,
     };
   } catch (error) {
     logSurfaceError("today", error);
@@ -439,6 +465,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function logQueryError(scope: string, error: unknown) {
   if (!error) return;
   console.error("[surface-loader]", scope, error);
+}
+
+async function countUpcoming(userId: string): Promise<number> {
+  try {
+    const supabase = await getServerSupabase();
+    const nowIso = new Date().toISOString();
+    const { count, error } = await supabase
+      .from("surfaced_items")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .or(
+        [
+          "destination.eq.upcoming",
+          `and(status.in.(saved,planned),starts_at.gte.${nowIso})`,
+        ].join(","),
+      );
+    if (error) {
+      console.error("[surface-loader] countUpcoming", error);
+      return 0;
+    }
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 function logSurfaceError(scope: string, error: unknown) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AppFrame } from "@/components";
@@ -314,26 +315,53 @@ function RadarCard({
         (passing ? "fade-up-out" : "opacity-100")
       }
     >
-      <div className="grid grid-cols-[1fr_42%]">
-        <div className="flex flex-col gap-4 p-4">
-          <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
-            {card.category}
-          </span>
-          <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-            {card.title}
-          </h2>
-          <div className="h-px w-6 bg-muted-gold/50" />
-          <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
-            {card.body}
-          </p>
-          <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
-            {card.meta[0]}
-            <br />
-            {card.meta[1]}
+      {card.persistent ? (
+        <Link
+          href={`/item/${card.id}`}
+          className="grid grid-cols-[1fr_42%] transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
+          aria-label={`Open ${typeof card.title === "string" ? card.title : "item"}`}
+        >
+          <div className="flex flex-col gap-4 p-4">
+            <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+              {card.category}
+            </span>
+            <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
+              {card.title}
+            </h2>
+            <div className="h-px w-6 bg-muted-gold/50" />
+            <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
+              {card.body}
+            </p>
+            <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
+              {card.meta[0]}
+              <br />
+              {card.meta[1]}
+            </div>
           </div>
+          <CardMedia kind={card.media} />
+        </Link>
+      ) : (
+        <div className="grid grid-cols-[1fr_42%]">
+          <div className="flex flex-col gap-4 p-4">
+            <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+              {card.category}
+            </span>
+            <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
+              {card.title}
+            </h2>
+            <div className="h-px w-6 bg-muted-gold/50" />
+            <p className="max-w-[28ch] text-[14px] leading-[1.55] text-warm-ivory/75">
+              {card.body}
+            </p>
+            <div className="mt-2 text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/45">
+              {card.meta[0]}
+              <br />
+              {card.meta[1]}
+            </div>
+          </div>
+          <CardMedia kind={card.media} />
         </div>
-        <CardMedia kind={card.media} />
-      </div>
+      )}
       <div className="grid grid-cols-2 border-t border-white/[0.06]">
         <button
           type="button"

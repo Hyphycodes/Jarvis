@@ -17,7 +17,22 @@ const ACTIONS = [
   "complete",
   "archive",
   "restore",
+  "move-radar",
+  "move-holding",
+  "add-upcoming",
+  "remove-upcoming",
+  "expire",
 ] as const satisfies readonly ItemAction[];
+
+const DESTINATIONS = [
+  "today",
+  "radar",
+  "north",
+  "circle",
+  "plan",
+  "holding",
+  "upcoming",
+] as const;
 
 const paramsSchema = z.object({
   id: z.string().uuid(),
@@ -27,6 +42,7 @@ const paramsSchema = z.object({
 const bodySchema = z
   .object({
     planId: z.string().uuid().optional(),
+    destination: z.enum(DESTINATIONS).optional(),
   })
   .strict()
   .optional();
@@ -42,6 +58,7 @@ export async function POST(
     const result = await dispatchItemAction(action, {
       itemId: id,
       planId: parsed?.planId,
+      destination: parsed?.destination,
     });
     return NextResponse.json(result);
   } catch (error) {

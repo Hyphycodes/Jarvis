@@ -84,6 +84,21 @@ export type TodayPayload = {
     label: "LIVE" | "BEGIN" | "UPCOMING";
     enabled: boolean;
   };
+  /** Day-of items whose starts_at is today but that may live elsewhere
+   *  (Upcoming/Holding/Radar). Surfaced read-only; promotion to
+   *  destination="today" is manual via POST /api/today/promote. */
+  onDeck?: OnDeckItem[];
+  /** Count of items in Upcoming, for the small entry link. */
+  upcomingCount?: number;
+};
+
+export type OnDeckItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  startsAt?: string;
+  locationName?: string;
+  category?: string;
 };
 
 export type TodayTimelineItem = {

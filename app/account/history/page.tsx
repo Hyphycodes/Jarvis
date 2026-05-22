@@ -73,12 +73,20 @@ export default async function HistoryPage() {
       <MotionPage>
         <header className="flex items-baseline justify-between">
           <BackButton fallbackHref="/account" />
-          <Link
-            href="/account"
-            className="text-[16px] font-medium text-warm-ivory transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
-          >
-            Done
-          </Link>
+          <div className="flex items-baseline gap-5">
+            <Link
+              href="/upcoming"
+              className="text-[12px] uppercase tracking-editorial text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
+            >
+              Upcoming
+            </Link>
+            <Link
+              href="/account"
+              className="text-[16px] font-medium text-warm-ivory transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
+            >
+              Done
+            </Link>
+          </div>
         </header>
 
         <section className="mt-6">
@@ -122,28 +130,30 @@ export default async function HistoryPage() {
             ) : (
               <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
                 {holdingItems.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-3 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-serif text-[18px] leading-tight text-warm-ivory">
-                        {item.title}
+                  <li key={item.id}>
+                    <Link
+                      href={`/item/${item.id}`}
+                      className="flex items-center justify-between gap-3 py-3 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-serif text-[18px] leading-tight text-warm-ivory">
+                          {item.title}
+                        </div>
+                        {item.subtitle ? (
+                          <div className="mt-0.5 truncate text-[12px] text-warm-ivory/55">
+                            {item.subtitle}
+                          </div>
+                        ) : null}
+                        {item.reasons[0] ? (
+                          <div className="mt-0.5 truncate text-[11px] text-warm-ivory/35 italic">
+                            {item.reasons[0]}
+                          </div>
+                        ) : null}
                       </div>
-                      {item.subtitle ? (
-                        <div className="mt-0.5 truncate text-[12px] text-warm-ivory/55">
-                          {item.subtitle}
-                        </div>
-                      ) : null}
-                      {item.reasons[0] ? (
-                        <div className="mt-0.5 truncate text-[11px] text-warm-ivory/35 italic">
-                          {item.reasons[0]}
-                        </div>
-                      ) : null}
-                    </div>
-                    <span className="shrink-0 text-[11px] text-warm-ivory/30">
-                      {item.category ?? item.type}
-                    </span>
+                      <span className="shrink-0 text-[11px] text-warm-ivory/30">
+                        {item.category ?? item.type}
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -225,11 +235,11 @@ function HistoryGroup({
       ) : (
         <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
           {items.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-center justify-between gap-3 py-3"
-            >
-              <div className="min-w-0 flex-1">
+            <li key={item.id} className="flex items-center gap-3 py-3">
+              <Link
+                href={`/item/${item.id}`}
+                className="min-w-0 flex-1 transition-colors duration-300 ease-atmospheric hover:opacity-80"
+              >
                 <div className="truncate font-serif text-[18px] leading-tight text-warm-ivory">
                   {item.title}
                 </div>
@@ -238,7 +248,7 @@ function HistoryGroup({
                     {item.subtitle}
                   </div>
                 ) : null}
-              </div>
+              </Link>
               {showRestore ? <RestoreItemButton itemId={item.id} /> : null}
             </li>
           ))}

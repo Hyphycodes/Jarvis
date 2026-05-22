@@ -9,13 +9,17 @@ Silence is better than filler. The system is designed around **restraint**.
 > "It doesn't just cap Radar and risk missing good things. It gives Jarvis a
 > front room and a back room."
 
-## Three-Layer Inventory
+## Four-Layer Inventory (Sprint 3)
 
 | Layer | Where | Status | Size | Description |
 |-------|-------|--------|------|-------------|
 | **Active Radar** | `destination="radar"` `status="shown"` | shown | 7–12 | The front room. Timely, high-confidence items worth acting on this week. |
+| **Upcoming** | `destination="upcoming"` or saved/planned with future `starts_at` | saved/planned | unbounded | The agenda. Dated saved/planned items grouped by Today/Tomorrow/This Week/Later/No Date. |
 | **Holding / Later** | `destination="holding"` `status="discovered"/"shown"` | discovered | ≤30 | The back room. Strong finds that aren't urgent right now. Eligible for promotion to Radar when timing is right. |
 | **Archive / History** | All destinations | saved, passed, planned, completed, expired, archived | Unbounded | Everything seen, acted on, or aged out. Searchable in `/account/history`. |
+
+Every item — regardless of layer — has a permanent detail page at `/item/[id]`.
+See [`docs/OBJECTS.md`](./OBJECTS.md) for the full item lifecycle.
 
 ## Attention Budget Constants
 

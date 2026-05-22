@@ -89,6 +89,62 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
 
       <GrabList items={grabItems} />
 
+      {payload?.onDeck && payload.onDeck.length > 0 ? (
+        <section className="mt-8 flex flex-col">
+          <SectionLabel
+            trailing={
+              <Link
+                href="/upcoming"
+                className="inline-flex items-center gap-1.5 text-[11px] tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-muted-gold/80"
+              >
+                Upcoming{payload.upcomingCount ? ` (${payload.upcomingCount})` : ""} →
+              </Link>
+            }
+          >
+            On deck today
+          </SectionLabel>
+          <ul className="mt-3 flex flex-col gap-3">
+            {payload.onDeck.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={`/item/${item.id}`}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.05] bg-white/[0.01] px-4 py-3 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.03]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14px] text-warm-ivory">
+                      {item.title}
+                    </div>
+                    {item.locationName ? (
+                      <div className="mt-0.5 truncate text-[11px] text-warm-ivory/45">
+                        {item.locationName}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0 text-right text-[10px] uppercase tracking-editorial text-warm-ivory/40">
+                    {item.startsAt ? formatOnDeckTime(item.startsAt) : ""}
+                    {item.category ? (
+                      <>
+                        <br />
+                        {item.category}
+                      </>
+                    ) : null}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : payload?.upcomingCount && payload.upcomingCount > 0 ? (
+        <section className="mt-8">
+          <Link
+            href="/upcoming"
+            className="inline-flex items-center gap-1.5 text-[12px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-muted-gold/80"
+          >
+            Upcoming ({payload.upcomingCount}) →
+          </Link>
+        </section>
+      ) : null}
+
       <section className="mt-8 flex flex-col">
         <SectionLabel
           trailing={
@@ -346,4 +402,19 @@ function SignalRow({
       </div>
     </li>
   );
+}
+
+function formatOnDeckTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d
+      .toLocaleString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+      .toUpperCase();
+  } catch {
+    return "";
+  }
 }

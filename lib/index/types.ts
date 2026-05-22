@@ -28,7 +28,8 @@ export type IndexDestination =
   | "north"
   | "circle"
   | "plan"
-  | "holding";
+  | "holding"
+  | "upcoming";
 
 export type IndexItemSource =
   | "system"

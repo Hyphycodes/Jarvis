@@ -2,7 +2,14 @@ import type { IndexedItem, IndexItemStatus } from "@/lib/index/types";
 
 export type BrainSelection = {
   itemId: string;
-  destination: "today" | "radar" | "north" | "circle" | "plan" | "holding";
+  destination:
+    | "today"
+    | "radar"
+    | "north"
+    | "circle"
+    | "plan"
+    | "holding"
+    | "upcoming";
   confidence: number;
   reason: string;
   displayAngle: string;
