@@ -12,13 +12,17 @@ import { z } from "zod";
 export const PLAN_TYPES = [
   "dining",
   "event",
+  "activity",
   "culture",
   "style",
+  "product",
   "travel",
   "fitness",
   "creative",
   "real_estate",
+  "land",
   "outdoors",
+  "idea",
   "general",
 ] as const;
 
@@ -41,11 +45,13 @@ export const SECTION_TYPES = [
   "cost",
   "detours",
   "after",
+  "alternatives",
+  "research",
   "notes",
 ] as const;
 
 export const EFFORT_LEVELS = ["low", "medium", "high"] as const;
-export const SPENDING_POSTURES = ["free", "low", "paid", "high"] as const;
+export const SPENDING_POSTURES = ["free", "low", "paid", "high", "unknown"] as const;
 
 // ── Section schema ──────────────────────────────────────────────────────────
 
@@ -102,13 +108,16 @@ export const generatedPlanSchema = z.object({
   address: z.string().max(240).optional(),
   hero_angle: z.string().min(1).max(220),
   why_this_fits: z.string().min(1).max(360),
+  best_window: z.string().max(180).optional(),
   effort_level: z.enum(EFFORT_LEVELS),
   spending_posture: z.enum(SPENDING_POSTURES),
   confidence: z.number().min(0).max(1),
+  primary_move: z.string().min(1).max(220),
   sections: z.array(planSectionSchema).min(2).max(11),
   timeline: z.array(planTimelineEntrySchema).max(8).default([]),
   grab_list: z.array(planGrabItemSchema).max(8).default([]),
   cautions: z.array(z.string().min(1).max(200)).max(4).optional(),
+  source_item_id: z.string().uuid().optional(),
 });
 
 export type GeneratedPlan = z.infer<typeof generatedPlanSchema>;

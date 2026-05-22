@@ -66,7 +66,7 @@ export type GeneratePlanForItemResult = {
   ok: true;
   planId: string;
   planSlug: string;
-  status: "draft";
+  status: "draft" | "active" | "completed" | "cancelled" | string;
   fallbackUsed: boolean;
   reused?: boolean;
 };
@@ -109,7 +109,7 @@ export async function generatePlanForItem(input: {
           ok: true,
           planId: planRow.id,
           planSlug: slug,
-          status: "draft",
+          status: planRow.status,
           fallbackUsed: false,
           reused: true,
         };
@@ -133,8 +133,12 @@ export async function generatePlanForItem(input: {
     confidence: plan.confidence,
     hero_angle: plan.hero_angle,
     why_this_fits: plan.why_this_fits,
+    best_window: plan.best_window,
+    primary_move: plan.primary_move,
+    location_name: plan.location_name,
+    address: plan.address,
     plan_type: plan.plan_type,
-    source_item_id: item.id,
+    source_item_id: plan.source_item_id ?? item.id,
     source_item_type: item.type,
     source_item_category: item.category,
     fallback_used: fallbackUsed,
@@ -229,6 +233,7 @@ export async function generatePlanForItem(input: {
     plan_slug: uniqueSlug,
     plan_status: "draft",
     plan_type: plan.plan_type,
+    plan_primary_move: plan.primary_move,
   } as Json;
 
   const { error: itemError } = await supabase
@@ -320,6 +325,7 @@ export async function activatePlan(input: {
 
   revalidatePath(`/`);
   revalidatePath(`/upcoming`);
+  if (sourceItemId) revalidatePath(`/item/${sourceItemId}`);
   const slug = readSlugFromKeyStats(plan.key_stats);
   if (slug) revalidatePath(`/plan/${slug}`);
 
@@ -374,6 +380,7 @@ export async function completePlan(input: {
 
   revalidatePath(`/`);
   revalidatePath(`/account/history`);
+  if (sourceItemId) revalidatePath(`/item/${sourceItemId}`);
   const slug = readSlugFromKeyStats(plan.key_stats);
   if (slug) revalidatePath(`/plan/${slug}`);
 
@@ -408,16 +415,21 @@ export async function cancelPlan(input: {
 
   const sourceItemId = readSourceItemId(plan.key_stats);
   if (sourceItemId) {
+    const startsAt = readStartsAt(plan.key_stats);
     const item = await getIndexItem(sourceItemId);
     const currentPayload = item && isRecord(item.rawPayload) ? item.rawPayload : {};
     const nextPayload: Json = {
       ...currentPayload,
       plan_status: "cancelled",
     } as Json;
-    // Item drops back to holding (it was planned, now it isn't)
+    // Item drops back to the appropriate non-live surface after cancellation.
     await supabase
       .from("surfaced_items")
-      .update({ status: "discovered", destination: "holding", payload: nextPayload })
+      .update({
+        status: "discovered",
+        destination: inferItemDestination(startsAt),
+        payload: nextPayload,
+      })
       .eq("id", sourceItemId)
       .eq("user_id", owner.id);
   }
@@ -430,6 +442,7 @@ export async function cancelPlan(input: {
   revalidatePath(`/`);
   revalidatePath(`/upcoming`);
   revalidatePath(`/account/history`);
+  if (sourceItemId) revalidatePath(`/item/${sourceItemId}`);
   const slug = readSlugFromKeyStats(plan.key_stats);
   if (slug) revalidatePath(`/plan/${slug}`);
 

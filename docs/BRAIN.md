@@ -185,6 +185,35 @@ The quality gate uses briefing fields to decide final placement:
 See [`docs/BRIEFINGS.md`](./BRIEFINGS.md) for the payload shape and display
 policy.
 
+## Plan Generator (`lib/brain/planGenerator.ts`)
+
+Runs only from explicit owner action: `POST /api/items/[id]/generate-plan`.
+It never runs on Radar, Today, item, or plan page load.
+
+Inputs include the source `IndexedItem`, the cleaned Consideration Brief view,
+BrainContext, Interest Graph summary, recent behavior, memory, schedule hints,
+and weather only when already present in BrainContext. The generator uses
+Anthropic when available and falls back to a deterministic draft plan when the
+key is missing or JSON validation fails.
+
+The generator validates strict JSON in `lib/brain/planTypes.ts` and stores
+clean plan metadata in `plans.key_stats`, including `primary_move`,
+`best_window`, source item id, timing, effort/spend posture, confidence,
+cautions, and grab list. The model never writes the database directly; server
+actions persist the plan, sections, timeline rows, source item payload link,
+and behavior signal.
+
+Plan sections adapt by item type:
+
+- places/dining get timing, route, atmosphere, cost, and optional detours
+- events get timing, ticket/entry check, route, move, and after
+- outdoors/activity ideas get prep, effort/recovery, gear, and weather notes
+  only when weather context exists
+- product/style plans get fit check, buy/hold/compare, cost, alternatives, and
+  verification
+- article/idea/land/creative plans get research path, next questions, leverage
+  angle, what to watch, and first small move
+
 ## Source layer (`lib/sources/gather.ts`, `lib/sources/localRadar.ts`)
 
 Two paths:

@@ -30,6 +30,7 @@ import { BackButton, MotionPage } from "@/components";
 import {
   ItemActionButton,
   GeneratePlanButton,
+  PlanLifecycleButton,
   RefreshBriefingButton,
 } from "./client-bits";
 import type { IndexedItem } from "@/lib/index/types";
@@ -545,12 +546,27 @@ function ActionsPanel({
         Actions
       </div>
       {planContext.planSlug || planContext.planId ? (
-        <Link
-          href={planContext.planSlug ? `/plan/${planContext.planSlug}` : "/plan/sparrow"}
-          className="mb-3 flex min-h-[56px] items-center justify-center rounded-2xl border border-muted-gold/35 bg-muted-gold/[0.08] px-5 text-[11px] uppercase tracking-[0.28em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/[0.14]"
-        >
-          View Plan
-        </Link>
+        <div className="mb-3 rounded-2xl border border-muted-gold/20 bg-muted-gold/[0.04] p-3">
+          <div className="mb-2 px-1 text-[10px] uppercase tracking-[0.28em] text-muted-gold">
+            {planLabel(planContext.planStatus)}
+          </div>
+          <div className="grid gap-3">
+            <Link
+              href={`/plan/${planContext.planSlug ?? planContext.planId}`}
+              className="flex min-h-[56px] items-center justify-center rounded-2xl border border-muted-gold/35 bg-muted-gold/[0.08] px-5 text-[11px] uppercase tracking-[0.28em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/[0.14]"
+            >
+              {planContext.planStatus === "active" ? "View Active Plan" : "View Plan"}
+            </Link>
+            {planContext.planId && planContext.planStatus === "draft" ? (
+              <PlanLifecycleButton
+                planId={planContext.planId}
+                action="activate"
+                label="Activate Plan"
+                variant="secondary"
+              />
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       {showActions ? (
@@ -704,6 +720,20 @@ function readPlanContext(item: IndexedItem): PlanContext {
       ? raw.plan_status
       : item.tags.find((t) => t.startsWith("plan:"))?.slice(5);
   return { planId, planSlug, planStatus };
+}
+
+function planLabel(status?: string): string {
+  switch (status) {
+    case "active":
+      return "Live Plan";
+    case "completed":
+      return "Plan Completed";
+    case "cancelled":
+      return "Plan Cancelled";
+    case "draft":
+    default:
+      return "Plan Ready";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -32,7 +32,9 @@ export default async function DynamicPlanPage({
     plan.spendingPosture
       ? { label: "Spending", value: formatLabel(plan.spendingPosture) }
       : null,
-    plan.timeWindow ? { label: "Window", value: plan.timeWindow } : null,
+    plan.timeWindow || plan.bestWindow
+      ? { label: "Window", value: plan.timeWindow ?? plan.bestWindow ?? "" }
+      : null,
     plan.sourceItemType
       ? { label: "Source", value: formatLabel(plan.sourceItemType) }
       : null,
@@ -111,6 +113,17 @@ export default async function DynamicPlanPage({
             </h2>
             <p className="mt-2 text-[14px] leading-[1.55] text-warm-ivory/80">
               {plan.whyThisFits}
+            </p>
+          </section>
+        ) : null}
+
+        {plan.primaryMove ? (
+          <section className="mt-4 rounded-2xl border border-muted-gold/20 bg-muted-gold/[0.045] px-5 py-4">
+            <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
+              Primary move
+            </h2>
+            <p className="mt-2 text-[14px] leading-[1.55] text-warm-ivory/82">
+              {plan.primaryMove}
             </p>
           </section>
         ) : null}

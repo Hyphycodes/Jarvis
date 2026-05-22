@@ -23,7 +23,7 @@ Never automatic. Never on page load.
 | `draft` | Generated, not yet started | `POST /api/items/[id]/generate-plan` |
 | `active` | Live plan; user chose Start plan | `POST /api/plans/[id]/activate` |
 | `completed` | Done; no longer shown as Today live content | `POST /api/plans/[id]/complete` |
-| `cancelled` | Archived/cancelled; source item returns to Holding | `POST /api/plans/[id]/cancel` |
+| `cancelled` | Dropped; source item returns to Today, Upcoming, or Holding by timing | `POST /api/plans/[id]/cancel` |
 
 Status is stored in `plans.status` (text, no constraint — pre-existing column).
 
@@ -34,9 +34,10 @@ model returns invalid JSON.
 
 **Input:**
 - source IndexedItem (full Universal Index record)
+- Consideration Brief view model, including verdict, best move, indicators, and source evidence
 - BrainContext (founder profile, memory, recent actions)
 - Interest Graph snapshot
-- current weather (best-effort)
+- current weather if already present in BrainContext
 - schedule hints (06:20 leave, 16:30 home, weeknight energy)
 
 **Output (Zod-validated `GeneratedPlan`):**
@@ -44,16 +45,19 @@ model returns invalid JSON.
 ```ts
 {
   title, subtitle?, slug,
-  plan_type: "dining" | "event" | "culture" | "style" | "travel"
-           | "fitness" | "creative" | "real_estate" | "outdoors" | "general",
+  plan_type: "dining" | "event" | "activity" | "culture" | "style"
+           | "product" | "travel" | "fitness" | "creative"
+           | "real_estate" | "land" | "outdoors" | "idea" | "general",
   status: "draft",
   starts_at?, ends_at?,
   location_name?, address?,
   hero_angle,                  // tight one-sentence frame
   why_this_fits,
+  best_window?,
   effort_level: "low" | "medium" | "high",
-  spending_posture: "free" | "low" | "paid" | "high",
+  spending_posture: "free" | "low" | "paid" | "high" | "unknown",
   confidence: 0..1,
+  primary_move,                // the obvious first move
   sections: [
     {
       key, title, subtitle?, body, sort_order, section_type, bullets?
@@ -63,30 +67,36 @@ model returns invalid JSON.
     { title, starts_at?, ends_at?, time_label?, description?, sort_order }
   ],                           // 0-8 entries
   grab_list: [ { label, reason? } ],   // 0-8 items
-  cautions?: [ string ]        // 0-4 short warnings
+  cautions?: [ string ],       // 0-4 short warnings
+  source_item_id?
 }
 ```
 
 ### Section types
 
 `why`, `timing`, `before`, `move`, `route`, `atmosphere`, `wear`, `bring`,
-`cost`, `detours`, `after`, `notes`.
+`cost`, `detours`, `after`, `alternatives`, `research`, `notes`.
 
 Stored in `plan_sections.section_id` (already plain text — no schema change).
 `plan_sections.content` jsonb holds `{ key, body, bullets }`.
 
 ### Section standards (enforced by prompt)
 
-1. **Why This Fits** — concrete, not generic
-2. **Timing** — fits after-work / weekend; if unknown, say what to confirm
-3. **Before You Go** — reservation, ticket, dress check
-4. **The Move** — the actual plan
-5. **Route / Arrival** — only with real location data, otherwise placeholder
-6. **Atmosphere** — vibe and expectation
-7. **Wear / Bring** — only if useful
-8. **Cost Posture** — why spend is or isn't justified
-9. **Optional Detours** — 0–3 max, restrained
-10. **After** — only if natural
+Plan sections adapt by item type:
+
+- **Dining/place** — Why This Fits, Best Window, Before You Go, The Move,
+  Route / Arrival, Atmosphere, Wear / Bring, Cost Posture, optional Detours,
+  After.
+- **Event/culture/music/sports** — Why This Fits, Timing, Ticket / Entry
+  Check, Before You Go, Route / Arrival, The Move, After, Cost Posture.
+- **Activity/outdoors/sports ideas** — Why This Fits, Best Window, Prep,
+  Route / Arrival, Effort / Recovery, Gear / Bring, Weather Notes only when
+  weather context exists, After.
+- **Product/style/gear** — Why This Fits, Use Case, Fit Check, Buy / Hold /
+  Compare, Cost Posture, Alternatives, What to Verify, direction fit.
+- **Article/idea/land/real estate/creative** — Why It Matters, Research Path,
+  Next Questions, Leverage Angle, What to Watch, First Small Move, Hold / Act /
+  Archive Recommendation.
 
 No filler. No fake confirmations. No invented addresses. If a reservation
 isn't known, the prompt says "confirm" — never pretends booking is done.
@@ -96,6 +106,7 @@ isn't known, the prompt says "confirm" — never pretends booking is done.
 When `ANTHROPIC_API_KEY` is missing or Claude returns invalid JSON:
 - 5 honest sections (Why This / Timing / The Move / Details / Next Step)
 - Real fields from the item (location, URL, description)
+- Uses the local Consideration Brief for the title, best move, and first move
 - Cautions includes `"Deterministic draft — refine with Anthropic when available."`
 - `fallback_used=true` flag stored in `plans.key_stats.fallback_used`
 - Plan is still fully functional and persistable
@@ -109,6 +120,10 @@ When `ANTHROPIC_API_KEY` is missing or Claude returns invalid JSON:
 3. Run generator (Claude or deterministic).
 4. Compute unique slug per user (appends item-id suffix or `-N` on collision).
 5. Insert `plans` row with `status="draft"`, `key_stats` packed with metadata.
+   `key_stats` includes `slug`, `starts_at`, `ends_at`, `effort_level`,
+   `spending_posture`, `confidence`, `hero_angle`, `why_this_fits`,
+   `best_window`, `primary_move`, `location_name`, `address`, `plan_type`,
+   source item fields, `fallback_used`, `cautions`, and `grab_list`.
 6. Insert `plan_sections` rows.
 7. Insert `today_timeline_items` rows if timeline has entries.
 8. Update source item:
@@ -134,7 +149,9 @@ When `ANTHROPIC_API_KEY` is missing or Claude returns invalid JSON:
 ### `cancelPlan({ planId })`
 
 - `plans.status = "cancelled"`, `live_enabled = false`
-- Source item drops back to `destination = "holding"`, `status = "discovered"`
+- Source item drops back to `status = "discovered"` and destination is inferred:
+  today for today-dated plans, upcoming for future-dated plans, holding for
+  undated/past plans.
 - Source item `payload.plan_status = "cancelled"`
 - Records `plan.cancelled`
 
@@ -154,15 +171,16 @@ current route. Lifecycle actions do not create duplicate plans.
 
 ## Dynamic plan route (`/plan/[slug]`)
 
-`app/plan/[slug]/page.tsx` server-renders any generated plan via slug
-lookup in `plans.key_stats.slug`. Sparrow's hardcoded `/plan/sparrow`
-route is preserved alongside — Next.js prefers the static `sparrow`
-segment over the dynamic `[slug]` at the same level, so no collision.
+`app/plan/[slug]/page.tsx` server-renders any generated plan via slug lookup
+in `plans.key_stats.slug`, with id fallback for uuid-like slugs. Sparrow's
+hardcoded `/plan/sparrow` route is preserved alongside — Next.js prefers the
+static `sparrow` segment over the dynamic `[slug]` at the same level, so no
+collision.
 
 Page shows: back/Today/source navigation, hero, plan-type/status pills,
 source/context line, effort/spending/window/source stats, why-this-fits card,
-lifecycle actions, sections, timeline, grab list, cautions, and quiet empty
-states when sections or timeline rows are missing.
+primary move, lifecycle actions, sections, timeline, grab list, cautions, and
+quiet empty states when sections or timeline rows are missing.
 
 Primary action labels by status:
 
@@ -178,11 +196,8 @@ Primary action labels by status:
 `/item/[id]` Plan section now:
 
 - **No plan** → "Plan this" button (calls `POST /api/items/[id]/generate-plan`)
-- **Plan exists** → attached-plan panel with "View Plan" link to `/plan/[slug]`
-  and current `payload.plan_status`
-- **Regenerate** → secondary action only; uses `force: true` and does not run
-  automatically
-- **Active plan** → "View Active Plan"
+- **Draft plan** → "Plan Ready", "View Plan", and "Activate Plan"
+- **Active plan** → "Live Plan" and "View Active Plan"
 - **Completed plan** → "View Completed Plan" (no regenerate offered)
 
 ## Today + Upcoming integration

@@ -20,6 +20,9 @@ summary, and reason when present, so it shares Radar's cleaned display layer
 instead of rendering raw source/query metadata.
 
 Draft, completed, and cancelled plans are excluded from the Live Plan module.
+Draft plans can still appear through their linked source item in Today or
+Upcoming when the item timing/destination says they belong there; they are not
+treated as live until the owner activates them.
 
 ## Rendering Order
 

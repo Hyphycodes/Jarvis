@@ -184,6 +184,57 @@ export function RefreshBriefingButton({ itemId }: { itemId: string }) {
   );
 }
 
+export function PlanLifecycleButton({
+  planId,
+  action,
+  label,
+  variant = "secondary",
+}: {
+  planId: string;
+  action: "activate" | "complete" | "cancel";
+  label: string;
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function run() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/plans/${planId}/${action}`, {
+          method: "POST",
+        });
+        const json = (await res.json()) as { ok?: true; error?: string };
+        if (!res.ok || json.error) {
+          setError(json.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        router.refresh();
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col items-stretch">
+      <button
+        type="button"
+        onClick={run}
+        disabled={pending}
+        className={buttonClass(variant, pending)}
+      >
+        {pending ? "…" : label}
+      </button>
+      {error ? (
+        <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function buttonClass(
   variant: "primary" | "secondary" | "danger" | "ghost",
   pending: boolean,

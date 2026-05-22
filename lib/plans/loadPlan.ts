@@ -47,9 +47,13 @@ export type LoadedPlan = {
   summary?: string;
   heroAngle?: string;
   whyThisFits?: string;
+  bestWindow?: string;
+  primaryMove?: string;
   effortLevel?: "low" | "medium" | "high";
-  spendingPosture?: "free" | "low" | "paid" | "high";
+  spendingPosture?: "free" | "low" | "paid" | "high" | "unknown";
   timeWindow?: string;
+  locationName?: string;
+  address?: string;
   sourceItemType?: string;
   confidence?: number;
   sourceItemId?: string;
@@ -80,7 +84,9 @@ export async function loadPlanBySlugV2(slug: string): Promise<LoadedPlan | null>
     const planRow = ((plansData ?? []) as PlanRow[]).find(
       (p) => readSlug(p.key_stats) === slug,
     );
-    if (!planRow) return null;
+    if (!planRow) {
+      return looksLikeUuid(slug) ? loadPlanByIdV2(slug) : null;
+    }
 
     return loadPlanByRow(planRow);
   } catch (error) {
@@ -192,12 +198,26 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
       typeof keyStats.why_this_fits === "string"
         ? keyStats.why_this_fits
         : undefined,
+    bestWindow:
+      typeof keyStats.best_window === "string"
+        ? keyStats.best_window
+        : undefined,
+    primaryMove:
+      typeof keyStats.primary_move === "string"
+        ? keyStats.primary_move
+        : undefined,
     effortLevel:
       isLevel(keyStats.effort_level) ? keyStats.effort_level : undefined,
     spendingPosture: isPosture(keyStats.spending_posture)
       ? keyStats.spending_posture
       : undefined,
     timeWindow: formatTimeWindow(keyStats.starts_at, keyStats.ends_at),
+    locationName:
+      typeof keyStats.location_name === "string"
+        ? keyStats.location_name
+        : undefined,
+    address:
+      typeof keyStats.address === "string" ? keyStats.address : undefined,
     sourceItemType:
       typeof keyStats.source_item_type === "string"
         ? keyStats.source_item_type
@@ -253,8 +273,12 @@ function isLevel(value: unknown): value is "low" | "medium" | "high" {
 
 function isPosture(
   value: unknown,
-): value is "free" | "low" | "paid" | "high" {
-  return value === "free" || value === "low" || value === "paid" || value === "high";
+): value is "free" | "low" | "paid" | "high" | "unknown" {
+  return value === "free" || value === "low" || value === "paid" || value === "high" || value === "unknown";
+}
+
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function formatTimeWindow(startsAt: unknown, endsAt: unknown): string | undefined {

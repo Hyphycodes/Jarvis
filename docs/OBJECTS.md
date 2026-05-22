@@ -64,14 +64,20 @@ Callers may pass an explicit destination to override.
 | `"cancelled"` | Plan dropped |
 
 The item detail page reads `payload.plan_slug` to link to the live plan
-at `/plan/[slug]`. **Plan this** triggers `POST /api/items/[id]/generate-plan`
-which runs the Plan Generator (see [`docs/PLANS.md`](./PLANS.md)) and
-persists a `plans` row + `plan_sections` + optional `today_timeline_items`.
+at `/plan/[slug]` (or `/plan/[id]` fallback for older rows without a slug).
+**Plan this** triggers `POST /api/items/[id]/generate-plan` which runs the
+Plan Generator (see [`docs/PLANS.md`](./PLANS.md)) and persists a `plans` row
++ `plan_sections` + optional `today_timeline_items`.
 
 Activate / Complete / Cancel run from the plan detail page via
 `POST /api/plans/[id]/{activate|complete|cancel}`. Each propagates back
 to the source item's `payload.plan_status` and re-routes its destination
 (today / upcoming / holding) as appropriate.
+
+Generated plan metadata stays in `plans.key_stats`, including the slug,
+source item id, plan type, timing, effort/spend posture, confidence,
+`hero_angle`, `why_this_fits`, `primary_move`, `best_window`, fallback flag,
+cautions, and grab list. No schema migration is required.
 
 ## Universal Consideration Brief (`/item/[id]`)
 
@@ -127,7 +133,8 @@ Standalone route. Groups items into buckets:
 - **No Date Yet** — `planned` items without a `starts_at`
 
 Pulls saved + planned items with future dates, plus everything where
-`destination="upcoming"`. Each card links to `/item/[id]`.
+`destination="upcoming"`. Plan-linked cards prefer `/plan/[slug]`; unplanned
+cards link to `/item/[id]`.
 
 ## Day-of Promotion
 
@@ -182,7 +189,7 @@ The main 4-tab carousel (Today / Radar / Circle / North) is unchanged.
 - No Google Calendar integration
 - No full calendar clone
 - No cron / background scheduling
-- No dynamic plan generator (just the seam)
+- No calendar integration or background plan generation
 - No native app work
 - No UI redesign of existing surfaces
 - No raw JSON debug dump anywhere

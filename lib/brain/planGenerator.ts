@@ -20,8 +20,7 @@ import { generateStructured } from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
 import { buildInterestGraph } from "@/lib/brain/interestGraph";
 import { summarizeInterestGraph } from "@/lib/brain/interests";
-import { getCurrentWeather } from "@/lib/sources/openMeteo";
-import { getDefaultLocation } from "@/lib/env";
+import { buildConsiderationBrief } from "@/lib/items/considerationBrief";
 import type { IndexedItem } from "@/lib/index/types";
 import {
   generatedPlanSchema,
@@ -55,10 +54,24 @@ SECTION GUIDANCE (use only what's relevant — not every plan needs all of these
   language — do not invent directions.
 - "atmosphere": Vibe and expectation. Why it fits the taste.
 - "wear" / "bring": Only if genuinely useful. Refined, practical.
-- "cost": Free / low / paid / high. Why spend is justified (or not).
+- "cost": Free / low / paid / high / unknown. Why spend is justified (or not).
 - "detours": 0–3 max. Optional, restrained, never filler.
 - "after": What to do after, only if natural.
+- "alternatives": Product/style comparison or backup options only when useful.
+- "research": Use for article, idea, land, real estate, and creative signals.
 - "notes": Honest caveats or things to verify.
+
+ITEM-TYPE ADAPTATION
+- Dining/place: why, best window, before, move, route, atmosphere, wear/bring,
+  cost, restrained detours, after.
+- Event/culture/music/sports: why, timing, ticket/entry check, before, route,
+  move, after, cost, optional detours.
+- Activity/outdoors/sports ideas: why, best window, prep, route, effort/recovery,
+  gear/bring, weather notes only if weather context exists, after.
+- Product/style/gear: why, use case, fit check, buy/hold/compare, cost,
+  alternatives, what to verify, direction fit.
+- Article/idea/land/real estate/creative: why it matters, research path, next
+  questions, leverage angle, what to watch, first small move, hold/act/archive.
 
 OUTPUT
 Strict JSON matching the GeneratedPlan schema:
@@ -70,6 +83,9 @@ Strict JSON matching the GeneratedPlan schema:
 - cautions: 0–4 short warnings if any apply (cost, energy, timing risk).
 - hero_angle: one tight sentence framing the plan.
 - why_this_fits: 1–2 sentences. Specific, not generic.
+- primary_move: the obvious first move in one calm sentence.
+- best_window: optional; only when timing can be stated without inventing.
+- source_item_id: copy the source item id.
 
 NEVER
 - Fabricate reservation confirmations, addresses, or phone numbers.
@@ -98,8 +114,7 @@ export async function generatePlanFromItem(
   try {
     const context = await buildBrainContext();
     const graph = buildInterestGraph({ context });
-    const weather = await safeWeather();
-    const promptBody = renderPrompt(input.item, context, graph, weather);
+    const promptBody = renderPrompt(input.item, context, graph);
 
     const raw = await generateStructured<unknown>({
       system: SYSTEM_PROMPT,
@@ -139,11 +154,11 @@ function renderPrompt(
   item: IndexedItem,
   context: Awaited<ReturnType<typeof buildBrainContext>>,
   graph: ReturnType<typeof buildInterestGraph>,
-  weather: { temperatureF: number; weatherCode: number } | null,
 ): string {
   const now = new Date();
   const isWeeknight = now.getDay() >= 1 && now.getDay() <= 4;
   const evidence = readEvidence(item);
+  const brief = buildConsiderationBrief(item);
 
   return JSON.stringify(
     {
@@ -176,6 +191,19 @@ function renderPrompt(
         reasons: item.reasons,
         score: item.score,
       },
+      consideration_brief: {
+        verdict: brief.verdict,
+        title: brief.title,
+        one_line: brief.oneLine,
+        jarvis_take: brief.jarvisTake,
+        best_move_title: brief.bestMoveTitle,
+        best_move_body: brief.bestMoveBody,
+        primary_action: brief.primaryAction,
+        category: brief.categoryLabel,
+        facts: brief.facts,
+        indicators: brief.indicators,
+        source_evidence: brief.sourceEvidence,
+      },
       evidence,
       founder: {
         life_direction: context.founder.lifeDirection,
@@ -190,15 +218,18 @@ function renderPrompt(
       interest_graph_summary: summarizeInterestGraph(graph, {
         maxSubinterestsPerArea: 4,
       }),
-      weather,
+      weather: context.weather,
       instructions: [
         "Generate a single plan for this item — the operator move.",
         "Use 2–8 sections, only those that genuinely apply.",
+        "Adapt the sections to the item type; do not force nightlife, route, or map sections onto products and ideas.",
         "If timing is unknown, include a 'timing' section that says what to confirm.",
         "Include 'route' only if location data is available; otherwise omit or use placeholder language.",
+        "For products, style, articles, ideas, land, and creative inspiration, prefer research/compare/verify steps over fake execution logistics.",
         "Include 'detours' only when truly worth it. 0 is valid.",
         "Set effort_level and spending_posture honestly.",
         "Set status to 'draft'. Activation is a user action.",
+        "Set source_item_id to the provided item id.",
       ],
     },
     null,
@@ -213,19 +244,25 @@ function renderPrompt(
  * invent timing, prices, or atmosphere details it cannot know.
  */
 function deterministicPlan(item: IndexedItem): GeneratedPlan {
+  const brief = buildConsiderationBrief(item);
   const slug = slugify(`${item.title}-${item.id.slice(0, 6)}`);
   const planType = inferPlanType(item);
   const effort = inferEffort(item);
   const spending = inferSpending(item);
+  const primaryMove = inferPrimaryMove(item, brief);
+  const bestWindow = inferBestWindow(item);
+  const whyThis =
+    brief.jarvisTake ||
+    brief.bestMoveBody ||
+    item.reasons[0] ||
+    "Good enough to structure, but still needs confirmation before action.";
 
   const sections: GeneratedPlan["sections"] = [
     {
       key: "why",
       title: "Why This",
       section_type: "why",
-      body:
-        item.reasons[0] ??
-        `${item.title} matches your current Radar signal.`,
+      body: whyThis,
       sort_order: 10,
     },
     {
@@ -234,15 +271,15 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
       section_type: "timing",
       body: item.startsAt
         ? `Scheduled for ${formatWhen(item.startsAt)}. Confirm before leaving.`
-        : "No date confirmed yet. Pick a window that fits — weeknight evenings are limited.",
+        : bestWindow ??
+          "No date confirmed yet. Pick a window that fits — weeknight evenings are limited.",
       sort_order: 20,
     },
     {
       key: "move",
       title: "The Move",
       section_type: "move",
-      body: item.description?.slice(0, 600) ??
-        `Go to ${item.locationName ?? item.title}. Stay focused. Don't overstack.`,
+      body: primaryMove,
       sort_order: 30,
     },
     {
@@ -270,8 +307,8 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
   ];
 
   return {
-    title: item.title,
-    subtitle: item.subtitle,
+    title: brief.title || item.title,
+    subtitle: item.subtitle ?? brief.oneLine,
     slug,
     plan_type: planType,
     status: "draft",
@@ -279,11 +316,13 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
     ends_at: item.endsAt,
     location_name: item.locationName,
     address: item.address,
-    hero_angle: item.reasons[0] ?? `Quick plan for ${item.title}.`,
-    why_this_fits: item.reasons[0] ?? "Matches your current taste profile.",
+    hero_angle: brief.oneLine || item.reasons[0] || `Quick plan for ${item.title}.`,
+    why_this_fits: whyThis.slice(0, 360),
+    best_window: bestWindow,
     effort_level: effort,
     spending_posture: spending,
-    confidence: 0.5,
+    confidence: item.briefing?.confidence ?? item.score ?? 0.5,
+    primary_move: primaryMove.slice(0, 220),
     sections,
     timeline: item.startsAt
       ? [
@@ -297,31 +336,42 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
       : [],
     grab_list: [],
     cautions: ["Deterministic draft — refine with Anthropic when available."],
+    source_item_id: item.id,
   };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function inferPlanType(item: IndexedItem): GeneratedPlan["plan_type"] {
+  const tags = new Set(item.tags.map((tag) => tag.toLowerCase()));
+  const category = (item.category ?? "").toLowerCase();
   switch (item.type) {
     case "restaurant":
       return "dining";
     case "event":
       return "event";
+    case "place":
+      return tags.has("outdoors") || category.includes("outdoor")
+        ? "outdoors"
+        : "activity";
     case "culture":
-    case "creative":
       return "culture";
+    case "creative":
+      return "creative";
     case "style":
-    case "product":
       return "style";
+    case "product":
+      return "product";
     case "travel":
       return "travel";
     case "real_estate":
-      return "real_estate";
+      return tags.has("land") || category.includes("land") ? "land" : "real_estate";
     case "health":
       return "fitness";
-    case "place":
-      return "outdoors";
+    case "recommendation":
+    case "north_step":
+    case "pillar_signal":
+      return "idea";
     default:
       return "general";
   }
@@ -339,7 +389,42 @@ function inferSpending(item: IndexedItem): GeneratedPlan["spending_posture"] {
   if (tags.has("free")) return "free";
   if (tags.has("paid") || tags.has("ticketed")) return "paid";
   if (item.type === "restaurant" || item.type === "event") return "paid";
+  if (item.type === "product" || item.type === "style") return "unknown";
   return "low";
+}
+
+function inferPrimaryMove(
+  item: IndexedItem,
+  brief: ReturnType<typeof buildConsiderationBrief>,
+): string {
+  if (brief.primaryAction === "plan") {
+    return "Turn this into a draft plan, then confirm the one thing that could waste the trip: timing, access, or availability.";
+  }
+  if (brief.primaryAction === "hold") {
+    return "Keep it in Holding and compare it against a stronger option before spending time or money.";
+  }
+  if (brief.primaryAction === "pass" || brief.primaryAction === "archive") {
+    return "Do not force it. Archive the signal unless better evidence appears.";
+  }
+  if (item.url) {
+    return "Open the source, confirm the practical details, then decide whether it deserves a real slot.";
+  }
+  return brief.bestMoveBody || "Confirm the details, then make the smallest useful move.";
+}
+
+function inferBestWindow(item: IndexedItem): string | undefined {
+  if (item.startsAt) return formatWhen(item.startsAt);
+  if (item.type === "restaurant" || item.type === "place") {
+    return "Best as a practical after-work move only if it is low friction; otherwise hold it for the weekend.";
+  }
+  if (item.type === "event") return "Confirm the actual date and entry window before committing.";
+  if (item.type === "product" || item.type === "style") {
+    return "No rush. Compare before buying unless availability is genuinely limited.";
+  }
+  if (item.type === "real_estate") {
+    return "Weekend research window. Do not rush without better evidence.";
+  }
+  return undefined;
 }
 
 function readEvidence(item: IndexedItem): Record<string, unknown> {
@@ -353,19 +438,6 @@ function readEvidence(item: IndexedItem): Record<string, unknown> {
     query_group: typeof raw.query_group === "string" ? raw.query_group : null,
     lane_id: typeof raw.lane_id === "string" ? raw.lane_id : null,
   };
-}
-
-async function safeWeather(): Promise<{
-  temperatureF: number;
-  weatherCode: number;
-} | null> {
-  try {
-    const home = getDefaultLocation();
-    const w = await getCurrentWeather({ lat: home.lat, lng: home.lng });
-    return { temperatureF: w.temperatureF, weatherCode: w.weatherCode };
-  } catch {
-    return null;
-  }
 }
 
 function formatWhen(iso: string): string {
