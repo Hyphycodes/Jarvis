@@ -541,7 +541,6 @@ function toRadarCard(item: IndexedItem): RadarCard {
     neighborhood: item.locationName ?? undefined,
     datetime: item.startsAt ?? undefined,
     imageUrl: heroImageForItem(item) ?? undefined,
-    placeholderKind: consideration.media.placeholderKind,
     score: briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
     whyItFits: briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
