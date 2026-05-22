@@ -89,3 +89,31 @@ Primary UI must not show:
 - raw Claude JSON
 
 Debug metadata can remain in a collapsed or low-priority section.
+
+## Consideration Brief
+
+`/item/[id]` is the universal Consideration Brief page. It is the destination
+for Radar cards and sits before execution planning:
+
+- Radar card = signal
+- `/item/[id]` = decision page
+- `/plan/[slug]` = execution page
+
+The route renders from `buildConsiderationBrief()` in
+`lib/items/considerationBrief.ts`, not directly from raw source payload fields.
+The helper maps `IndexedItem` + `payload.briefing` into:
+
+- verdict and primary action
+- title, one-line, Jarvis Take, and best move
+- quick facts
+- decision indicators
+- why-it-matters reasons
+- practical fit rows
+- media and location views
+- source evidence
+- clean tags
+- collapsed debug metadata
+
+No external APIs run on page load. Media uses already-stored URLs only.
+Location uses stored address/coordinates and a CSS map-style panel with an
+Apple Maps link.

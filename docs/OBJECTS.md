@@ -73,20 +73,34 @@ Activate / Complete / Cancel run from the plan detail page via
 to the source item's `payload.plan_status` and re-routes its destination
 (today / upcoming / holding) as appropriate.
 
-## Universal Item Detail (`/item/[id]`)
+## Universal Consideration Brief (`/item/[id]`)
 
-Server-rendered. Reads via `getIndexItem(id)`. Shows (when present):
+Server-rendered. Reads via `getIndexItem(id)` and maps the item through
+`lib/items/considerationBrief.ts`. This route is the Radar destination page:
+it helps decide whether a signal should be saved, held, planned, passed, or
+archived. It is not the execution plan page.
 
-- briefing category, status, destination, confidence
+The view model uses `payload.briefing` when present, then falls back to clean
+item fields. It adapts across events, places, products/style, activities,
+articles/ideas, sports/outdoors, real estate, and general opportunities.
+
+Shows:
+
+- verdict, title, and one-line decision frame
+- hero media from stored image fields or a refined placeholder
+- quick facts: category/type, timing, location, effort, spend, confidence
+- Best Move
+- decision indicators
 - briefing title and one-line summary
 - Jarvis Take
 - Why It Matters
-- Best Next Action
 - Practical Fit: effort, spend, timing, location, confidence
+- location module with CSS map-style panel and Maps link when location exists
+- value signal when enough confidence/upside exists
 - source evidence with clean evidence summary, domain, and external link
 - cleaned tags
 - plan seam (View Plan or Plan this)
-- action grid
+- action buttons
 - collapsed debug metadata for raw reasons, tags, item id, and timestamps
 
 Actions exposed:

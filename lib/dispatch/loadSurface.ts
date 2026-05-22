@@ -4,6 +4,11 @@ import { getViewableProfileId } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
+import {
+  buildConsiderationBrief,
+  heroImageForItem,
+  sourceDomainForItem,
+} from "@/lib/items/considerationBrief";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
 import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
 import type {
@@ -443,6 +448,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
   const category = mapCategory(item.type, item.category);
   const planSlug = readPlanSlug(item.rawPayload);
   const briefing = item.briefing;
+  const consideration = buildConsiderationBrief(item);
   return {
     id: item.id,
     source: item.source,
@@ -456,15 +462,23 @@ function toRadarCard(item: IndexedItem): RadarCard {
     displayCategory: briefing?.display_category,
     oneLine: briefing?.one_line,
     jarvisTake: briefing?.jarvis_take,
+    verdictLabel: consideration.verdictLabel,
+    verdictTone: consideration.verdictTone,
+    bestMoveTitle: consideration.bestMoveTitle,
     bestNextAction: briefing?.best_next_action,
     confidenceLabel: briefing?.confidence_label,
     effortLevel: briefing?.effort_level,
     spendingPosture: briefing?.spending_posture,
     evidenceSummary: briefing?.evidence_summary,
     cleanedTags: briefing?.cleaned_tags,
+    sourceDomain: sourceDomainForItem(item),
+    locationLabel:
+      consideration.location?.neighborhood ??
+      consideration.location?.city ??
+      consideration.location?.label,
     neighborhood: item.locationName ?? undefined,
     datetime: item.startsAt ?? undefined,
-    imageUrl: item.imageUrl ?? undefined,
+    imageUrl: heroImageForItem(item) ?? undefined,
     score: briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
     whyItFits: briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
