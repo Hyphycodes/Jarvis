@@ -55,62 +55,78 @@ export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
 export async function listIndexItems(
   filter: ListIndexItemsFilter = {},
 ): Promise<IndexedItem[]> {
-  const { id } = await getViewableProfileId();
-  if (!id) return [];
+  try {
+    const { id } = await getViewableProfileId();
+    if (!id) return [];
 
-  const supabase = await getServerSupabase();
-  let query = supabase
-    .from("surfaced_items")
-    .select("*")
-    .eq("user_id", id)
-    .order("updated_at", { ascending: false });
+    const supabase = await getServerSupabase();
+    let query = supabase
+      .from("surfaced_items")
+      .select("*")
+      .eq("user_id", id)
+      .order("updated_at", { ascending: false });
 
-  const destinations = toArray(filter.destination);
-  if (destinations.length === 1) {
-    query = query.eq("destination", destinations[0]);
-  } else if (destinations.length > 1) {
-    query = query.in("destination", destinations);
+    const destinations = toArray(filter.destination);
+    if (destinations.length === 1) {
+      query = query.eq("destination", destinations[0]);
+    } else if (destinations.length > 1) {
+      query = query.in("destination", destinations);
+    }
+
+    const types = toArray(filter.type);
+    if (types.length === 1) {
+      query = query.eq("type", types[0]);
+    } else if (types.length > 1) {
+      query = query.in("type", types);
+    }
+
+    const statuses = toArray(filter.status);
+    if (statuses.length === 1) {
+      query = query.eq("status", statuses[0]);
+    } else if (statuses.length > 1) {
+      query = query.in("status", statuses);
+    }
+
+    if (!filter.includeExpired) {
+      const nowIso = new Date().toISOString();
+      query = query.or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+    }
+
+    if (filter.limit) query = query.limit(filter.limit);
+
+    const { data, error } = await query;
+    if (error) {
+      logIndexReadError("listIndexItems", error);
+      return [];
+    }
+    return ((data ?? []) as SurfacedItemRow[]).map(rowToIndexedItem);
+  } catch (error) {
+    logIndexReadError("listIndexItems", error);
+    return [];
   }
-
-  const types = toArray(filter.type);
-  if (types.length === 1) {
-    query = query.eq("type", types[0]);
-  } else if (types.length > 1) {
-    query = query.in("type", types);
-  }
-
-  const statuses = toArray(filter.status);
-  if (statuses.length === 1) {
-    query = query.eq("status", statuses[0]);
-  } else if (statuses.length > 1) {
-    query = query.in("status", statuses);
-  }
-
-  if (!filter.includeExpired) {
-    const nowIso = new Date().toISOString();
-    query = query.or(`expires_at.is.null,expires_at.gt.${nowIso}`);
-  }
-
-  if (filter.limit) query = query.limit(filter.limit);
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as SurfacedItemRow[]).map(rowToIndexedItem);
 }
 
 export async function getIndexItem(itemId: string): Promise<IndexedItem | null> {
-  const { id } = await getViewableProfileId();
-  if (!id) return null;
-  const supabase = await getServerSupabase();
-  const { data, error } = await supabase
-    .from("surfaced_items")
-    .select("*")
-    .eq("id", itemId)
-    .eq("user_id", id)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-  return rowToIndexedItem(data as SurfacedItemRow);
+  try {
+    const { id } = await getViewableProfileId();
+    if (!id) return null;
+    const supabase = await getServerSupabase();
+    const { data, error } = await supabase
+      .from("surfaced_items")
+      .select("*")
+      .eq("id", itemId)
+      .eq("user_id", id)
+      .maybeSingle();
+    if (error) {
+      logIndexReadError("getIndexItem", error);
+      return null;
+    }
+    if (!data) return null;
+    return rowToIndexedItem(data as SurfacedItemRow);
+  } catch (error) {
+    logIndexReadError("getIndexItem", error);
+    return null;
+  }
 }
 
 export async function createIndexItem(
@@ -196,4 +212,8 @@ function normalizeDestination(destination: string): IndexDestination {
   if (destination.startsWith("circle")) return "circle";
   if (destination.startsWith("plan")) return "plan";
   return "radar";
+}
+
+function logIndexReadError(scope: string, error: unknown) {
+  console.error("[surface-loader]", scope, error);
 }

@@ -12,7 +12,8 @@ export default async function MemoryReviewPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=/account/memory");
 
-  const proposals = user.role === "owner" ? await listPendingMemoryProposals() : [];
+  const proposals =
+    user.role === "owner" ? await safeListPendingMemoryProposals() : [];
 
   return (
     <main
@@ -94,4 +95,13 @@ export default async function MemoryReviewPage() {
       </MotionPage>
     </main>
   );
+}
+
+async function safeListPendingMemoryProposals() {
+  try {
+    return await listPendingMemoryProposals();
+  } catch (error) {
+    console.error("[surface-loader] account.memory.proposals", error);
+    return [];
+  }
 }

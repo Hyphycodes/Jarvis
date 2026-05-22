@@ -181,26 +181,42 @@ export default async function AccountPage() {
 }
 
 async function loadAccountStatus(userId: string): Promise<AccountStatus> {
-  const supabase = await getServerSupabase();
+  try {
+    const supabase = await getServerSupabase();
 
-  const [founderRes, memoryRes] = await Promise.all([
-    supabase
-      .from("founder_profile")
-      .select("id")
-      .eq("user_id", userId)
-      .maybeSingle(),
-    supabase
-      .from("memory_items")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("status", "active"),
-  ]);
+    const [founderRes, memoryRes] = await Promise.all([
+      supabase
+        .from("founder_profile")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("memory_items")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("status", "active"),
+    ]);
 
-  return {
-    hasFounderProfile: !!founderRes.data,
-    memoryCount: memoryRes.count ?? 0,
-    integrationCount: 0,
-  };
+    if (founderRes.error) {
+      console.error("[surface-loader] account.founderProfile", founderRes.error);
+    }
+    if (memoryRes.error) {
+      console.error("[surface-loader] account.memoryCount", memoryRes.error);
+    }
+
+    return {
+      hasFounderProfile: !!founderRes.data,
+      memoryCount: memoryRes.count ?? 0,
+      integrationCount: 0,
+    };
+  } catch (error) {
+    console.error("[surface-loader] account.status", error);
+    return {
+      hasFounderProfile: false,
+      memoryCount: 0,
+      integrationCount: 0,
+    };
+  }
 }
 
 function Divider() {

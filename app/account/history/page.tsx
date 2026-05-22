@@ -31,7 +31,7 @@ export default async function HistoryPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=/account/history");
 
-  const items = await listIndexItems({ includeExpired: true, limit: 200 });
+  const items = await safeListHistoryItems();
   const grouped = groupItems(items);
 
   return (
@@ -86,6 +86,15 @@ export default async function HistoryPage() {
       </MotionPage>
     </main>
   );
+}
+
+async function safeListHistoryItems(): Promise<IndexedItem[]> {
+  try {
+    return await listIndexItems({ includeExpired: true, limit: 200 });
+  } catch (error) {
+    console.error("[surface-loader] account.history", error);
+    return [];
+  }
 }
 
 function HistoryGroup({
