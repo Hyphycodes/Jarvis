@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireOwner, requireUser, getViewableProfileId } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import {
+  DEFAULT_WEEKLY_RHYTHM,
+  normalizeWeeklyRhythm,
+  weeklyRhythmToJson,
+  type Weekday,
+} from "@/lib/schedule/weeklyRhythm";
+import {
   updateFounderProfileSchema,
   updateProfileSchema,
   type UpdateFounderProfileInput,
@@ -77,6 +83,36 @@ export async function updateFounderProfile(input: UpdateFounderProfileInput) {
     .upsert({ user_id: owner.id, ...data }, { onConflict: "user_id" });
   if (error) throw new Error(error.message);
   revalidatePath("/profile");
+}
+
+export async function updateWeeklyRhythm(formData: FormData) {
+  const owner = await requireOwner();
+  const supabase = await getServerSupabase();
+  const rawDays = formData.getAll("workdays").map(String);
+  const workdays = rawDays.length > 0
+    ? rawDays
+    : DEFAULT_WEEKLY_RHYTHM.workdays;
+  const rhythm = normalizeWeeklyRhythm({
+    enabled: formData.get("enabled") === "on",
+    workdays: workdays as Weekday[],
+    leave_home: String(formData.get("leave_home") ?? ""),
+    work_start: String(formData.get("work_start") ?? ""),
+    leave_work: String(formData.get("leave_work") ?? ""),
+    arrive_home: String(formData.get("arrive_home") ?? ""),
+    work_location: String(formData.get("work_location") ?? ""),
+    timezone: String(formData.get("timezone") ?? ""),
+  });
+
+  const { error } = await supabase.from("founder_profile").upsert(
+    {
+      user_id: owner.id,
+      weekly_rhythm: weeklyRhythmToJson(rhythm),
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings");
+  revalidatePath("/");
 }
 
 export async function seedFounderProfile() {

@@ -11,6 +11,13 @@ import {
 } from "@/lib/items/considerationBrief";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
 import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
+import {
+  DEFAULT_WEEKLY_RHYTHM,
+  getDayRhythmState,
+  normalizeWeeklyRhythm,
+  type DayRhythmState,
+  type WeeklyRhythm,
+} from "@/lib/schedule/weeklyRhythm";
 import type {
   CirclePersonRow,
   CircleUpdateRow,
@@ -46,7 +53,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     if (!id) return emptyTodayPayload();
 
     const supabase = await getServerSupabase();
-    const [timelineRes, primaryPlanRes, todayItemsRes, upcomingItemsRes, upcomingCountRes, dayOf] =
+    const [timelineRes, primaryPlanRes, todayItemsRes, upcomingItemsRes, upcomingCountRes, dayOf, rhythmRes] =
       await Promise.all([
         supabase
           .from("today_timeline_items")
@@ -81,15 +88,24 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         countUpcoming(id),
         // Day-of items (read-only inclusion — no mutation here)
         findDayOfItems(id),
+        supabase
+          .from("founder_profile")
+          .select("weekly_rhythm")
+          .eq("user_id", id)
+          .maybeSingle(),
       ]);
 
     logQueryError("today.timeline", timelineRes.error);
     logQueryError("today.plan", primaryPlanRes.error);
     logQueryError("today.items", todayItemsRes.error);
+    logQueryError("today.rhythm", rhythmRes.error);
 
     const timelineRows = (timelineRes.data ?? []) as TodayTimelineItemRow[];
     const planRow = (primaryPlanRes.data?.[0] ?? null) as PlanRow | null;
     const planKeyStats = isRecord(planRow?.key_stats) ? planRow.key_stats : {};
+    const weeklyRhythm = normalizeWeeklyRhythm(
+      rhythmRes.data?.weekly_rhythm ?? DEFAULT_WEEKLY_RHYTHM,
+    );
     const planSlug = planRow ? readSlugFromKeyStats(planRow.key_stats) : undefined;
     const activePlanId = planRow?.id;
     const todayRows = (todayItemsRes.data ?? []) as SurfacedItemRow[];
@@ -180,7 +196,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const todayStack = todayItems
       .filter((item) => item.id !== nextMove?.id)
       .slice(0, 6);
-    const hero = buildTodayHero(planRow, planKeyStats, activePlanDisplay);
+    const hero = buildTodayHero(planRow, planKeyStats, activePlanDisplay, weeklyRhythm);
 
     return {
       hero: {
@@ -575,7 +591,7 @@ function fallbackTimelineForPlan(
     id: `${plan.id}-active-plan`,
     time: timeWindow ?? "Plan",
     title: display?.title ?? cleanDisplayText(plan.title) ?? "Plan",
-    status: "active",
+    status: "pending",
     planId: plan.id,
     planSlug,
     expandable: true,
@@ -593,11 +609,15 @@ function buildTodayHero(
   plan: PlanRow | null,
   keyStats: Record<string, unknown>,
   display: { title: string; summary?: string } | null,
+  weeklyRhythm: WeeklyRhythm,
 ): { greeting: string; summary: string } {
+  const now = new Date();
+  const rhythmState = getDayRhythmState(weeklyRhythm, now);
+  const greeting = greetingForNow(now, rhythmState);
   if (!plan) {
     return {
-      greeting: "Quiet day.",
-      summary: "Nothing strong enough to surface yet.",
+      greeting,
+      summary: noteForRhythm(rhythmState, false),
     };
   }
   const startsAt = typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined;
@@ -611,18 +631,49 @@ function buildTodayHero(
     ["dining", "event", "activity", "culture", "outdoors", "fitness"].includes(planType ?? "");
   if (activeToday) {
     return {
-      greeting: "Your next move is set.",
+      greeting,
       summary: timeWindow
-        ? `One plan is live. Window opens around ${timeWindow}.`
-        : "One plan is live. Nothing else needs your attention.",
+        ? "You’re clear until it’s time to move."
+        : noteForRhythm(rhythmState, true),
     };
   }
   return {
-    greeting: display?.title && !looksRawSourceText(display.title)
-      ? "One plan is live."
-      : "Your next move is set.",
-    summary: display?.summary ?? "Nothing else needs your attention.",
+    greeting,
+    summary: noteForRhythm(rhythmState, Boolean(display?.title)),
   };
+}
+
+function greetingForNow(now: Date, rhythmState: DayRhythmState): string {
+  if (rhythmState.phase === "work") return "Locked in.";
+  const hour = now.getHours();
+  if (hour < 12) return "Good morning, J.";
+  if (hour < 17) return "Good afternoon, J.";
+  return "Good evening, J.";
+}
+
+function noteForRhythm(state: DayRhythmState, hasPlan: boolean): string {
+  if (!state.isWorkday) {
+    return hasPlan
+      ? "One thing is worth keeping in view."
+      : "A steady day. Nothing urgent.";
+  }
+  switch (state.phase) {
+    case "before_commute":
+    case "morning_commute":
+      return "Work first. Everything else can wait.";
+    case "work":
+      return "You’re in the work block. Nothing else needs your attention.";
+    case "home_commute":
+      return "You’re clear until you’re back home.";
+    case "evening":
+      return hasPlan
+        ? "Your evening is lightly set."
+        : "A steady day. Nothing urgent.";
+    default:
+      return hasPlan
+        ? "One thing is worth keeping in view."
+        : "A steady day. Nothing urgent.";
+  }
 }
 
 function buildPlanDisplay(

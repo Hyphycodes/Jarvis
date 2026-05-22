@@ -168,9 +168,17 @@ function renderPrompt(
       day_of_week: now.toLocaleDateString("en-US", { weekday: "long" }),
       is_weeknight: isWeeknight,
       schedule_hints: {
-        leaves_for_work: "06:20",
-        leaves_schaumburg: "15:30",
-        home_by: "16:30",
+        leaves_for_work: context.weeklyRhythm?.leaveHome ?? "06:20",
+        work_start: context.weeklyRhythm?.workStart ?? "07:00",
+        leaves_schaumburg: context.weeklyRhythm?.leaveWork ?? "15:30",
+        home_by: context.weeklyRhythm?.arriveHome ?? "16:30",
+        workdays: context.weeklyRhythm?.workdays ?? [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+        ],
         weeknight_energy: isWeeknight ? "limited" : "wider_aperture",
       },
       item: {

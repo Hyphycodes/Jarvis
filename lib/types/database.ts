@@ -128,6 +128,7 @@ export interface Database {
           health_goals: string[];
           travel_goals: string[];
           cultural_growth_edges: string[];
+          weekly_rhythm: Json;
           created_at: string;
           updated_at: string;
         };
@@ -157,6 +158,7 @@ export interface Database {
           health_goals?: string[];
           travel_goals?: string[];
           cultural_growth_edges?: string[];
+          weekly_rhythm?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -186,6 +188,7 @@ export interface Database {
           health_goals?: string[];
           travel_goals?: string[];
           cultural_growth_edges?: string[];
+          weekly_rhythm?: Json;
           created_at?: string;
           updated_at?: string;
         };

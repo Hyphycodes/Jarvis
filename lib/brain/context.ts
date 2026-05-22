@@ -5,6 +5,7 @@ import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getDefaultLocation } from "@/lib/env";
 import { hasGooglePlaces } from "@/lib/sources/googlePlaces";
 import { getCurrentWeather } from "@/lib/sources/openMeteo";
+import { normalizeWeeklyRhythm } from "@/lib/schedule/weeklyRhythm";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import type {
   FounderProfileRow,
@@ -66,6 +67,7 @@ export async function buildBrainContext(
     ]);
 
   const founder = (founderRes.data ?? null) as FounderProfileRow | null;
+  const weeklyRhythm = normalizeWeeklyRhythm(founder?.weekly_rhythm);
   const memory = (memoryRes.data ?? []) as Pick<
     MemoryItemRow,
     "content" | "kind" | "confidence"
@@ -144,6 +146,16 @@ export async function buildBrainContext(
           liveEnabled: plan.live_enabled,
         }
       : null,
+    weeklyRhythm: {
+      enabled: weeklyRhythm.enabled,
+      workdays: weeklyRhythm.workdays,
+      leaveHome: weeklyRhythm.leave_home,
+      workStart: weeklyRhythm.work_start,
+      leaveWork: weeklyRhythm.leave_work,
+      arriveHome: weeklyRhythm.arrive_home,
+      workLocation: weeklyRhythm.work_location,
+      timezone: weeklyRhythm.timezone,
+    },
   };
 }
 

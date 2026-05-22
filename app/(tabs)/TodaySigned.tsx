@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import {
   AppFrame,
   Checkbox,
@@ -42,26 +41,9 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
         </p>
       </header>
 
-      {!payload?.livePlan && dayItems.length === 0 ? (
-        <NoLivePlan upcomingCount={payload?.upcomingCount ?? 0} />
-      ) : null}
-
       {dayItems.length > 0 ? (
         <section className="mt-14 flex flex-col">
-          <SectionLabel
-            trailing={
-              payload?.livePlan?.slug ? (
-                <Link
-                  href={`/plan/${payload.livePlan.slug}`}
-                  className="inline-flex items-center gap-1.5 text-muted-gold"
-                >
-                  Plan <Arrow size={12} />
-                </Link>
-              ) : null
-            }
-          >
-            The Day
-          </SectionLabel>
+          <SectionLabel>The Day</SectionLabel>
           <div className="mt-5">
             <Timeline items={dayItems} />
           </div>
@@ -91,7 +73,7 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
 
   return payload.timeline
     .filter((item) => !payload.livePlan || item.planId === payload.livePlan.planId)
-    .map((item, idx) => {
+    .map((item) => {
       const hasDetailContent = Boolean(item.details || item.locationLine || item.planSlug);
       const detail = hasDetailContent ? (
         <div className="space-y-3 text-[13px] leading-[1.55] text-warm-ivory/70">
@@ -129,32 +111,11 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
         active: item.status === "active",
         status: item.status,
         canPersistStatus: item.canPersistStatus,
-        defaultExpanded: idx === 0 && Boolean(detail),
+        defaultExpanded: false,
       };
       if (detail) base.detail = detail;
       return base;
     });
-}
-
-function NoLivePlan({ upcomingCount }: { upcomingCount: number }) {
-  const href = upcomingCount > 0 ? "/upcoming" : "/radar";
-  const label = upcomingCount > 0 ? "Open Upcoming" : "Open Radar";
-  return (
-    <section className="mt-10 border-y border-white/[0.06] py-4">
-      <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/38">
-        Live
-      </div>
-      <h2 className="mt-2 font-serif text-[24px] leading-tight text-warm-ivory">
-        No live plan
-      </h2>
-      <Link
-        href={href}
-        className="mt-4 inline-flex items-center gap-1.5 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
-      >
-        {label} <ArrowRight size={12} />
-      </Link>
-    </section>
-  );
 }
 
 function NextMoveSection({ item }: { item?: TodayCommandItem }) {
@@ -202,7 +163,7 @@ function TodayStack({ items }: { items: TodayCommandItem[] }) {
   if (items.length === 0) return null;
   return (
     <section className="mt-8">
-      <SectionLabel>Today stack</SectionLabel>
+      <SectionLabel>Signals</SectionLabel>
       <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
         {items.map((item) => (
           <li key={item.id}>
@@ -303,46 +264,6 @@ function CommandItemLink({
         </div>
       </div>
     </Link>
-  );
-}
-
-function CompletePlanButton({ planId }: { planId: string }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  function run() {
-    setError(null);
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/plans/${planId}/complete`, {
-          method: "POST",
-        });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok || json.error) {
-          throw new Error(json.error ?? `HTTP ${res.status}`);
-        }
-        router.refresh();
-      } catch (err) {
-        setError((err as Error).message);
-      }
-    });
-  }
-
-  return (
-    <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={run}
-        disabled={pending}
-        className="text-[10px] uppercase tracking-editorial text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/75 disabled:opacity-60"
-      >
-        {pending ? "..." : "Complete"}
-      </button>
-      {error ? (
-        <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
-      ) : null}
-    </div>
   );
 }
 

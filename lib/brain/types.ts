@@ -77,6 +77,16 @@ export type BrainContextPacket = {
     summary: string | null;
     liveEnabled: boolean;
   } | null;
+  weeklyRhythm?: {
+    enabled: boolean;
+    workdays: string[];
+    leaveHome: string;
+    workStart: string;
+    leaveWork: string;
+    arriveHome: string;
+    workLocation: string;
+    timezone: string;
+  };
 };
 
 export type ScoredItem = {
