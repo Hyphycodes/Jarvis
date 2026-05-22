@@ -145,6 +145,9 @@ export type TodayTimelineItem = {
   expandable: boolean;
   details?: string;
   locationLine?: string;
+  timingNote?: string;
+  prepNote?: string;
+  canPersistStatus?: boolean;
 };
 
 export type GrabListItem = {

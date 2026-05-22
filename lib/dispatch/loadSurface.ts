@@ -93,6 +93,12 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const planSlug = planRow ? readSlugFromKeyStats(planRow.key_stats) : undefined;
     const activePlanId = planRow?.id;
     const todayRows = (todayItemsRes.data ?? []) as SurfacedItemRow[];
+    const activePlanSourceRow = activePlanId
+      ? todayRows.find((row) => readPlanId(row.payload) === activePlanId)
+      : undefined;
+    const activePlanDisplay = planRow
+      ? buildPlanDisplay(planRow, planKeyStats, activePlanSourceRow)
+      : null;
     const todayItems = todayRows
       .map(rowToTodayCommandItem)
       .filter((item) => !isLinkedToPlan(item, activePlanId));
@@ -106,18 +112,36 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const timeline: TodayTimelineItem[] = planTimelineRows.map((row) => ({
       id: row.id,
       time: row.time,
-      title: row.title,
+      title: cleanDisplayText(row.title) || activePlanDisplay?.title || "Plan",
       status: row.status as TodayTimelineItem["status"],
       planId: row.plan_id ?? undefined,
       planSlug: row.plan_id === planRow?.id ? planSlug : undefined,
       expandable: row.expandable || Boolean(row.details) || row.plan_id === planRow?.id,
-      details: row.details ?? undefined,
+      details: cleanDisplayText(row.details ?? undefined) ?? undefined,
       locationLine: row.plan_id === planRow?.id
         ? planRow.location_line ?? undefined
         : undefined,
+      timingNote: row.plan_id === planRow?.id
+        ? formatTimeWindow(
+            typeof planKeyStats.starts_at === "string"
+              ? planKeyStats.starts_at
+              : undefined,
+            typeof planKeyStats.ends_at === "string"
+              ? planKeyStats.ends_at
+              : undefined,
+          ) ?? cleanDisplayText(
+            typeof planKeyStats.best_window === "string"
+              ? planKeyStats.best_window
+              : undefined,
+          )
+        : undefined,
+      prepNote: row.plan_id === planRow?.id
+        ? cleanDisplayText(readFirstGrabListLabel(planKeyStats))
+        : undefined,
+      canPersistStatus: true,
     }));
     const activeTimeline = planRow && timeline.length === 0
-      ? [fallbackTimelineForPlan(planRow, planKeyStats, planSlug)]
+      ? [fallbackTimelineForPlan(planRow, planKeyStats, planSlug, activePlanDisplay)]
       : timeline;
 
     const grabList: GrabListItem[] = planRow
@@ -156,7 +180,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const todayStack = todayItems
       .filter((item) => item.id !== nextMove?.id)
       .slice(0, 6);
-    const hero = buildTodayHero(planRow, planKeyStats);
+    const hero = buildTodayHero(planRow, planKeyStats, activePlanDisplay);
 
     return {
       hero: {
@@ -178,10 +202,10 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
             planId: planRow.id,
             label: planRow.live_label as "LIVE" | "BEGIN" | "UPCOMING",
             enabled: planRow.live_enabled,
-            title: planRow.title,
+            title: activePlanDisplay?.title ?? cleanDisplayText(planRow.title) ?? "Active plan",
             slug: planSlug,
             status: planRow.status,
-            summary: planRow.summary ?? undefined,
+            summary: activePlanDisplay?.summary,
             locationLine: planRow.location_line ?? undefined,
             timeWindow: formatTimeWindow(
               typeof planKeyStats.starts_at === "string"
@@ -537,6 +561,7 @@ function fallbackTimelineForPlan(
   plan: PlanRow,
   keyStats: Record<string, unknown>,
   planSlug: string | undefined,
+  display: { title: string; summary?: string } | null,
 ): TodayTimelineItem {
   const timeWindow = formatTimeWindow(
     typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined,
@@ -549,19 +574,25 @@ function fallbackTimelineForPlan(
   return {
     id: `${plan.id}-active-plan`,
     time: timeWindow ?? "Plan",
-    title: plan.title,
+    title: display?.title ?? cleanDisplayText(plan.title) ?? "Plan",
     status: "active",
     planId: plan.id,
     planSlug,
     expandable: true,
-    details: primaryMove,
+    details: cleanDisplayText(primaryMove) ?? "Open the plan and make the next clean move.",
     locationLine: plan.location_line ?? undefined,
+    timingNote: timeWindow ?? cleanDisplayText(
+      typeof keyStats.best_window === "string" ? keyStats.best_window : undefined,
+    ),
+    prepNote: cleanDisplayText(readFirstGrabListLabel(keyStats)),
+    canPersistStatus: false,
   };
 }
 
 function buildTodayHero(
   plan: PlanRow | null,
   keyStats: Record<string, unknown>,
+  display: { title: string; summary?: string } | null,
 ): { greeting: string; summary: string } {
   if (!plan) {
     return {
@@ -580,16 +611,42 @@ function buildTodayHero(
     ["dining", "event", "activity", "culture", "outdoors", "fitness"].includes(planType ?? "");
   if (activeToday) {
     return {
-      greeting: "Your evening is set.",
+      greeting: "Your next move is set.",
       summary: timeWindow
-        ? `${plan.title} is live. Window opens around ${timeWindow}.`
-        : `${plan.title} is live.`,
+        ? `One plan is live. Window opens around ${timeWindow}.`
+        : "One plan is live. Nothing else needs your attention.",
     };
   }
   return {
-    greeting: "Plan active.",
-    summary: plan.summary ?? "You have one live plan. Nothing else needs your attention.",
+    greeting: display?.title && !looksRawSourceText(display.title)
+      ? "One plan is live."
+      : "Your next move is set.",
+    summary: display?.summary ?? "Nothing else needs your attention.",
   };
+}
+
+function buildPlanDisplay(
+  plan: PlanRow,
+  keyStats: Record<string, unknown>,
+  sourceRow: SurfacedItemRow | undefined,
+): { title: string; summary?: string } {
+  const briefing = sourceRow ? readBriefingFromPayload(sourceRow.payload) : null;
+  const titleCandidates = [
+    briefing?.display_title,
+    typeof keyStats.display_title === "string" ? keyStats.display_title : undefined,
+    plan.title,
+  ];
+  const title =
+    titleCandidates
+      .map((candidate) => cleanDisplayText(candidate))
+      .find((candidate) => candidate && !looksRawSourceText(candidate)) ??
+    cleanDisplayText(titleCandidates.find(Boolean)) ??
+    "Active plan";
+  const summary =
+    cleanDisplayText(briefing?.one_line) ??
+    cleanDisplayText(typeof keyStats.hero_angle === "string" ? keyStats.hero_angle : undefined) ??
+    cleanDisplayText(plan.summary ?? undefined);
+  return { title, summary };
 }
 
 async function listUpcomingBridgeItems(userId: string): Promise<TodayCommandItem[]> {
@@ -632,6 +689,10 @@ function readPlanGrabList(value: unknown): string[] {
     .filter((entry): entry is string => Boolean(entry));
 }
 
+function readFirstGrabListLabel(value: unknown): string | undefined {
+  return readPlanGrabList(value)[0];
+}
+
 function readPlanSlug(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   return typeof value.plan_slug === "string" ? value.plan_slug : undefined;
@@ -647,6 +708,34 @@ function isLinkedToPlan(
   planId: string | undefined,
 ): boolean {
   return Boolean(planId && item.planId === planId);
+}
+
+function cleanDisplayText(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value
+    .replace(/local-radar:[^\s]+/gi, "")
+    .replace(/seed:[^\s]+/gi, "")
+    .replace(/\s*-\s*Instagram\b/gi, "")
+    .replace(/View all \d+ comments.*$/gi, "")
+    .replace(/#[\w-]+/g, "")
+    .replace(/\b[A-Za-z0-9._%+-]+\'s profile\b/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+  if (!cleaned) return undefined;
+  return cleaned.length > 160 ? `${cleaned.slice(0, 157).trim()}...` : cleaned;
+}
+
+function looksRawSourceText(value: string): boolean {
+  const lower = value.toLowerCase();
+  return (
+    lower.includes("instagram") ||
+    lower.includes("view all") ||
+    lower.includes("comments") ||
+    lower.includes("local-radar") ||
+    lower.includes("seed:") ||
+    lower.includes("query:")
+  );
 }
 
 function mapCategory(

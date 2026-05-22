@@ -60,6 +60,41 @@ export async function completeTimelineItem(input: {
   return { ok: true };
 }
 
+export async function toggleTimelineItem(input: {
+  timelineItemId: string;
+}): Promise<{ ok: true; status: "pending" | "done" }> {
+  const owner = await requireOwner();
+  const supabase = await getServerSupabase();
+  const { data, error: loadError } = await supabase
+    .from("today_timeline_items")
+    .select("status")
+    .eq("id", input.timelineItemId)
+    .eq("user_id", owner.id)
+    .maybeSingle();
+  if (loadError) throw new Error(loadError.message);
+  if (!data) throw new Error("Timeline item not found.");
+
+  const currentStatus = (data as { status: string }).status;
+  const nextStatus: "pending" | "done" =
+    currentStatus === "done" ? "pending" : "done";
+  const { error } = await supabase
+    .from("today_timeline_items")
+    .update({ status: nextStatus })
+    .eq("id", input.timelineItemId)
+    .eq("user_id", owner.id);
+  if (error) throw new Error(error.message);
+
+  if (nextStatus === "done") {
+    await recordBehaviorSignal({
+      type: "timeline.complete",
+      itemId: input.timelineItemId,
+    });
+  }
+
+  revalidatePath("/");
+  return { ok: true, status: nextStatus };
+}
+
 // ── Plan generation (Sprint 3.1) ────────────────────────────────────────────
 
 export type GeneratePlanForItemResult = {

@@ -25,7 +25,7 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
 
   return (
     <AppFrame>
-      <header className="flex flex-col gap-3">
+      <header className="flex flex-col gap-4 pt-7">
         <div className="flex items-start justify-between gap-4">
           <span className="text-[11px] uppercase tracking-editorial text-muted-gold/85">
             {payload?.hero.eyebrow ?? "Today"}
@@ -34,24 +34,20 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
             {payload?.hero.date ?? formatToday()}
           </span>
         </div>
-        <h1 className="mt-1 font-serif text-[40px] leading-[1.05] tracking-[-0.01em] text-warm-ivory">
+        <h1 className="mt-2 font-serif text-[52px] leading-[0.98] tracking-[-0.01em] text-warm-ivory">
           {payload?.hero.greeting ?? "Quiet day."}
         </h1>
-        <p className="mt-1 max-w-[42ch] text-[14px] leading-[1.55] text-warm-ivory/60">
+        <p className="mt-2 max-w-[35ch] text-[16px] font-medium leading-[1.55] text-warm-ivory/72">
           {payload?.hero.summary ?? "Nothing strong enough to surface yet."}
         </p>
       </header>
 
-      <div className="mt-8 h-px w-full bg-divider/70" />
-
-      {payload?.livePlan ? (
-        <LivePlanCard livePlan={payload.livePlan} />
-      ) : (
+      {!payload?.livePlan && dayItems.length === 0 ? (
         <NoLivePlan upcomingCount={payload?.upcomingCount ?? 0} />
-      )}
+      ) : null}
 
       {dayItems.length > 0 ? (
-        <section className="mt-8 flex flex-col">
+        <section className="mt-14 flex flex-col">
           <SectionLabel
             trailing={
               payload?.livePlan?.slug ? (
@@ -66,7 +62,7 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
           >
             The Day
           </SectionLabel>
-          <div className="mt-2">
+          <div className="mt-5">
             <Timeline items={dayItems} />
           </div>
         </section>
@@ -105,6 +101,16 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
               {item.locationLine}
             </div>
           ) : null}
+          {item.timingNote ? (
+            <div className="text-[12px] text-warm-ivory/52">
+              {item.timingNote}
+            </div>
+          ) : null}
+          {item.prepNote ? (
+            <div className="text-[12px] text-warm-ivory/52">
+              Prep: {item.prepNote}
+            </div>
+          ) : null}
           {item.planSlug ? (
             <Link
               href={`/plan/${item.planSlug}`}
@@ -121,6 +127,8 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
         time: item.time,
         title: item.title,
         active: item.status === "active",
+        status: item.status,
+        canPersistStatus: item.canPersistStatus,
         defaultExpanded: idx === 0 && Boolean(detail),
       };
       if (detail) base.detail = detail;
@@ -128,92 +136,11 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
     });
 }
 
-function LivePlanCard({
-  livePlan,
-}: {
-  livePlan: NonNullable<TodayPayload["livePlan"]>;
-}) {
-  const href = livePlan.slug ? `/plan/${livePlan.slug}` : undefined;
-  return (
-    <section className="mt-6 rounded-[10px] border border-muted-gold/20 bg-soft-black/70 px-4 py-3">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-editorial text-muted-gold">
-            <span
-              aria-hidden
-              className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
-            />
-            Live
-            {livePlan.status ? (
-              <span className="text-warm-ivory/35">{livePlan.status}</span>
-            ) : null}
-          </div>
-          <div className="mt-2 font-serif text-[22px] leading-tight text-warm-ivory">
-            {livePlan.title ?? "Active plan"}
-          </div>
-          {livePlan.nextTimelineItem ? (
-            <div className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/60">
-              Next: {livePlan.nextTimelineItem.time} -{" "}
-              {livePlan.nextTimelineItem.title}
-            </div>
-          ) : null}
-          <PlanContext livePlan={livePlan} />
-        </div>
-        {href ? (
-          <Link
-            href={href}
-            aria-label={`Open ${livePlan.title ?? "plan"}`}
-            className="mt-1 shrink-0 text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
-          >
-            <ArrowRight size={14} />
-          </Link>
-        ) : null}
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        {href ? (
-          <Link
-            href={href}
-            className="inline-flex items-center justify-center rounded-full border border-muted-gold/50 bg-muted-gold/10 px-5 py-2 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20"
-          >
-            Open plan
-          </Link>
-        ) : null}
-        <CompletePlanButton planId={livePlan.planId} />
-      </div>
-    </section>
-  );
-}
-
-function PlanContext({
-  livePlan,
-}: {
-  livePlan: NonNullable<TodayPayload["livePlan"]>;
-}) {
-  const parts = [
-    livePlan.timeWindow,
-    livePlan.sourceItemType,
-    livePlan.destination,
-  ].filter(Boolean);
-  if (parts.length === 0 && !livePlan.summary) return null;
-  return (
-    <div className="mt-3 text-[11px] leading-[1.6] text-warm-ivory/45">
-      {parts.length > 0 ? (
-        <div className="uppercase tracking-editorial">{parts.join(" · ")}</div>
-      ) : null}
-      {livePlan.summary ? (
-        <div className="mt-1 line-clamp-2 text-[12px] normal-case tracking-normal text-warm-ivory/55">
-          {livePlan.summary}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function NoLivePlan({ upcomingCount }: { upcomingCount: number }) {
   const href = upcomingCount > 0 ? "/upcoming" : "/radar";
   const label = upcomingCount > 0 ? "Open Upcoming" : "Open Radar";
   return (
-    <section className="mt-6 rounded-[10px] border border-white/[0.06] bg-soft-black/55 px-5 py-4">
+    <section className="mt-10 border-y border-white/[0.06] py-4">
       <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/38">
         Live
       </div>
@@ -408,7 +335,7 @@ function CompletePlanButton({ planId }: { planId: string }) {
         type="button"
         onClick={run}
         disabled={pending}
-        className="rounded-full border border-white/[0.10] bg-white/[0.025] px-5 py-2 text-[11px] uppercase tracking-editorial text-warm-ivory/70 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.06] disabled:opacity-60"
+        className="text-[10px] uppercase tracking-editorial text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/75 disabled:opacity-60"
       >
         {pending ? "..." : "Complete"}
       </button>

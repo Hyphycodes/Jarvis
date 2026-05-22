@@ -13,6 +13,8 @@ export type TimelineItem = {
   title: string;
   detail?: ReactNode;
   href?: string;
+  status?: "pending" | "active" | "done" | "skipped";
+  canPersistStatus?: boolean;
   defaultExpanded?: boolean;
   /**
    * Visual default — if true, the dot renders in the active hue (gold) until
@@ -29,6 +31,13 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
     return acc;
   }, {});
   const [open, setOpen] = useState(initial);
+  const [statusById, setStatusById] = useState<Record<string, TimelineItem["status"]>>(
+    () =>
+      items.reduce<Record<string, TimelineItem["status"]>>((acc, it) => {
+        acc[it.id] = it.status;
+        return acc;
+      }, {}),
+  );
   const { activeItemId, toggle } = useDayPlan();
 
   // If the user has explicitly chosen an active item, the dot color is driven
@@ -40,7 +49,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
     <ol className="relative">
       <span
         aria-hidden
-        className="absolute left-[112px] top-3 bottom-3 w-px bg-warm-ivory/20"
+        className="absolute left-[142px] top-4 bottom-4 w-px bg-warm-ivory/14"
       />
       {items.map((item, i) => {
         const isOpen = open[item.id];
@@ -49,6 +58,8 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
         const isActive = hasExplicitActive
           ? activeItemId === item.id
           : !!item.active;
+        const currentStatus = statusById[item.id] ?? item.status;
+        const isDone = currentStatus === "done";
 
         function onTitleTap() {
           if (!hasDetail) return;
@@ -57,7 +68,25 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
 
         function onDotTap(e: React.MouseEvent | React.KeyboardEvent) {
           e.stopPropagation();
+          const previous = statusById[item.id] ?? item.status ?? "pending";
+          const next = previous === "done" ? "pending" : "done";
+          setStatusById((s) => ({ ...s, [item.id]: next }));
           toggle(item.id);
+          if (item.canPersistStatus === false) return;
+          fetch(`/api/timeline/${item.id}/toggle`, { method: "POST" })
+            .then(async (res) => {
+              const json = (await res.json().catch(() => ({}))) as {
+                status?: "pending" | "done";
+                error?: string;
+              };
+              if (!res.ok || json.error || !json.status) {
+                throw new Error(json.error ?? `HTTP ${res.status}`);
+              }
+              setStatusById((s) => ({ ...s, [item.id]: json.status }));
+            })
+            .catch(() => {
+              setStatusById((s) => ({ ...s, [item.id]: previous }));
+            });
         }
 
         function onDetailTap() {
@@ -74,18 +103,19 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
 
         return (
           <li key={item.id} className="relative">
-            <div className="grid grid-cols-[96px_24px_1fr] items-start gap-x-3 py-4">
+            <div className="grid grid-cols-[118px_36px_1fr] items-start gap-x-4 py-7">
               <div
                 className={
-                  "pt-[3px] text-[12px] uppercase tracking-[0.06em] " +
-                  (isActive ? "text-muted-gold" : "text-warm-ivory/60")
+                  "pt-[8px] text-[13px] uppercase tracking-[0.06em] " +
+                  (isActive || isDone ? "text-muted-gold" : "text-warm-ivory/60")
                 }
               >
                 {item.time}
               </div>
-              <div className="flex justify-center pt-[2px]">
+              <div className="flex justify-center pt-[7px]">
                 <DotToggle
                   active={isActive}
+                  done={isDone}
                   onTap={onDotTap}
                   itemId={item.id}
                 />
@@ -93,11 +123,16 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
               <button
                 type="button"
                 onClick={onTitleTap}
-                className="flex items-start justify-between gap-3 text-left"
+                className="flex min-w-0 items-start justify-between gap-4 text-left"
                 aria-expanded={isOpen}
                 disabled={!hasDetail}
               >
-                <span className="font-serif text-[24px] font-normal leading-[1.2] text-warm-ivory">
+                <span
+                  className={
+                    "font-serif text-[30px] font-normal leading-[1.08] text-warm-ivory " +
+                    (isDone ? "text-warm-ivory/45 line-through decoration-warm-ivory/25" : "")
+                  }
+                >
                   {item.title}
                 </span>
                 {hasDetail ? (
@@ -118,7 +153,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                   transition={{ duration: 0.28, ease }}
                   style={{ overflow: "hidden" }}
                 >
-                  <div className="grid grid-cols-[120px_1fr] gap-x-3 pb-6">
+                  <div className="grid grid-cols-[158px_1fr] gap-x-4 pb-7">
                     <div />
                     <div
                       role={item.href ? "link" : undefined}
@@ -139,7 +174,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
             </AnimatePresence>
 
             {!isLast ? (
-              <div className="ml-[120px] h-px bg-divider/70" />
+              <div className="ml-[158px] h-px bg-divider/45" />
             ) : null}
           </li>
         );
@@ -150,10 +185,12 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
 
 function DotToggle({
   active,
+  done,
   onTap,
   itemId,
 }: {
   active: boolean;
+  done: boolean;
   onTap: (e: React.MouseEvent | React.KeyboardEvent) => void;
   itemId: string;
 }) {
@@ -162,14 +199,14 @@ function DotToggle({
     <button
       type="button"
       aria-label={
-        active ? `Turn off ${itemId} live status` : `Turn on ${itemId} live status`
+        done ? `Mark ${itemId} incomplete` : `Mark ${itemId} complete`
       }
-      title={active ? "Turn live status off" : "Turn live status on"}
-      aria-pressed={active}
+      title={done ? "Mark incomplete" : "Mark complete"}
+      aria-pressed={done}
       onClick={onTap}
       className="flex h-9 w-9 items-center justify-center transition duration-200 ease-atmospheric active:scale-90"
     >
-      {active ? (
+      {active || done ? (
         <span
           className="relative flex h-3.5 w-3.5 items-center justify-center rounded-full border border-muted-gold transition-all"
           style={{
