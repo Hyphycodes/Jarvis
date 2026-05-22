@@ -46,7 +46,8 @@ Empty modules stay quiet:
 
 ## QA Notes
 
-No dev seed helper was added in this sprint. Use the existing explicit Radar
-refresh path at `/account/intelligence`, or create/delete QA rows manually in
-Supabase against `surfaced_items` with `destination="radar"` or
-`destination="today"` and a non-terminal status.
+Use `/account/qa` as an owner in development, or with
+`ENABLE_QA_TOOLS=true`, to create real `[QA]` Today, Upcoming, and active plan
+fixtures. The active plan fixture is designed to appear in Live Plan and to
+drive Next Move from its first non-done timeline row. See
+[`docs/QA.md`](./QA.md).

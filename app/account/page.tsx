@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { signOut } from "@/lib/actions/auth";
+import { isQaToolsEnabled } from "@/lib/qa/gate";
 import {
   Brain,
   Chevron,
@@ -44,6 +45,7 @@ export default async function AccountPage() {
     "Account";
   const roleKey = (user.role ?? "viewer").toLowerCase();
   const roleLabel = ROLE_LABEL[roleKey] ?? "Viewer";
+  const showQaTools = user.role === "owner" && isQaToolsEnabled();
 
   return (
     <main
@@ -155,6 +157,14 @@ export default async function AccountPage() {
           title="Intelligence"
           description="External sources, scoring, and the curation brain. Refresh Radar here."
         />
+        {showQaTools ? (
+          <AccountNavRow
+            href="/account/qa"
+            icon={<ShieldCheck size={20} />}
+            title="QA fixtures"
+            description="Owner-only test records for Radar, Today, Upcoming, and plans."
+          />
+        ) : null}
         <SignOutRow />
       </nav>
 

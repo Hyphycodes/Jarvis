@@ -203,6 +203,21 @@ Already automatic via the surface loaders:
   items preserve existing `/item/[id]` behavior.
 - **Sparrow** — completely preserved as a static demo route.
 
+## Owner QA Fixture
+
+`/account/qa` can create `[QA] Active plan fixture` for owner-only smoke
+testing. It writes:
+
+- source `surfaced_items` row with `payload.plan_id`, `payload.plan_slug`,
+  `payload.plan_status="active"`, and `payload.qa_fixture=true`
+- active `plans` row with `key_stats.slug="qa-active-plan"`
+- 3 `plan_sections`
+- 3 `today_timeline_items`
+
+Repeated creation clears the existing QA plan fixture first. Clear QA fixtures
+removes only `[QA]`/fixture rows for the current owner. See
+[`docs/QA.md`](./QA.md).
+
 ## Behavior signals
 
 Six new signal types:
