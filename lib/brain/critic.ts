@@ -9,6 +9,8 @@ import type {
 } from "@/lib/brain/types";
 import { RADAR_MIN_CONFIDENCE } from "@/lib/brain/constants";
 
+const FALLBACK_HOLDING_CONFIDENCE_FLOOR = 0.45;
+
 const SYSTEM_PROMPT = `You are Jarvis's CRITIC. You are the last line of defense before
 items reach the founder. Your job is to reject anything that doesn't belong.
 
@@ -49,6 +51,9 @@ export async function runCritic(input: {
 }): Promise<BrainDecision> {
   if (!hasAnthropic()) {
     // Deterministic fallback: apply confidence floor and category caps.
+    console.warn("[brain.critic] using deterministic fallback", {
+      reason: "ANTHROPIC_API_KEY missing",
+    });
     return tightenSelections(input.decision);
   }
 
@@ -99,10 +104,19 @@ export async function runCritic(input: {
       rejected: result.rejected ?? input.decision.rejected,
       notes: [input.decision.notes, result.notes].filter(Boolean).join(" | "),
       fallbackUsed: input.decision.fallbackUsed,
+      fallbackReason: input.decision.fallbackReason,
     };
   } catch (error) {
-    console.error("[brain.critic] structured generation failed", error);
-    return tightenSelections(input.decision);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error("[brain.critic] structured generation failed", {
+      reason,
+      error,
+    });
+    return {
+      ...tightenSelections(input.decision),
+      fallbackUsed: true,
+      fallbackReason: `critic error: ${reason}`,
+    };
   }
 }
 
@@ -111,8 +125,19 @@ export async function runCritic(input: {
  * Items below RADAR_MIN_CONFIDENCE drop to "discovered" (stays in pool).
  */
 function tightenSelections(decision: BrainDecision): BrainDecision {
-  const selected = decision.selected.filter((s) => s.confidence >= RADAR_MIN_CONFIDENCE);
-  const dropped = decision.selected.filter((s) => s.confidence < RADAR_MIN_CONFIDENCE);
+  const selected = decision.selected.flatMap((s) => {
+    if (s.confidence >= RADAR_MIN_CONFIDENCE) return [s];
+    if (
+      decision.fallbackUsed &&
+      s.destination === "holding" &&
+      s.confidence >= FALLBACK_HOLDING_CONFIDENCE_FLOOR
+    ) {
+      return [s];
+    }
+    return [];
+  });
+  const selectedIds = new Set(selected.map((s) => s.itemId));
+  const dropped = decision.selected.filter((s) => !selectedIds.has(s.itemId));
 
   return {
     selected,
@@ -128,5 +153,6 @@ function tightenSelections(decision: BrainDecision): BrainDecision {
       ? `${decision.notes} | Dropped ${dropped.length} below confidence floor.`
       : decision.notes,
     fallbackUsed: decision.fallbackUsed,
+    fallbackReason: decision.fallbackReason,
   };
 }

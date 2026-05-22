@@ -143,6 +143,9 @@ export async function runTasteStrategist(
   }
 
   if (!hasAnthropic()) {
+    console.warn("[brain.strategist] using deterministic fallback", {
+      reason: "ANTHROPIC_API_KEY missing",
+    });
     return {
       output: deterministicLanes(input),
       fallbackUsed: true,
@@ -170,11 +173,14 @@ export async function runTasteStrategist(
     const trimmed = enforceLaneMix(parsed.data);
     return { output: trimmed, fallbackUsed: false };
   } catch (error) {
-    console.error("[strategist] failed", error);
+    console.error("[brain.strategist] failed", {
+      reason: error instanceof Error ? error.message : String(error),
+      error,
+    });
     return {
       output: deterministicLanes(input),
       fallbackUsed: true,
-      reason: "claude_error",
+      reason: error instanceof Error ? `claude_error: ${error.message}` : "claude_error",
     };
   }
 }

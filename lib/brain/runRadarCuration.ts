@@ -28,6 +28,8 @@ import {
   HOLDING_STALE_DAYS,
 } from "@/lib/brain/constants";
 
+const FALLBACK_HOLDING_CONFIDENCE_FLOOR = 0.45;
+
 export type RadarCurationResult = {
   shortlisted: number;
   decision: BrainDecision;
@@ -143,6 +145,14 @@ export async function runRadarCuration(options: {
 
   // Post-critique gates (code-enforced, not just prompt hints)
   const gated = enforceGates(critiqued, shortlist, now);
+  if (gated.fallbackUsed) {
+    console.warn("[brain.curation] fallback brain applied", {
+      fallbackReason: gated.fallbackReason ?? gated.notes,
+      shortlisted: shortlist.length,
+      selected: gated.selected.length,
+      rejected: gated.rejected.length,
+    });
+  }
 
   const { selectedApplied, rejectedApplied } = await applyDecision(
     owner.id,
@@ -164,10 +174,11 @@ export async function runRadarCuration(options: {
     candidateIds: shortlist.map((s) => s.item.id),
     selectedIds: gated.selected.map((s) => s.itemId),
     rejectedIds: gated.rejected.map((r) => r.itemId),
-    model: hasAnthropic() ? "claude" : "deterministic",
+    model: gated.fallbackUsed || !hasAnthropic() ? "deterministic" : "claude",
     rawOutput: {
       decision: gated,
       strategy: options.strategy ?? null,
+      fallback_reason: gated.fallbackReason,
     } as unknown as BrainDecision,
   });
 
@@ -202,8 +213,22 @@ function enforceGates(
   const extraRejected: BrainDecision["rejected"] = [];
 
   // 1. Confidence floor
-  const belowFloor = selected.filter((s) => s.confidence < RADAR_MIN_CONFIDENCE);
-  selected = selected.filter((s) => s.confidence >= RADAR_MIN_CONFIDENCE);
+  const belowFloor = selected.filter((s) => {
+    if (s.confidence >= RADAR_MIN_CONFIDENCE) return false;
+    return !(
+      decision.fallbackUsed &&
+      s.destination === "holding" &&
+      s.confidence >= FALLBACK_HOLDING_CONFIDENCE_FLOOR
+    );
+  });
+  selected = selected.filter((s) => {
+    if (s.confidence >= RADAR_MIN_CONFIDENCE) return true;
+    return (
+      decision.fallbackUsed &&
+      s.destination === "holding" &&
+      s.confidence >= FALLBACK_HOLDING_CONFIDENCE_FLOOR
+    );
+  });
   for (const s of belowFloor) {
     extraRejected.push({
       itemId: s.itemId,
@@ -298,6 +323,7 @@ function enforceGates(
     rejected: [...decision.rejected, ...extraRejected],
     notes: decision.notes,
     fallbackUsed: decision.fallbackUsed,
+    fallbackReason: decision.fallbackReason,
   };
 }
 
@@ -518,4 +544,3 @@ export async function listRadarPool(): Promise<IndexedItem[]> {
   if (error) throw new Error(error.message);
   return ((data ?? []) as SurfacedItemRow[]).map(rowToIndexedItem);
 }
-

@@ -32,6 +32,7 @@ export default async function IntelligencePage() {
   ]);
 
   const lastRun = recentRuns[0] ?? null;
+  const lastFallbackReason = lastRun ? readFallbackReasonFromRun(lastRun) : undefined;
   const cooldownMs = RADAR_REFRESH_COOLDOWN_MINUTES * 60 * 1000;
   const nextAllowed = lastRun
     ? new Date(new Date(lastRun.created_at).getTime() + cooldownMs)
@@ -98,6 +99,7 @@ export default async function IntelligencePage() {
                 Last run{" "}
                 {new Date(lastRun.created_at).toLocaleString()} ·{" "}
                 {lastRun.selected_ids.length} selected · {lastRun.model}
+                {lastFallbackReason ? ` · fallback: ${lastFallbackReason}` : ""}
                 {inCooldown && nextAllowed
                   ? ` · next allowed ${nextAllowed.toLocaleTimeString()}`
                   : ""}
@@ -189,6 +191,7 @@ export default async function IntelligencePage() {
             <ul className="mt-3 flex flex-col divide-y divide-white/[0.05]">
               {recentRuns.map((run) => {
                 const lanes = readLanesFromRun(run);
+                const fallbackReason = readFallbackReasonFromRun(run);
                 return (
                   <li key={run.id} className="py-3">
                     <div className="flex items-baseline justify-between gap-3">
@@ -206,6 +209,7 @@ export default async function IntelligencePage() {
                       {run.candidate_ids.length} shortlisted ·{" "}
                       {run.selected_ids.length} selected ·{" "}
                       {run.rejected_ids.length} rejected · {run.model}
+                      {fallbackReason ? ` · fallback: ${fallbackReason}` : ""}
                       {lanes.length > 0 ? ` · ${lanes.length} lanes` : ""}
                     </div>
                   </li>
@@ -293,6 +297,24 @@ function readLanesFromRun(run: BrainDecisionRunRow): LaneSummary[] {
       };
     })
     .filter((x): x is LaneSummary => x !== null);
+}
+
+function readFallbackReasonFromRun(run: BrainDecisionRunRow): string | undefined {
+  const raw = run.raw_output as unknown;
+  if (!raw || typeof raw !== "object") return undefined;
+  const topLevel = (raw as Record<string, unknown>).fallback_reason;
+  if (typeof topLevel === "string" && topLevel.length > 0) return topLevel;
+  const decision = (raw as Record<string, unknown>).decision;
+  if (decision && typeof decision === "object") {
+    const reason = (decision as Record<string, unknown>).fallbackReason;
+    if (typeof reason === "string" && reason.length > 0) return reason;
+  }
+  const strategy = (raw as Record<string, unknown>).strategy;
+  if (strategy && typeof strategy === "object") {
+    const reason = (strategy as Record<string, unknown>).strategist_reason;
+    if (typeof reason === "string" && reason.length > 0) return reason;
+  }
+  return undefined;
 }
 
 function LastExplorationPanel({ run }: { run: BrainDecisionRunRow }) {

@@ -16,6 +16,7 @@ type RefreshSummary = {
   rejected: number;
   expired: number;
   fallback_used: boolean;
+  fallback_reason?: string;
   decision_run_id: string | null;
   errors: string[];
 };
@@ -87,6 +88,7 @@ export function RefreshRadarButton({
           shortlisted {result.shortlisted} · selected {result.selected} ·
           rejected {result.rejected} · expired {result.expired}
           {result.fallback_used ? " · fallback brain" : " · Claude brain"}
+          {result.fallback_reason ? ` · ${result.fallback_reason}` : ""}
         </p>
       ) : null}
 
