@@ -17,7 +17,9 @@ import type {
 const RECENT_ACTION_LIMIT = 20;
 const RECENT_SIGNAL_LIMIT = 25;
 
-export async function buildBrainContext(): Promise<BrainContextPacket> {
+export async function buildBrainContext(
+  options: { includeWeather?: boolean } = {},
+): Promise<BrainContextPacket> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
   const home = safeHome();
@@ -84,7 +86,7 @@ export async function buildBrainContext(): Promise<BrainContextPacket> {
   const plan = (planRes.data?.[0] ?? null) as PlanRow | null;
 
   let weather: BrainContextPacket["weather"] = null;
-  if (hasGooglePlaces() || true) {
+  if (options.includeWeather !== false && (hasGooglePlaces() || true)) {
     try {
       const w = await getCurrentWeather({ lat: home.lat, lng: home.lng });
       weather = {

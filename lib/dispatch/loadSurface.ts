@@ -89,21 +89,36 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
 
     const timelineRows = (timelineRes.data ?? []) as TodayTimelineItemRow[];
     const planRow = (primaryPlanRes.data?.[0] ?? null) as PlanRow | null;
-    const todayRows = (todayItemsRes.data ?? []) as SurfacedItemRow[];
-    const todayItems = todayRows.map(rowToTodayCommandItem);
-    const upcomingItems = upcomingItemsRes;
     const planKeyStats = isRecord(planRow?.key_stats) ? planRow.key_stats : {};
+    const planSlug = planRow ? readSlugFromKeyStats(planRow.key_stats) : undefined;
+    const activePlanId = planRow?.id;
+    const todayRows = (todayItemsRes.data ?? []) as SurfacedItemRow[];
+    const todayItems = todayRows
+      .map(rowToTodayCommandItem)
+      .filter((item) => !isLinkedToPlan(item, activePlanId));
+    const upcomingItems = upcomingItemsRes.filter(
+      (item) => !isLinkedToPlan(item, activePlanId),
+    );
 
-    const timeline: TodayTimelineItem[] = timelineRows.map((row) => ({
+    const planTimelineRows = planRow
+      ? timelineRows.filter((row) => row.plan_id === planRow.id)
+      : timelineRows;
+    const timeline: TodayTimelineItem[] = planTimelineRows.map((row) => ({
       id: row.id,
       time: row.time,
       title: row.title,
       status: row.status as TodayTimelineItem["status"],
       planId: row.plan_id ?? undefined,
-      planSlug: row.plan_id === planRow?.id ? readSlugFromKeyStats(planRow.key_stats) : undefined,
-      expandable: row.expandable,
+      planSlug: row.plan_id === planRow?.id ? planSlug : undefined,
+      expandable: row.expandable || Boolean(row.details) || row.plan_id === planRow?.id,
       details: row.details ?? undefined,
+      locationLine: row.plan_id === planRow?.id
+        ? planRow.location_line ?? undefined
+        : undefined,
     }));
+    const activeTimeline = planRow && timeline.length === 0
+      ? [fallbackTimelineForPlan(planRow, planKeyStats, planSlug)]
+      : timeline;
 
     const grabList: GrabListItem[] = planRow
       ? readPlanGrabList(planKeyStats).map((entry, idx) => ({
@@ -117,10 +132,11 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     // Build on-deck list (max 3, no flood). Excludes items already in
     // the timeline (matched by title — best-effort dedupe).
     const timelineTitles = new Set(
-      timelineRows.map((r) => r.title?.toLowerCase().trim()).filter(Boolean),
+      activeTimeline.map((r) => r.title?.toLowerCase().trim()).filter(Boolean),
     );
     const onDeck: OnDeckItem[] = dayOf.dayOf
       .filter((it) => !timelineTitles.has(it.title.toLowerCase().trim()))
+      .filter((it) => readPlanId(it.rawPayload) !== activePlanId)
       .slice(0, MAX_DAY_OF_ON_TODAY)
       .map((it) => ({
         id: it.id,
@@ -129,37 +145,25 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         startsAt: it.startsAt,
         locationName: it.locationName,
         category: it.category ?? it.type,
+        planId: readPlanId(it.rawPayload),
       }));
-    const planSlug = planRow ? readSlugFromKeyStats(planRow.key_stats) : undefined;
     const nextPlanTimelineItem = planRow
-      ? timeline.find((item) => item.planId === planRow.id && item.status !== "done")
-      : undefined;
-    const activePlanNextMove = planRow && nextPlanTimelineItem
-      ? {
-          id: nextPlanTimelineItem.id,
-          title: nextPlanTimelineItem.title,
-          subtitle: nextPlanTimelineItem.time,
-          source: "plan",
-          type: "timeline",
-          destination: "today",
-          status: nextPlanTimelineItem.status,
-          planSlug,
-          reason: planRow.title,
-        }
+      ? activeTimeline.find((item) => item.planId === planRow.id && item.status !== "done")
       : undefined;
     const topTodayItem = todayItems[0];
     const firstUpcomingWithTime = upcomingItems.find((item) => item.startsAt);
-    const nextMove = activePlanNextMove ?? topTodayItem ?? firstUpcomingWithTime;
+    const nextMove = topTodayItem ?? (!planRow ? firstUpcomingWithTime : undefined);
     const todayStack = todayItems
       .filter((item) => item.id !== nextMove?.id)
       .slice(0, 6);
+    const hero = buildTodayHero(planRow, planKeyStats);
 
     return {
       hero: {
         eyebrow: "Today",
         date: formatToday(),
-        greeting: planRow ? `Tonight: ${planRow.title}.` : "Quiet day.",
-        summary: planRow?.summary ?? "Nothing strong enough to surface yet.",
+        greeting: hero.greeting,
+        summary: hero.summary,
         primaryPlanId: planRow?.id,
         leaveBy:
           isRecord(planRow?.key_stats) &&
@@ -167,7 +171,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
             ? (planRow.key_stats.leave_by as string)
             : undefined,
       },
-      timeline,
+      timeline: activeTimeline,
       grabList,
       livePlan: planRow
         ? {
@@ -178,6 +182,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
             slug: planSlug,
             status: planRow.status,
             summary: planRow.summary ?? undefined,
+            locationLine: planRow.location_line ?? undefined,
             timeWindow: formatTimeWindow(
               typeof planKeyStats.starts_at === "string"
                 ? planKeyStats.starts_at
@@ -200,7 +205,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           }
         : undefined,
       onDeck: onDeck.length > 0 ? onDeck : undefined,
-      upcomingCount: upcomingCountRes,
+      upcomingCount: upcomingItems.length > 0 ? upcomingCountRes : 0,
       nextMove,
       todayStack: todayStack.length > 0 ? todayStack : undefined,
       upcoming: upcomingItems.slice(0, 3),
@@ -506,6 +511,7 @@ function sortTime(iso?: string): number {
 
 function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
   const planSlug = readPlanSlug(row.payload);
+  const planId = readPlanId(row.payload);
   const briefing = readBriefingFromPayload(row.payload);
   const reason = briefing?.jarvis_take ?? row.reasons?.[0] ?? row.subtitle ?? undefined;
   return {
@@ -520,9 +526,69 @@ function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
     status: row.status,
     startsAt: row.starts_at ?? undefined,
     locationName: row.location_name ?? undefined,
+    planId,
     planSlug,
     reason,
     score: row.score ?? undefined,
+  };
+}
+
+function fallbackTimelineForPlan(
+  plan: PlanRow,
+  keyStats: Record<string, unknown>,
+  planSlug: string | undefined,
+): TodayTimelineItem {
+  const timeWindow = formatTimeWindow(
+    typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined,
+    typeof keyStats.ends_at === "string" ? keyStats.ends_at : undefined,
+  );
+  const primaryMove =
+    typeof keyStats.primary_move === "string"
+      ? keyStats.primary_move
+      : plan.summary ?? "Open the plan and make the next clean move.";
+  return {
+    id: `${plan.id}-active-plan`,
+    time: timeWindow ?? "Plan",
+    title: plan.title,
+    status: "active",
+    planId: plan.id,
+    planSlug,
+    expandable: true,
+    details: primaryMove,
+    locationLine: plan.location_line ?? undefined,
+  };
+}
+
+function buildTodayHero(
+  plan: PlanRow | null,
+  keyStats: Record<string, unknown>,
+): { greeting: string; summary: string } {
+  if (!plan) {
+    return {
+      greeting: "Quiet day.",
+      summary: "Nothing strong enough to surface yet.",
+    };
+  }
+  const startsAt = typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined;
+  const planType = typeof keyStats.plan_type === "string" ? keyStats.plan_type : plan.category;
+  const timeWindow = formatTimeWindow(
+    startsAt,
+    typeof keyStats.ends_at === "string" ? keyStats.ends_at : undefined,
+  );
+  const activeToday =
+    startsAt && isTodayIso(startsAt) &&
+    ["dining", "event", "activity", "culture", "outdoors", "fitness"].includes(planType ?? "");
+  if (activeToday) {
+    return {
+      greeting: "Your evening is set.",
+      summary: timeWindow
+        ? `${plan.title} is live. Window opens around ${timeWindow}.`
+        : `${plan.title} is live.`,
+    };
+  }
+  return {
+    greeting: "Plan active.",
+    summary: plan.summary ?? "You have one live plan. Nothing else needs your attention.",
   };
 }
 
@@ -569,6 +635,18 @@ function readPlanGrabList(value: unknown): string[] {
 function readPlanSlug(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   return typeof value.plan_slug === "string" ? value.plan_slug : undefined;
+}
+
+function readPlanId(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  return typeof value.plan_id === "string" ? value.plan_id : undefined;
+}
+
+function isLinkedToPlan(
+  item: { planId?: string; planSlug?: string },
+  planId: string | undefined,
+): boolean {
+  return Boolean(planId && item.planId === planId);
 }
 
 function mapCategory(
@@ -665,6 +743,17 @@ function formatShortTime(iso: string): string | undefined {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function isTodayIso(iso: string): boolean {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
 }
 
 function logQueryError(scope: string, error: unknown) {

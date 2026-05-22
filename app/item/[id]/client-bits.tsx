@@ -30,12 +30,19 @@ export function GeneratePlanButton({
   const [status, setStatus] = useState<"idle" | "generating" | "ready">(
     "idle",
   );
+  const [message, setMessage] = useState("Building plan…");
 
   function run() {
     setError(null);
+    setMessage("Building plan…");
     setStatus("generating");
     startTransition(async () => {
+      let timer: number | undefined;
       try {
+        timer = window.setTimeout(
+          () => setMessage("Preparing sections…"),
+          900,
+        );
         const res = await fetch(`/api/items/${itemId}/generate-plan`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -60,6 +67,8 @@ export function GeneratePlanButton({
       } catch (err) {
         setError((err as Error).message);
         setStatus("idle");
+      } finally {
+        if (timer) window.clearTimeout(timer);
       }
     });
   }
@@ -76,8 +85,13 @@ export function GeneratePlanButton({
           "flex min-h-[56px] w-full items-center justify-center rounded-2xl border border-muted-gold/50 bg-muted-gold/10 px-5 py-3 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20 disabled:opacity-60"
         }
       >
-        {isWorking ? "Generating…" : label}
+        {isWorking ? message : label}
       </button>
+      {isWorking ? (
+        <span className="mt-1 text-center text-[11px] text-warm-ivory/38">
+          Concise draft. No bookings claimed.
+        </span>
+      ) : null}
       {error ? (
         <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
       ) : null}
@@ -189,11 +203,13 @@ export function PlanLifecycleButton({
   action,
   label,
   variant = "secondary",
+  redirectTo,
 }: {
   planId: string;
   action: "activate" | "complete" | "cancel";
   label: string;
   variant?: "primary" | "secondary" | "danger" | "ghost";
+  redirectTo?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -211,7 +227,8 @@ export function PlanLifecycleButton({
           setError(json.error ?? `HTTP ${res.status}`);
           return;
         }
-        router.refresh();
+        if (redirectTo) router.push(redirectTo);
+        else router.refresh();
       } catch (err) {
         setError((err as Error).message);
       }

@@ -77,7 +77,8 @@ OUTPUT
 Strict JSON matching the GeneratedPlan schema:
 - slug: lowercase-kebab, derived from title.
 - status: ALWAYS "draft" (activation is a user action).
-- sections: 2–11 sections, sorted, each with a section_type from the enum.
+- sections: 3–6 concise sections, sorted, each with a section_type from the enum.
+- Generate core sections first: why, before, move, notes/details, next step.
 - timeline: 0–8 entries. Only include if you have real timing data.
 - grab_list: 0–8 items. Only what's actually needed.
 - cautions: 0–4 short warnings if any apply (cost, energy, timing risk).
@@ -112,7 +113,7 @@ export async function generatePlanFromItem(
   }
 
   try {
-    const context = await buildBrainContext();
+    const context = await buildBrainContext({ includeWeather: false });
     const graph = buildInterestGraph({ context });
     const promptBody = renderPrompt(input.item, context, graph);
 
@@ -121,6 +122,7 @@ export async function generatePlanFromItem(
       prompt: promptBody,
       schemaName: "GeneratedPlan",
       temperature: 0.4,
+      maxTokens: 2600,
     });
 
     const parsed = generatedPlanSchema.safeParse(raw);
@@ -221,7 +223,7 @@ function renderPrompt(
       weather: context.weather,
       instructions: [
         "Generate a single plan for this item — the operator move.",
-        "Use 2–8 sections, only those that genuinely apply.",
+        "Use 3–6 concise sections, only those that genuinely apply.",
         "Adapt the sections to the item type; do not force nightlife, route, or map sections onto products and ideas.",
         "If timing is unknown, include a 'timing' section that says what to confirm.",
         "Include 'route' only if location data is available; otherwise omit or use placeholder language.",

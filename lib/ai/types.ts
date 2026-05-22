@@ -88,6 +88,7 @@ export type TodayPayload = {
     status?: string;
     summary?: string;
     timeWindow?: string;
+    locationLine?: string;
     sourceItemType?: string;
     destination?: string;
     nextTimelineItem?: {
@@ -118,6 +119,7 @@ export type TodayCommandItem = {
   status: string;
   startsAt?: string;
   locationName?: string;
+  planId?: string;
   planSlug?: string;
   reason?: string;
   score?: number;
@@ -130,6 +132,7 @@ export type OnDeckItem = {
   startsAt?: string;
   locationName?: string;
   category?: string;
+  planId?: string;
 };
 
 export type TodayTimelineItem = {
@@ -141,6 +144,7 @@ export type TodayTimelineItem = {
   planSlug?: string;
   expandable: boolean;
   details?: string;
+  locationLine?: string;
 };
 
 export type GrabListItem = {

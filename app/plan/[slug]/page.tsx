@@ -25,6 +25,7 @@ export default async function DynamicPlanPage({
   const isActive = plan.status === "active";
   const isCompleted = plan.status === "completed";
   const isCancelled = plan.status === "cancelled";
+  const orderedSections = orderPlanSections(plan.sections);
   const stats = [
     plan.effortLevel
       ? { label: "Effort", value: formatLabel(plan.effortLevel) }
@@ -176,9 +177,9 @@ export default async function DynamicPlanPage({
         </section>
 
         {/* Sections */}
-        {plan.sections.length > 0 ? (
+        {orderedSections.length > 0 ? (
           <div className="mt-10 flex flex-col gap-7">
-            {plan.sections.map((s) => (
+            {orderedSections.map((s) => (
               <PlanSection key={s.id} section={s} />
             ))}
           </div>
@@ -297,6 +298,34 @@ function PlanSection({ section }: { section: LoadedPlanSection }) {
       ) : null}
     </section>
   );
+}
+
+const SECTION_ORDER: Record<string, number> = {
+  before: 10,
+  timing: 15,
+  move: 20,
+  atmosphere: 30,
+  route: 40,
+  bring: 42,
+  wear: 44,
+  cost: 46,
+  notes: 50,
+  detours: 60,
+  alternatives: 65,
+  research: 70,
+  after: 80,
+  why: 90,
+};
+
+function orderPlanSections(
+  sections: LoadedPlanSection[],
+): LoadedPlanSection[] {
+  return [...sections].sort((a, b) => {
+    const aOrder = SECTION_ORDER[a.sectionType] ?? 75;
+    const bOrder = SECTION_ORDER[b.sectionType] ?? 75;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.sortOrder - b.sortOrder;
+  });
 }
 
 function SectionLabel({ children }: { children: ReactNode }) {

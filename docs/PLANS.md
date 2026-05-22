@@ -40,6 +40,10 @@ model returns invalid JSON.
 - current weather if already present in BrainContext
 - schedule hints (06:20 leave, 16:30 home, weeknight energy)
 
+Plan generation calls `buildBrainContext({ includeWeather: false })`, so the
+explicit Plan This flow does not call weather/source APIs. Anthropic is the only
+external generation call.
+
 **Output (Zod-validated `GeneratedPlan`):**
 
 ```ts
@@ -62,7 +66,7 @@ model returns invalid JSON.
     {
       key, title, subtitle?, body, sort_order, section_type, bullets?
     }
-  ],                           // 2-11 sections
+  ],                           // prompt requests 3-6 concise sections
   timeline: [
     { title, starts_at?, ends_at?, time_label?, description?, sort_order }
   ],                           // 0-8 entries
@@ -166,8 +170,9 @@ When `ANTHROPIC_API_KEY` is missing or Claude returns invalid JSON:
 | `POST /api/plans/[id]/live` | (Pre-existing — Sparrow only) toggle live state |
 
 Response envelopes are clean — no raw Claude JSON is ever exposed to the UI.
-The UI calls these endpoints from plan/action buttons, then refreshes the
-current route. Lifecycle actions do not create duplicate plans.
+The UI calls these endpoints from plan/action buttons. Item-page activation
+routes to `/plan/[slug]`; plan-page activation refreshes the current plan.
+Lifecycle actions do not create duplicate plans.
 
 ## Dynamic plan route (`/plan/[slug]`)
 
@@ -181,6 +186,10 @@ Page shows: back/Today/source navigation, hero, plan-type/status pills,
 source/context line, effort/spending/window/source stats, why-this-fits card,
 primary move, lifecycle actions, sections, timeline, grab list, cautions, and
 quiet empty states when sections or timeline rows are missing.
+
+Generated sections are ordered into a Sparrow-style execution shape where
+possible: Before/Timing, The Move, Atmosphere, Details/Route/Cost/Wear/Bring,
+Optional Detours/Alternatives, Research, After, then any remaining sections.
 
 Primary action labels by status:
 
@@ -206,12 +215,13 @@ Already automatic via the surface loaders:
 - **Today Live Plan** — `loadTodaySurface()` queries live-enabled or `active`
   plans, explicitly excluding draft/completed/cancelled plans. Draft generated
   plans do not appear as live hero content.
-- **Today Next Move** — the next non-done timeline item from the active plan is
-  the highest-priority command-center item and links back to `/plan/[slug]`.
-- **Timeline links** — generated plan timeline rows link to `/plan/[slug]` when
-  the plan slug is present. Sparrow remains preserved at `/plan/sparrow`.
-- **Today stack** — plan-linked surfaced items prefer `/plan/[slug]`; unplanned
-  surfaced items link to `/item/[id]`.
+- **The Day timeline** — generated plan timeline rows render in Today's
+  time/dot/title/chevron timeline. If an active plan has no timeline rows,
+  Today renders one local fallback row without mutating the database.
+- **Dedupe** — source items whose `payload.plan_id` equals the active plan id
+  are removed from Next Move, Today stack, On Deck, and Upcoming bridge.
+- **Today Next Move** — only distinct non-plan items render here. Active plan
+  timeline rows are not repeated.
 - **Upcoming** — items with future `starts_at` OR `destination="upcoming"`
   show grouped by Today/Tomorrow/This Week/Later/No Date.
 - **Upcoming/Holding** — plan-linked items prefer `/plan/[slug]`; unplanned

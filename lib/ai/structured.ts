@@ -16,18 +16,20 @@ export async function generateStructured<T>({
   prompt,
   schemaName,
   temperature = 0.2,
+  maxTokens = 4096,
 }: {
   system: string;
   prompt: string;
   schemaName: string;
   temperature?: number;
+  maxTokens?: number;
 }): Promise<T> {
   const client = getAnthropicClient();
   let response;
   try {
     response = await client.messages.create({
       model: DEFAULT_MODEL,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       temperature,
       system,
       messages: [

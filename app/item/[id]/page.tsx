@@ -563,6 +563,7 @@ function ActionsPanel({
                 action="activate"
                 label="Activate Plan"
                 variant="secondary"
+                redirectTo={`/plan/${planContext.planSlug ?? planContext.planId}`}
               />
             ) : null}
           </div>
