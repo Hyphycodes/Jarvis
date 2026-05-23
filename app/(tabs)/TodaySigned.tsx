@@ -24,25 +24,26 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
 
   return (
     <AppFrame>
-      <header className="flex flex-col gap-4 pt-7">
+      <header className="flex flex-col gap-4 pt-8">
         <div className="flex items-start justify-between gap-4">
-          <span className="text-[11px] uppercase tracking-editorial text-muted-gold/85">
+          <span className="lux-label">
             {payload?.hero.eyebrow ?? "Today"}
           </span>
-          <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/55">
+          <span className="text-[11px] uppercase tracking-[0.14em] text-warm-ivory/58">
             {payload?.hero.date ?? formatToday()}
           </span>
         </div>
-        <h1 className="mt-2 font-serif text-[52px] leading-[0.98] tracking-[-0.01em] text-warm-ivory">
+        <h1 className="mt-3 font-serif text-[56px] italic leading-[0.98] tracking-[-0.01em] text-warm-ivory">
           {payload?.hero.greeting ?? "Quiet day."}
         </h1>
-        <p className="mt-2 max-w-[35ch] text-[16px] font-medium leading-[1.55] text-warm-ivory/72">
+        <p className="mt-2 max-w-[35ch] text-[17px] leading-[1.55] text-warm-ivory/64">
           {payload?.hero.summary ?? "Nothing strong enough to surface yet."}
         </p>
       </header>
 
       {dayItems.length > 0 ? (
         <section className="mt-14 flex flex-col">
+          <div className="lux-divider mb-1 h-px w-full" />
           <SectionLabel>The Day</SectionLabel>
           <div className="mt-5">
             <Timeline items={dayItems} />
@@ -78,7 +79,7 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
         <div className="space-y-3 text-[13px] leading-[1.55] text-warm-ivory/70">
           {item.details ? <p>{item.details}</p> : null}
           {item.locationLine ? (
-            <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/40">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-warm-ivory/40">
               {item.locationLine}
             </div>
           ) : null}
@@ -95,7 +96,7 @@ function buildTimelineItems(payload?: TodayPayload): TimelineItem[] {
           {item.planSlug ? (
             <Link
               href={`/plan/${item.planSlug}`}
-              className="inline-flex items-center gap-1.5 rounded-full border border-muted-gold/40 bg-muted-gold/10 px-4 py-2 text-[10px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/20"
+              className="lux-action inline-flex items-center gap-1.5 px-4 py-2 text-[10px] uppercase tracking-[0.18em]"
             >
               Open plan <ArrowRight size={11} />
             </Link>
@@ -188,7 +189,7 @@ function UpcomingBridge({
         trailing={
           <Link
             href="/upcoming"
-            className="inline-flex items-center gap-1.5 text-[11px] tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+            className="inline-flex items-center gap-1.5 text-[11px] tracking-[0.18em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
           >
             Upcoming{count ? ` (${count})` : ""} <Arrow size={12} />
           </Link>
@@ -229,7 +230,7 @@ function CommandItemLink({
       className={
         "flex items-start justify-between gap-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012] " +
         (prominent
-          ? "mt-3 rounded-[10px] border border-white/[0.06] bg-white/[0.012] px-4 py-4"
+          ? "lux-surface mt-3 rounded-[var(--radius-card)] px-4 py-4"
           : compact
             ? "py-3"
             : "py-4")
@@ -256,7 +257,7 @@ function CommandItemLink({
           </div>
         ) : null}
       </div>
-      <div className="shrink-0 text-right text-[10px] uppercase leading-[1.6] tracking-editorial text-warm-ivory/38">
+      <div className="shrink-0 text-right text-[10px] uppercase leading-[1.6] tracking-[0.18em] text-warm-ivory/38">
         {eyebrow.length > 0 ? <div>{eyebrow.join(" · ")}</div> : null}
         <div className="text-muted-gold/60">
           {item.planSlug ? "plan" : item.destination} · {item.status}
@@ -269,16 +270,16 @@ function CommandItemLink({
 function GrabList({ items }: { items: GrabListEntry[] }) {
   const [open, setOpen] = useState(true);
   return (
-    <section className="mt-6 rounded-[10px] bg-soft-black/80">
+    <section className="lux-surface mt-7 rounded-[var(--radius-card)]">
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
         className="flex w-full items-center justify-between px-5 py-4"
         aria-expanded={open}
       >
-        <span className="flex items-center gap-3 text-[11px] uppercase tracking-editorial text-warm-ivory/65">
+        <span className="flex items-center gap-3 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/72">
           Grab List
-          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-[3px] border border-divider px-1.5 text-[10px] text-warm-ivory/70">
+          <span className="inline-flex h-5 min-w-5 items-center justify-center border border-white/[0.1] px-1.5 text-[10px] text-warm-ivory/70">
             {items.length}
           </span>
         </span>

@@ -78,14 +78,14 @@ export function CircleSigned() {
           <h1 className="font-serif text-[56px] italic leading-[1.02] tracking-[-0.01em] text-warm-ivory">
             Circle
           </h1>
-          <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
+          <span className="self-start pt-[10px] text-[11px] uppercase tracking-[0.16em] text-warm-ivory/58">
             May 17, 2025
           </span>
         </div>
-        <p className="max-w-[42ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
+        <p className="max-w-[42ch] text-[16px] leading-[1.5] text-warm-ivory/62">
           The people shaping your taste and creative work.
         </p>
-        <div className="h-px w-8 bg-muted-gold/40" />
+        <div className="h-px w-8 bg-muted-gold/35" />
       </header>
 
       <FilterRow active={filter} onChange={setFilter} />
@@ -119,7 +119,7 @@ export function CircleSigned() {
 
       <section className="mt-8 flex flex-col">
         <SectionLabel>Updates</SectionLabel>
-        <ul className="mt-3 flex flex-col rounded-[6px] bg-soft-black/70">
+        <ul className="lux-surface mt-3 flex flex-col overflow-hidden rounded-[var(--radius-card)]">
           {UPDATES.map((u, i) => (
             <UpdateRow key={u.id} {...u} divider={i !== UPDATES.length - 1} />
           ))}
@@ -127,10 +127,10 @@ export function CircleSigned() {
 
         <button
           type="button"
-          className="mt-5 flex items-center justify-between text-[11px] uppercase tracking-editorial text-warm-ivory/55 transition-opacity duration-300 ease-atmospheric hover:text-warm-ivory/80"
+          className="mt-5 flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-warm-ivory/55 transition-opacity duration-300 ease-atmospheric hover:text-warm-ivory/80"
         >
           <span>Add Note</span>
-          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-divider text-base leading-none text-warm-ivory/70">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.1] text-base leading-none text-warm-ivory/70">
             +
           </span>
         </button>
@@ -163,7 +163,7 @@ function FilterRow({
                 type="button"
                 onClick={() => onChange(f)}
                 className={
-                  "relative pb-1.5 text-[11px] uppercase tracking-editorial transition-opacity duration-300 ease-atmospheric " +
+                  "relative pb-1.5 text-[11px] uppercase tracking-[0.2em] transition-opacity duration-300 ease-atmospheric " +
                   (isActive
                     ? "text-warm-ivory"
                     : "text-warm-ivory/35 hover:text-warm-ivory/70")
@@ -173,7 +173,7 @@ function FilterRow({
                 {isActive ? (
                   <span
                     aria-hidden
-                    className="absolute -bottom-0 left-0 h-[2px] w-full bg-muted-gold"
+                    className="absolute -bottom-0 left-0 h-px w-full bg-muted-gold"
                   />
                 ) : null}
               </button>
@@ -202,7 +202,7 @@ function UpdateRow({
     <li
       className={
         "grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-4 " +
-        (divider ? "border-b border-white/[0.06]" : "")
+        (divider ? "border-b border-white/[0.065]" : "")
       }
     >
       <div
@@ -210,7 +210,7 @@ function UpdateRow({
         className="h-11 w-11 rounded-full border border-muted-gold/60"
         style={{
           background:
-            "radial-gradient(ellipse at 50% 35%, #2a2a2e 0%, #141416 70%, #0d0d0f 100%)",
+            "radial-gradient(ellipse at 50% 35%, rgba(246,239,221,0.12) 0%, #141411 70%, #090908 100%)",
         }}
       />
       <div className="min-w-0">
@@ -220,7 +220,7 @@ function UpdateRow({
         <div className="mt-0.5 text-[10px] uppercase tracking-editorial text-muted-gold/85">
           {role}
         </div>
-        <p className="mt-2 font-serif text-[14px] italic leading-[1.45] text-warm-ivory/70">
+        <p className="mt-2 text-[14px] leading-[1.45] text-warm-ivory/66">
           {note}
         </p>
       </div>

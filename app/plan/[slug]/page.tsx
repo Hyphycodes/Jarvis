@@ -44,7 +44,7 @@ export default async function DynamicPlanPage({
 
   return (
     <main
-      className="smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden bg-near-black px-6 text-warm-ivory"
+      className="lux-page smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden px-6 text-warm-ivory"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 32px)",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 48px)",
@@ -108,7 +108,7 @@ export default async function DynamicPlanPage({
         </section>
 
         {plan.whyThisFits ? (
-          <section className="mt-8 rounded-2xl border border-white/[0.06] bg-white/[0.01] px-5 py-4">
+          <section className="lux-surface-quiet mt-8 rounded-[var(--radius-card)] px-5 py-4">
             <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
               Why this fits
             </h2>
@@ -119,7 +119,7 @@ export default async function DynamicPlanPage({
         ) : null}
 
         {plan.primaryMove ? (
-          <section className="mt-4 rounded-2xl border border-muted-gold/20 bg-muted-gold/[0.045] px-5 py-4">
+          <section className="lux-surface mt-4 rounded-[var(--radius-card)] px-5 py-4">
             <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
               Primary move
             </h2>
@@ -198,7 +198,7 @@ export default async function DynamicPlanPage({
               {plan.timeline.map((t) => (
                 <li
                   key={t.id}
-                  className="flex items-start gap-4 rounded-xl border border-white/[0.05] bg-white/[0.01] px-4 py-3"
+                  className="lux-surface-quiet flex items-start gap-4 rounded-[var(--radius-soft)] px-4 py-3"
                 >
                   <div className="w-[68px] shrink-0 text-[11px] uppercase tracking-editorial text-muted-gold">
                     {t.time}
@@ -262,7 +262,7 @@ export default async function DynamicPlanPage({
           </section>
         ) : null}
 
-        <footer className="mt-12 border-t border-white/[0.05] pt-5 text-[11px] uppercase tracking-editorial text-warm-ivory/30">
+        <footer className="mt-12 border-t border-white/[0.065] pt-5 text-[11px] uppercase tracking-[0.2em] text-warm-ivory/30">
           {plan.confidence != null
             ? `Confidence ${Math.round(plan.confidence * 100)}%`
             : "Generated plan"}
@@ -338,7 +338,7 @@ function SectionLabel({ children }: { children: ReactNode }) {
 
 function EmptyBlock({ title, body }: { title: string; body: string }) {
   return (
-    <section className="mt-10 rounded-2xl border border-white/[0.05] bg-white/[0.01] px-5 py-4">
+    <section className="lux-surface-quiet mt-10 rounded-[var(--radius-card)] px-5 py-4">
       <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
         {title}
       </h2>
@@ -351,7 +351,7 @@ function EmptyBlock({ title, body }: { title: string; body: string }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] px-3 py-2">
+    <div className="lux-surface-quiet rounded-[var(--radius-soft)] px-3 py-2">
       <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/40">
         {label}
       </div>

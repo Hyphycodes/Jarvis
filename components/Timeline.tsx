@@ -49,7 +49,8 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
     <ol className="relative">
       <span
         aria-hidden
-        className="absolute left-[142px] top-4 bottom-4 w-px bg-warm-ivory/14"
+        className="absolute left-[142px] top-4 bottom-4 w-px"
+        style={{ background: "rgba(246,239,221,0.13)" }}
       />
       {items.map((item, i) => {
         const isOpen = open[item.id];
@@ -129,7 +130,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
               >
                 <span
                   className={
-                    "font-serif text-[30px] font-normal leading-[1.08] text-warm-ivory " +
+                    "font-serif text-[31px] font-normal leading-[1.08] text-warm-ivory " +
                     (isDone ? "text-warm-ivory/45 line-through decoration-warm-ivory/25" : "")
                   }
                 >
@@ -153,7 +154,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                   transition={{ duration: 0.28, ease }}
                   style={{ overflow: "hidden" }}
                 >
-                  <div className="grid grid-cols-[158px_1fr] gap-x-4 pb-7">
+                  <div className="grid grid-cols-[158px_1fr] gap-x-4 pb-8">
                     <div />
                     <div
                       role={item.href ? "link" : undefined}
@@ -161,10 +162,16 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                       onClick={onDetailTap}
                       onKeyDown={onDetailKeyDown}
                       className={
-                        item.href
+                        "border-l px-5 py-4 text-warm-ivory/72 " +
+                        (item.href
                           ? "cursor-pointer transition duration-300 ease-atmospheric hover:translate-y-[-1px] active:translate-y-px"
-                          : undefined
+                          : "")
                       }
+                      style={{
+                        borderColor: "rgba(208,173,104,0.32)",
+                        background:
+                          "linear-gradient(90deg, rgba(184,137,55,0.04), transparent 74%)",
+                      }}
                     >
                       {item.detail}
                     </div>
@@ -174,7 +181,10 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
             </AnimatePresence>
 
             {!isLast ? (
-              <div className="ml-[158px] h-px bg-divider/45" />
+              <div
+                className="ml-[158px] h-px"
+                style={{ background: "rgba(246,239,221,0.065)" }}
+              />
             ) : null}
           </li>
         );
@@ -210,7 +220,7 @@ function DotToggle({
         <span
           className="relative flex h-3.5 w-3.5 items-center justify-center rounded-full border border-muted-gold transition-all"
           style={{
-            boxShadow: "0 0 12px rgba(184,146,74,0.4)",
+            boxShadow: "0 0 12px rgba(184,137,55,0.34)",
             transitionDuration: "200ms",
             transitionTimingFunction: "cubic-bezier(0.16,1,0.3,1)",
           }}

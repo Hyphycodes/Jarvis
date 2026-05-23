@@ -12,6 +12,13 @@ const LIFE_CATEGORIES: Array<{
   status: string;
   tone: "green" | "amber";
   description: string;
+  currentRead: string;
+  recommendedRep: {
+    title: string;
+    sub: string;
+    meta: string;
+    icon: (props: SVGProps<SVGSVGElement>) => ReactNode;
+  };
   icon: (props: SVGProps<SVGSVGElement>) => ReactNode;
 }> = [
   {
@@ -20,6 +27,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Active",
     tone: "green",
     description: "Strength, sunlight, mobility. Earn your nights.",
+    currentRead: "Strong body, clear head. Keep it physical and simple.",
+    recommendedRep: {
+      title: "Play basketball outside",
+      sub: "Get a recovery block in.",
+      meta: "45-60 min · Free · After work",
+      icon: BasketballIcon,
+    },
     icon: BodyIcon,
   },
   {
@@ -28,6 +42,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Needs a rep",
     tone: "amber",
     description: "Tools you can actually use. Build something this week.",
+    currentRead: "Good tools get dull if they sit. Choose one useful rep.",
+    recommendedRep: {
+      title: "Gun range session",
+      sub: "Controlled practice, not noise.",
+      meta: "60 min · Paid · Weekend",
+      icon: SkillIcon,
+    },
     icon: SkillIcon,
   },
   {
@@ -36,6 +57,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Warm",
     tone: "amber",
     description: "Music, frames, crates. Keep the lane open.",
+    currentRead: "The creative system is warm. Keep the references moving.",
+    recommendedRep: {
+      title: "DJ crate cleanup",
+      sub: "One clean pass through the lane.",
+      meta: "45 min · Free · Evening",
+      icon: RecordIcon,
+    },
     icon: CreativeIcon,
   },
   {
@@ -44,6 +72,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Warm",
     tone: "amber",
     description: "Land, deals, leverage. Slow compounding moves.",
+    currentRead: "Ownership is a slow pressure. Keep the signal close.",
+    recommendedRep: {
+      title: "Review one land listing",
+      sub: "Run a quick deal screen.",
+      meta: "30 min · Free · Weekend morning",
+      icon: MapPinSmallIcon,
+    },
     icon: OwnershipIcon,
   },
   {
@@ -52,6 +87,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Warm",
     tone: "amber",
     description: "Watches, menswear, dining. Refine the standard.",
+    currentRead: "Taste is a filter. Sharpen it without chasing noise.",
+    recommendedRep: {
+      title: "Menswear reference pass",
+      sub: "Save one useful silhouette.",
+      meta: "20 min · Free · Quiet block",
+      icon: TasteIcon,
+    },
     icon: TasteIcon,
   },
   {
@@ -60,6 +102,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Warm",
     tone: "amber",
     description: "Small circle, deep contact. Reach for one this week.",
+    currentRead: "Small circle, real contact. Keep one line warm.",
+    recommendedRep: {
+      title: "Text one person",
+      sub: "Reach for someone worth keeping close.",
+      meta: "10 min · Free · Today",
+      icon: RelationshipsIcon,
+    },
     icon: RelationshipsIcon,
   },
   {
@@ -68,6 +117,13 @@ const LIFE_CATEGORIES: Array<{
     status: "Protected",
     tone: "green",
     description: "Quiet. Faith. Solitude. The non-negotiable hour.",
+    currentRead: "Not every quiet space needs to be filled.",
+    recommendedRep: {
+      title: "Quiet recovery night",
+      sub: "Protect the room and keep the board clean.",
+      meta: "Evening · Free · Home",
+      icon: PeaceIcon,
+    },
     icon: PeaceIcon,
   },
 ];
@@ -263,7 +319,7 @@ function ArrowRightTiny() {
 // ── The Build Section ─────────────────────────────────────────────────────
 
 function BuildSection() {
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>("body");
 
   return (
     <section className="mt-10">
@@ -323,15 +379,17 @@ function CategoryAccordion({
   onToggle: () => void;
 }) {
   const Icon = category.icon;
+  const RepIcon = category.recommendedRep.icon;
   const dotColor =
     category.tone === "green" ? "var(--status-green)" : "var(--status-amber)";
 
   return (
     <div
+      className={open ? "lux-surface" : "lux-surface-quiet"}
       style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-        borderRadius: "12px",
+        borderColor: open ? "var(--border-strong)" : "var(--border)",
+        borderRadius: "var(--radius-card)",
+        overflow: "hidden",
       }}
     >
       <button
@@ -340,14 +398,20 @@ function CategoryAccordion({
         aria-expanded={open}
         className="flex w-full items-center gap-4 px-4 py-[14px] text-left"
       >
-        <span className="shrink-0">
+        <span
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+          style={{
+            border: "1px solid var(--gold-dim)",
+            background: "rgba(184,137,55,0.035)",
+          }}
+        >
           <Icon width={22} height={22} stroke="var(--gold)" strokeWidth={1.5} fill="none" />
         </span>
         <span
           className="flex-1 font-serif"
           style={{
             color: "var(--text-primary)",
-            fontSize: "17px",
+            fontSize: "19px",
             lineHeight: 1.1,
           }}
         >
@@ -357,9 +421,9 @@ function CategoryAccordion({
           <span
             className="font-mono uppercase"
             style={{
-              color: "var(--text-muted)",
+              color: category.tone === "green" ? "var(--status-green)" : "var(--status-amber)",
               fontSize: "10px",
-              letterSpacing: "0.12em",
+              letterSpacing: "0.08em",
             }}
           >
             {category.status}
@@ -382,30 +446,88 @@ function CategoryAccordion({
       <div
         className="overflow-hidden transition-[max-height,opacity] duration-300 ease-atmospheric"
         style={{
-          maxHeight: open ? "120px" : "0px",
+          maxHeight: open ? "430px" : "0px",
           opacity: open ? 1 : 0,
         }}
       >
         <div
-          className="px-4 pb-[14px]"
-          style={{ paddingLeft: "calc(22px + 16px + 16px)" }}
+          className="px-6 pb-6 pt-2"
         >
-          <p
-            className="text-[13px] leading-[1.5]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {category.description}
-          </p>
+          <div className="lux-divider h-px w-full" />
+          <div className="mt-5 grid grid-cols-[1fr_auto] gap-4">
+            <div>
+              <div className="lux-label">Current Read</div>
+              <p
+                className="mt-3 max-w-[21ch] font-serif text-[23px] leading-[1.15]"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {category.currentRead}
+              </p>
+            </div>
+            <div
+              aria-hidden
+              className="hidden h-[92px] w-[96px] items-center justify-center opacity-75 sm:flex"
+              style={{ color: "var(--gold)" }}
+            >
+              <Icon width={86} height={86} stroke="currentColor" strokeWidth={1.1} fill="none" />
+            </div>
+          </div>
+          <div className="mt-5 h-px w-full bg-white/[0.07]" />
+          <div className="mt-5">
+            <div className="lux-label">Recommended Rep</div>
+            <div className="mt-4 grid grid-cols-[52px_1fr] gap-4">
+              <span
+                className="flex h-12 w-12 items-center justify-center rounded-full"
+                style={{
+                  border: "1px solid var(--gold-dim)",
+                  background: "rgba(184,137,55,0.04)",
+                }}
+              >
+                <RepIcon
+                  width={26}
+                  height={26}
+                  stroke="var(--gold)"
+                  strokeWidth={1.4}
+                  fill="none"
+                />
+              </span>
+              <div>
+                <div
+                  className="text-[16px] leading-tight"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {category.recommendedRep.title}
+                </div>
+                <div className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
+                  {category.recommendedRep.sub}
+                </div>
+                <div className="mt-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
+                  {category.recommendedRep.meta}
+                </div>
+              </div>
+            </div>
+          </div>
           <button
             type="button"
-            className="mt-3 inline-flex items-center gap-1.5 font-mono uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+            className="lux-action mt-5 flex min-h-12 w-full items-center justify-between px-5 font-mono uppercase"
             style={{
-              color: "var(--gold)",
               fontSize: "11px",
-              letterSpacing: "0.12em",
+              letterSpacing: "0.16em",
             }}
           >
-            Log Rep <ArrowRightTiny />
+            <span>Open Rep Plan</span>
+            <ArrowRightTiny />
+          </button>
+          <button
+            type="button"
+            className="lux-action mt-3 flex min-h-12 w-full items-center justify-between px-5 font-mono uppercase"
+            style={{
+              fontSize: "11px",
+              letterSpacing: "0.16em",
+            }}
+          >
+            <span>Create Signal</span>
+            <ArrowRightTiny />
           </button>
         </div>
       </div>

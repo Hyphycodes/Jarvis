@@ -18,7 +18,7 @@ export function RefreshButton() {
       type="button"
       onClick={() => startTransition(() => router.refresh())}
       disabled={pending}
-      className="block border border-divider px-4 py-3 text-center text-[11px] uppercase tracking-editorial text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:border-warm-ivory/40 disabled:opacity-50"
+      className="lux-action block px-4 py-3 text-center text-[11px] uppercase tracking-[0.18em] disabled:opacity-50"
     >
       {pending ? "Refreshing…" : "Recheck status"}
     </button>
@@ -82,7 +82,7 @@ export function WeeklyRhythmForm({
   return (
     <form
       action={formAction}
-      className="rounded-md border border-divider/55 bg-soft-black/25 px-4 py-4"
+      className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -109,7 +109,7 @@ export function WeeklyRhythmForm({
         {RHYTHM_DAYS.map((day) => (
           <label
             key={day.value}
-            className="inline-flex min-h-9 items-center gap-2 rounded-full border border-divider/60 px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/65"
+            className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/[0.09] px-3 text-[11px] uppercase tracking-[0.18em] text-warm-ivory/65"
           >
             <input
               type="checkbox"
@@ -156,7 +156,7 @@ export function WeeklyRhythmForm({
         </div>
       ) : null}
 
-      <div className="mt-5 flex items-center justify-between gap-4 border-t border-divider/45 pt-4">
+      <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/[0.075] pt-4">
         <p className="text-[12px] leading-[1.45] text-warm-ivory/45">
           Mon-Fri, {formatRhythmTime(rhythm.leave_home)} to{" "}
           {formatRhythmTime(rhythm.arrive_home)}.
@@ -190,7 +190,7 @@ function SaveRhythmButton() {
     <button
       type="submit"
       disabled={pending}
-      className="min-h-10 shrink-0 border border-muted-gold/45 px-4 text-[10px] uppercase tracking-editorial text-muted-gold transition duration-300 ease-atmospheric hover:border-muted-gold active:translate-y-px disabled:opacity-55"
+      className="lux-action min-h-10 shrink-0 px-4 text-[10px] uppercase tracking-[0.18em] active:translate-y-px disabled:opacity-55"
     >
       {pending ? "Saving" : "Save"}
     </button>
@@ -215,7 +215,7 @@ function TimeField({
         type="time"
         name={name}
         defaultValue={value}
-        className="min-h-11 rounded-md border border-divider/60 bg-near-black px-3 text-[14px] text-warm-ivory outline-none transition-colors duration-300 ease-atmospheric focus:border-muted-gold/55"
+        className="min-h-11 rounded-[var(--radius-soft)] border border-white/[0.09] bg-black/25 px-3 text-[14px] text-warm-ivory outline-none transition-colors duration-300 ease-atmospheric focus:border-muted-gold/55"
       />
     </label>
   );
@@ -239,7 +239,7 @@ function TextField({
         type="text"
         name={name}
         defaultValue={value}
-        className="min-h-11 rounded-md border border-divider/60 bg-near-black px-3 text-[14px] text-warm-ivory outline-none transition-colors duration-300 ease-atmospheric focus:border-muted-gold/55"
+        className="min-h-11 rounded-[var(--radius-soft)] border border-white/[0.09] bg-black/25 px-3 text-[14px] text-warm-ivory outline-none transition-colors duration-300 ease-atmospheric focus:border-muted-gold/55"
       />
     </label>
   );

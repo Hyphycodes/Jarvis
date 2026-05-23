@@ -59,7 +59,7 @@ export default async function ItemDetailPage({
 
   return (
     <main
-      className="smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden bg-near-black px-5 text-warm-ivory"
+      className="lux-page smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden px-5 text-warm-ivory"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 24px)",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 48px)",
@@ -98,7 +98,7 @@ export default async function ItemDetailPage({
 
         {isRich && brief.practicalFit.length > 0 ? (
           <EditorialSection title="Practical Fit">
-            <div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.08] bg-white/[0.018]">
+            <div className="lux-surface-quiet divide-y divide-white/[0.065] overflow-hidden rounded-[var(--radius-card)]">
               {brief.practicalFit.map((row) => (
                 <PracticalRow key={`${row.label}-${row.value}`} row={row} />
               ))}
@@ -124,7 +124,7 @@ export default async function ItemDetailPage({
         />
 
         {!item.briefing ? (
-          <section className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.012] px-4 py-4">
+          <section className="lux-surface-quiet mt-5 rounded-[var(--radius-card)] px-4 py-4">
             <p className="text-[13px] leading-[1.5] text-warm-ivory/48">
               This item is using a local fallback brief. Refresh only when you
               want Jarvis to rewrite the decision frame.
@@ -192,7 +192,7 @@ function HeroMedia({
   title: string;
 }) {
   return (
-    <section className="mt-7 overflow-hidden rounded-[1.35rem] border border-white/[0.08] bg-[#101011] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+    <section className="lux-surface mt-7 overflow-hidden rounded-[var(--radius-card)] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
       {media.heroUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -259,7 +259,7 @@ function QuickFacts({ facts }: { facts: ConsiderationBriefView["facts"] }) {
 
 function BestMoveCard({ brief }: { brief: ConsiderationBriefView }) {
   return (
-    <section className="mt-7 rounded-[1.35rem] border border-muted-gold/20 bg-[linear-gradient(135deg,rgba(214,168,91,0.08),rgba(255,255,255,0.015)_46%,rgba(0,0,0,0.1))] px-5 py-5">
+    <section className="lux-surface mt-7 rounded-[var(--radius-card)] px-5 py-5">
       <div className="grid grid-cols-[56px_1fr] gap-5">
         <div className="flex h-14 w-14 items-center justify-center rounded-full border border-muted-gold/35 text-muted-gold">
           <Sparkles size={24} strokeWidth={1.35} />
@@ -385,7 +385,7 @@ function LocationModule({
   location: NonNullable<ConsiderationBriefView["location"]>;
 }) {
   return (
-    <section className="mt-8 overflow-hidden rounded-[1.35rem] border border-white/[0.08] bg-white/[0.014]">
+    <section className="lux-surface mt-8 overflow-hidden rounded-[var(--radius-card)]">
       <div className="grid min-h-[172px] grid-cols-1 sm:grid-cols-[0.88fr_1.12fr]">
         <div className="p-5">
           <div className="text-[10px] uppercase tracking-[0.32em] text-muted-gold">
@@ -430,7 +430,7 @@ function ValueSignal({
   signal: NonNullable<ConsiderationBriefView["valueSignal"]>;
 }) {
   return (
-    <section className="mt-5 rounded-[1.35rem] border border-white/[0.08] bg-white/[0.014] px-5 py-5">
+    <section className="lux-surface mt-5 rounded-[var(--radius-card)] px-5 py-5">
       <div className="grid grid-cols-[54px_1fr_auto] items-center gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-full border border-muted-gold/35 text-muted-gold">
           <Gem size={24} strokeWidth={1.25} />
@@ -467,7 +467,7 @@ function SourceEvidence({
   evidence: NonNullable<ConsiderationBriefView["sourceEvidence"]>;
 }) {
   return (
-    <section className="mt-10 rounded-[1.35rem] border border-white/[0.08] bg-white/[0.014] px-5 py-5">
+    <section className="lux-surface mt-10 rounded-[var(--radius-card)] px-5 py-5">
       <div className="grid grid-cols-[54px_1fr] gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-full border border-muted-gold/35 text-muted-gold">
           <Flag size={22} strokeWidth={1.25} />
@@ -548,14 +548,14 @@ function ActionsPanel({
         Actions
       </div>
       {planContext.planSlug || planContext.planId ? (
-        <div className="mb-3 rounded-2xl border border-muted-gold/20 bg-muted-gold/[0.04] p-3">
+        <div className="lux-surface mb-3 rounded-[var(--radius-card)] p-3">
           <div className="mb-2 px-1 text-[10px] uppercase tracking-[0.28em] text-muted-gold">
             {planLabel(planContext.planStatus)}
           </div>
           <div className="grid gap-3">
             <Link
               href={`/plan/${planContext.planSlug ?? planContext.planId}`}
-              className="flex min-h-[56px] items-center justify-center rounded-2xl border border-muted-gold/35 bg-muted-gold/[0.08] px-5 text-[11px] uppercase tracking-[0.28em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:bg-muted-gold/[0.14]"
+              className="lux-action flex min-h-[56px] items-center justify-center rounded-[var(--radius-card)] px-5 text-[11px] uppercase tracking-[0.28em]"
             >
               {planContext.planStatus === "active" ? "View Active Plan" : "View Plan"}
             </Link>
@@ -654,7 +654,7 @@ function PrimaryAction({
 
 function DebugMetadata({ debug }: { debug: ConsiderationBriefView["debug"] }) {
   return (
-    <details className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.012] px-4 py-4 text-[11px] text-warm-ivory/42">
+    <details className="lux-surface-quiet mt-5 rounded-[var(--radius-card)] px-4 py-4 text-[11px] text-warm-ivory/42">
       <summary className="flex cursor-pointer list-none items-center justify-between uppercase tracking-[0.24em] text-warm-ivory/48">
         Debug metadata
         <ChevronDown size={14} />

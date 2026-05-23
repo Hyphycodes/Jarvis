@@ -189,16 +189,16 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
               className="pulse-dot mb-2 inline-block h-1.5 w-1.5 rounded-full bg-muted-gold"
             />
           </div>
-          <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
+          <span className="self-start pt-[10px] text-[11px] uppercase tracking-[0.16em] text-warm-ivory/58">
             {formatToday()}
           </span>
         </div>
-        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/65">
+        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/62">
           Curated signal for your taste and trajectory.
           <br />
           Not everything. Just what&apos;s worth your time.
         </p>
-        <div className="h-px w-8 bg-muted-gold/40" />
+        <div className="h-px w-8 bg-muted-gold/35" />
       </header>
 
       <FilterRow active={filter} onChange={setFilter} />
@@ -262,7 +262,7 @@ function FilterRow({
                 type="button"
                 onClick={() => onChange(f)}
                 className={
-                  "relative pb-1.5 text-[11px] uppercase tracking-editorial transition-opacity duration-300 ease-atmospheric " +
+                  "relative pb-1.5 text-[11px] uppercase tracking-[0.2em] transition-opacity duration-300 ease-atmospheric " +
                   (isActive
                     ? "text-warm-ivory"
                     : "text-warm-ivory/35 hover:text-warm-ivory/70")
@@ -272,7 +272,7 @@ function FilterRow({
                 {isActive ? (
                   <span
                     aria-hidden
-                    className="absolute -bottom-0 left-0 h-[2px] w-full bg-muted-gold"
+                    className="absolute -bottom-0 left-0 h-px w-full bg-muted-gold"
                   />
                 ) : null}
               </button>
@@ -334,13 +334,13 @@ function RadarCard({
   return (
     <article
       className={
-        "rounded-[18px] border border-white/[0.08] bg-white/[0.018] transition-opacity duration-500 ease-atmospheric " +
+        "lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric " +
         (passing ? "fade-up-out" : "opacity-100")
       }
     >
       <Link
         href={`/item/${card.id}`}
-        className="grid grid-cols-[96px_1fr] gap-4 p-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012] sm:grid-cols-[124px_1fr]"
+        className="grid grid-cols-[88px_1fr] gap-4 p-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012] sm:grid-cols-[112px_1fr]"
         aria-label={`Open ${card.title}`}
       >
         <CardMedia
@@ -353,14 +353,14 @@ function RadarCard({
             {card.verdict ? (
               <span
                 className={
-                  "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-editorial " +
+                  "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] " +
                   verdictClass(card.verdictTone)
                 }
               >
                 {card.verdict}
               </span>
             ) : null}
-            <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-muted-gold">
               {card.category}
             </span>
             {card.purposeLabel ? (
@@ -369,14 +369,14 @@ function RadarCard({
               </span>
             ) : null}
           </div>
-          <h2 className="mt-3 font-serif text-[27px] font-normal leading-[1.08] tracking-[-0.01em] text-warm-ivory">
+          <h2 className="mt-3 font-serif text-[25px] font-normal leading-[1.08] tracking-[-0.01em] text-warm-ivory">
             {card.title}
           </h2>
-          <p className="mt-2 text-[13px] leading-[1.45] text-warm-ivory/72">
+          <p className="mt-2 text-[13px] leading-[1.45] text-warm-ivory/68">
             {card.body}
           </p>
           {card.take ? (
-            <p className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/52">
+            <p className="mt-2 text-[12px] leading-[1.45] text-warm-ivory/50">
               {card.take}
             </p>
           ) : null}
@@ -395,19 +395,19 @@ function RadarCard({
           {error}
         </div>
       ) : null}
-      <div className={`grid border-t border-white/[0.06] ${card.planSlug ? "grid-cols-3" : "grid-cols-2"}`}>
+      <div className={`grid border-t border-white/[0.065] ${card.planSlug ? "grid-cols-3" : "grid-cols-2"}`}>
         <button
           type="button"
           onClick={handleSave}
           disabled={pending}
-          className="border-r border-white/[0.06] py-4 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-60"
+          className="border-r border-white/[0.065] py-4 text-[11px] uppercase tracking-[0.2em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-60"
         >
           {saved ? "✓" : "Save"}
         </button>
         {card.planSlug ? (
           <Link
             href={`/plan/${card.planSlug}`}
-            className="border-r border-white/[0.06] py-4 text-center text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+            className="border-r border-white/[0.065] py-4 text-center text-[11px] uppercase tracking-[0.2em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
           >
             View plan
           </Link>
@@ -416,7 +416,7 @@ function RadarCard({
           type="button"
           onClick={handlePass}
           disabled={pending}
-          className="py-4 text-[11px] uppercase tracking-editorial text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
+          className="py-4 text-[11px] uppercase tracking-[0.2em] text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
         >
           Pass
         </button>
@@ -472,7 +472,7 @@ function CardMedia({
   const [failed, setFailed] = useState(false);
   if (imageUrl && !failed) {
     return (
-      <div className="aspect-[4/5] overflow-hidden rounded-xl border border-white/[0.06] bg-charcoal">
+      <div className="aspect-[4/5] overflow-hidden rounded-[var(--radius-soft)] border border-white/[0.065] bg-charcoal">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imageUrl}
@@ -487,7 +487,7 @@ function CardMedia({
   return (
     <div
       aria-hidden
-      className="aspect-[4/5] overflow-hidden rounded-xl border border-white/[0.06] bg-charcoal"
+      className="aspect-[4/5] overflow-hidden rounded-[var(--radius-soft)] border border-white/[0.065] bg-charcoal"
       style={{
         backgroundImage:
           placeholderGradient(placeholderKind),

@@ -49,7 +49,7 @@ export default async function AccountPage() {
 
   return (
     <main
-      className="smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden bg-near-black px-6 text-warm-ivory"
+      className="lux-page smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden px-6 text-warm-ivory"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 32px)",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 36px)",
@@ -57,7 +57,7 @@ export default async function AccountPage() {
     >
       <MotionPage>
       <header className="flex items-baseline justify-between">
-        <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+        <span className="lux-label">
           Account
         </span>
         <Link
@@ -86,14 +86,7 @@ export default async function AccountPage() {
             type="button"
             className="inline-flex items-center gap-2 text-[12px] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
           >
-            <span
-              aria-hidden
-              className="h-2.5 w-2.5 rounded-full"
-              style={{
-                background:
-                  "linear-gradient(140deg, #2E5BDB 0%, #1E3FA8 100%)",
-              }}
-            />
+            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-muted-gold/70" />
             Edit color
           </button>
         </div>
@@ -169,7 +162,7 @@ export default async function AccountPage() {
       </nav>
 
       <section className="mt-10">
-        <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
+        <div className="lux-label">
           Account State
         </div>
         <AccountStateCard
@@ -250,9 +243,9 @@ function Avatar() {
       className="h-[112px] w-[112px] rounded-full"
       style={{
         background:
-          "radial-gradient(70% 70% at 30% 30%, #3B6EE8 0%, #1E3FA8 55%, #0F2779 100%)",
+          "radial-gradient(70% 70% at 30% 30%, rgba(208,173,104,0.55) 0%, rgba(184,137,55,0.22) 48%, #11100d 100%)",
         boxShadow:
-          "inset 0 -10px 30px rgba(0,0,0,0.35), 0 12px 28px -16px rgba(15,39,121,0.55)",
+          "inset 0 -10px 30px rgba(0,0,0,0.45), 0 18px 34px -22px rgba(184,137,55,0.45)",
       }}
       aria-hidden
     />
@@ -261,7 +254,7 @@ function Avatar() {
 
 function RolePill({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center rounded-md border border-muted-gold/40 px-2.5 py-1 text-[10px] uppercase tracking-editorial text-muted-gold">
+    <span className="inline-flex items-center rounded-[var(--radius-soft)] border border-muted-gold/35 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-gold">
       {label}
     </span>
   );
@@ -281,7 +274,7 @@ function AccountNavRow({
   return (
     <PressLink
       href={href}
-      className="group flex items-center gap-4 border-b border-[rgba(255,250,240,0.06)] py-5 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
+      className="group flex items-center gap-4 border-b border-[rgba(246,239,221,0.065)] py-5 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.014]"
     >
       <IconWell>
         <span className="text-muted-gold">{icon}</span>
@@ -307,7 +300,7 @@ function SignOutRow() {
   return (
     <PressFormButton
       action={signOut}
-      className="group flex w-full items-center gap-4 border-b border-[rgba(255,250,240,0.06)] py-5 text-left transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
+      className="group flex w-full items-center gap-4 border-b border-[rgba(246,239,221,0.065)] py-5 text-left transition-colors duration-300 ease-atmospheric hover:bg-white/[0.014]"
     >
       <IconWell>
         <span className="text-[#E07A6E]">
@@ -333,7 +326,7 @@ function SignOutRow() {
 
 function IconWell({ children }: { children: ReactNode }) {
   return (
-    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.02]">
+    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.018]">
       {children}
     </span>
   );
@@ -354,8 +347,7 @@ function AccountStateCard({
 }) {
   return (
     <div
-      className="mt-4 rounded-2xl bg-white/[0.015] px-5 py-2"
-      style={{ border: "1px solid rgba(255, 250, 240, 0.08)" }}
+      className="lux-surface mt-4 rounded-[var(--radius-card)] px-5 py-2"
     >
       <StateRow
         icon={<SessionDot active={sessionActive} />}

@@ -52,21 +52,21 @@ export function BottomNav({
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px]"
       style={{
-        background: "var(--bg)",
-        borderTop: "1px solid var(--border)",
+        background:
+          "linear-gradient(180deg, rgba(6,6,5,0.92) 0%, var(--bg) 38%)",
+        borderTop: "1px solid rgba(246,239,221,0.11)",
         paddingBottom: "env(safe-area-inset-bottom)",
-        // No shadow. No backdrop-blur. Solid.
       }}
     >
       <div
         className="flex items-center justify-between gap-2 px-6"
-        style={{ height: "60px" }}
+        style={{ height: "58px" }}
       >
         <ul className="grid flex-1 grid-cols-4 items-center">
           {TABS.map((tab, idx) => {
             const isActive = tab.label === routeActive;
             const labelClass =
-              "uppercase tracking-[0.12em] text-[10px] font-mono transition-colors duration-300 ease-atmospheric";
+              "uppercase tracking-[0.16em] text-[10px] transition-colors duration-300 ease-atmospheric";
             const content = (
               <span className="relative inline-flex flex-col items-center">
                 <span
@@ -127,8 +127,9 @@ export function BottomNav({
           onClick={onMic}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-atmospheric active:scale-95"
           style={{
-            border: "1.5px solid var(--gold)",
+            border: "1px solid rgba(208,173,104,0.72)",
             color: "var(--gold)",
+            background: "rgba(184,137,55,0.035)",
           }}
         >
           <Mic size={15} />

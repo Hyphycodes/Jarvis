@@ -34,7 +34,7 @@ export default async function IntegrationsPage() {
 
   return (
     <main
-      className="smooth-page mx-auto min-h-[100dvh] w-full max-w-[520px] overflow-x-hidden bg-near-black px-6 text-warm-ivory"
+      className="lux-page smooth-page mx-auto min-h-[100dvh] w-full max-w-[520px] overflow-x-hidden px-6 text-warm-ivory"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 28px)",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
@@ -44,7 +44,7 @@ export default async function IntegrationsPage() {
       <header>
         <div className="flex items-center gap-1">
           <BackButton fallbackHref="/account" />
-          <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+          <span className="lux-label">
             Integrations
           </span>
         </div>
@@ -62,7 +62,7 @@ export default async function IntegrationsPage() {
         {CATEGORIES.map((category) => (
           <article
             key={category.title}
-            className="rounded-md border border-divider/55 bg-soft-black/25 px-4 py-4"
+            className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4"
           >
             <div className="flex items-start justify-between gap-5">
               <div>
@@ -73,7 +73,7 @@ export default async function IntegrationsPage() {
                   {category.copy}
                 </p>
               </div>
-              <span className="shrink-0 rounded-full border border-divider px-3 py-1 text-[9px] uppercase tracking-editorial text-warm-ivory/42">
+              <span className="shrink-0 rounded-full border border-white/[0.09] px-3 py-1 text-[9px] uppercase tracking-[0.18em] text-warm-ivory/42">
                 Not connected yet.
               </span>
             </div>

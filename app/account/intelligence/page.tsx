@@ -56,7 +56,7 @@ export default async function IntelligencePage() {
 
   return (
     <main
-      className="smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden bg-near-black px-6 text-warm-ivory"
+      className="lux-page smooth-page mx-auto min-h-[100dvh] w-full max-w-[680px] overflow-x-hidden px-6 text-warm-ivory"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 32px)",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 36px)",
@@ -74,7 +74,7 @@ export default async function IntelligencePage() {
         </header>
 
         <section className="mt-6">
-          <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+          <span className="lux-label">
             Intelligence
           </span>
           <h1 className="mt-2 font-serif text-[52px] italic leading-[1.0] tracking-[-0.01em] text-warm-ivory">
@@ -89,7 +89,7 @@ export default async function IntelligencePage() {
 
         {/* Radar status card */}
         {radarStats ? (
-          <section className="mb-6 rounded-2xl border border-white/[0.06] bg-white/[0.01] px-5 py-4">
+          <section className="lux-surface mb-6 rounded-[var(--radius-card)] px-5 py-4">
             <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
               Radar Status
             </h2>
@@ -113,7 +113,7 @@ export default async function IntelligencePage() {
         ) : null}
 
         {/* Refresh Radar */}
-        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <section className="lux-surface rounded-[var(--radius-card)] p-5">
           <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
             Ambient Runs
           </h2>
@@ -150,7 +150,7 @@ export default async function IntelligencePage() {
             />
             <CleanRadarButton />
           </div>
-          <div className="mt-5 border-t border-white/[0.05] pt-4">
+          <div className="mt-5 border-t border-white/[0.07] pt-4">
             <RefreshRadarButton forceAllowed={isOwner} />
           </div>
         </section>
@@ -159,7 +159,7 @@ export default async function IntelligencePage() {
         <section className="mt-8">
           <Link
             href="/account/history#holding"
-            className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.01] px-5 py-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.025]"
+            className="lux-surface-quiet flex items-center justify-between rounded-[var(--radius-card)] px-5 py-4 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.025]"
           >
             <div>
               <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
@@ -181,7 +181,7 @@ export default async function IntelligencePage() {
           <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
             Services
           </h2>
-          <ul className="mt-3 flex flex-col divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+          <ul className="lux-surface-quiet mt-3 flex flex-col divide-y divide-white/[0.065] overflow-hidden rounded-[var(--radius-card)]">
             {services.map((s) => (
               <li
                 key={s.label}
@@ -262,7 +262,7 @@ function StatPill({
   cap?: number;
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2 text-center">
+    <div className="lux-surface-quiet rounded-[var(--radius-soft)] px-3 py-2 text-center">
       <div className="text-[18px] font-medium text-warm-ivory">
         {value}
         {cap != null ? (
@@ -382,7 +382,7 @@ function LastExplorationPanel({ run }: { run: BrainDecisionRunRow }) {
       <p className="mt-2 text-[12px] text-warm-ivory/45">
         What Jarvis chose to be curious about on the last refresh.
       </p>
-      <ul className="mt-3 flex flex-col divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+      <ul className="lux-surface-quiet mt-3 flex flex-col divide-y divide-white/[0.065] overflow-hidden rounded-[var(--radius-card)]">
         {lanes.map((lane) => (
           <li key={lane.id} className="px-5 py-3">
             <div className="flex items-baseline justify-between gap-3">

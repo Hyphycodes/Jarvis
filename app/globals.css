@@ -4,24 +4,32 @@
 
 :root {
   /* Sprint 4 design tokens (new — these are authoritative going forward) */
-  --bg: #0a0a08;
-  --surface: rgba(255, 255, 255, 0.03);
-  --border: rgba(255, 255, 255, 0.07);
-  --text-primary: #f0ece0;
-  --text-muted: rgba(240, 236, 224, 0.45);
-  --gold: #b8922a;
-  --gold-dim: rgba(184, 146, 42, 0.55);
-  --status-green: #4a7c59;
-  --status-amber: #b8922a;
+  --bg: #060605;
+  --surface: rgba(246, 239, 221, 0.025);
+  --surface-elevated: rgba(246, 239, 221, 0.04);
+  --surface-warm: rgba(184, 137, 55, 0.045);
+  --border: rgba(246, 239, 221, 0.065);
+  --border-strong: rgba(184, 137, 55, 0.24);
+  --text-primary: #f3eddf;
+  --text-muted: rgba(221, 211, 194, 0.52);
+  --text-faint: rgba(221, 211, 194, 0.34);
+  --gold: #b88937;
+  --gold-dim: rgba(184, 137, 55, 0.5);
+  --gold-soft: #d0ad68;
+  --status-green: #6cab67;
+  --status-amber: #c79a49;
+  --status-protected: #78ad68;
+  --radius-card: 12px;
+  --radius-soft: 8px;
 
   /* Legacy tokens (preserved for existing components) */
-  --color-near-black: #0a0a08;
-  --color-soft-black: #111113;
-  --color-charcoal: #1a1a1c;
-  --color-warm-ivory: #f0ece0;
-  --color-muted-gold: #b8922a;
-  --color-soft-gold: #c9a96e;
-  --color-divider: #2a2a2e;
+  --color-near-black: #060605;
+  --color-soft-black: #0d0d0b;
+  --color-charcoal: #151511;
+  --color-warm-ivory: #f3eddf;
+  --color-muted-gold: #b88937;
+  --color-soft-gold: #d0ad68;
+  --color-divider: rgba(246, 239, 221, 0.075);
   --color-overlay: rgba(0, 0, 0, 0.6);
 
   /* Instrument Serif is loaded via next/font/google in app/layout.tsx and
@@ -37,7 +45,7 @@
 
   --safe-top: env(safe-area-inset-top);
   --safe-bottom: env(safe-area-inset-bottom);
-  --nav-h: 60px;
+  --nav-h: 58px;
   --nav-total-h: calc(var(--nav-h) + env(safe-area-inset-bottom));
 }
 
@@ -62,6 +70,9 @@ body {
   overscroll-behavior: none;
   /* Defeat iOS pull-to-refresh while keeping inner scroll containers usable */
   position: relative;
+  background:
+    radial-gradient(90% 60% at 50% -18%, rgba(184, 137, 55, 0.08), transparent 60%),
+    linear-gradient(180deg, #080807 0%, var(--bg) 42%, #050505 100%);
 }
 
 * {
@@ -138,6 +149,52 @@ body {
 
 .motion-card {
   animation: soft-rise 320ms var(--ease-atmospheric) both;
+}
+
+.lux-page {
+  background:
+    radial-gradient(110% 70% at 50% -12%, rgba(184, 137, 55, 0.07), transparent 56%),
+    linear-gradient(180deg, #080807 0%, var(--bg) 54%, #050505 100%);
+}
+
+.lux-surface {
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(120% 100% at 86% 0%, rgba(184, 137, 55, 0.055), transparent 58%),
+    linear-gradient(180deg, var(--surface-elevated), rgba(0, 0, 0, 0.08));
+  box-shadow: inset 0 1px 0 rgba(246, 239, 221, 0.025);
+}
+
+.lux-surface-quiet {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(246, 239, 221, 0.025), rgba(0, 0, 0, 0.08));
+}
+
+.lux-divider {
+  background: linear-gradient(90deg, transparent, rgba(246, 239, 221, 0.1), transparent);
+}
+
+.lux-label {
+  color: var(--gold);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.lux-action {
+  border: 1px solid var(--border-strong);
+  background: rgba(184, 137, 55, 0.035);
+  color: var(--gold-soft);
+  transition:
+    border-color var(--duration-fast) var(--ease-atmospheric),
+    background var(--duration-fast) var(--ease-atmospheric),
+    color var(--duration-fast) var(--ease-atmospheric);
+}
+
+.lux-action:hover {
+  border-color: rgba(208, 173, 104, 0.55);
+  background: rgba(184, 137, 55, 0.075);
+  color: var(--text-primary);
 }
 
 .ambient-visual {

@@ -32,7 +32,7 @@ export default async function SettingsPage() {
 
   return (
     <main
-      className="smooth-page mx-auto min-h-[100dvh] w-full max-w-[520px] overflow-x-hidden bg-near-black px-6 text-warm-ivory"
+      className="lux-page smooth-page mx-auto min-h-[100dvh] w-full max-w-[520px] overflow-x-hidden px-6 text-warm-ivory"
       style={{
         paddingTop: "calc(env(safe-area-inset-top) + 28px)",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
@@ -42,7 +42,7 @@ export default async function SettingsPage() {
       <header>
         <div className="flex items-center gap-1">
           <BackButton fallbackHref="/account" />
-          <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
+          <span className="lux-label">
             Settings
           </span>
         </div>
@@ -56,7 +56,7 @@ export default async function SettingsPage() {
       </header>
 
       <SettingsSection label="Account">
-        <div className="rounded-md border border-divider/60 bg-soft-black/35 px-4 py-4">
+        <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
           <Field label="Signed in as" value={user.email ?? "Account active"} />
           <Field label="Role" value={<RoleChip role={user.role} />} />
           <Field label="Session" value={<StatusValue label="Active" />} />
@@ -85,7 +85,7 @@ export default async function SettingsPage() {
           />
         </div>
         {owner && !status.hasFounderProfile ? (
-          <div className="mt-4 rounded-md border border-muted-gold/25 bg-muted-gold/[0.05] px-4 py-4">
+          <div className="lux-surface mt-4 rounded-[var(--radius-card)] px-4 py-4">
             <h2 className="font-serif text-[20px] italic leading-tight text-warm-ivory">
               Founder profile not set yet.
             </h2>
@@ -226,7 +226,7 @@ function SettingsSection({
 }) {
   return (
     <section className="motion-card mt-10 border-t border-divider/60 pt-6">
-      <div className="text-[11px] uppercase tracking-editorial text-muted-gold">
+      <div className="lux-label">
         {label}
       </div>
       <div className="mt-4">{children}</div>
@@ -257,7 +257,7 @@ function ProfileMetric({
   active: boolean;
 }) {
   return (
-    <div className="flex min-h-12 items-center justify-between gap-4 rounded-md border border-divider/50 bg-soft-black/25 px-4">
+    <div className="lux-surface-quiet flex min-h-12 items-center justify-between gap-4 rounded-[var(--radius-soft)] px-4">
       <span className="text-[13px] text-warm-ivory/75">{label}</span>
       <StatusValue label={value} muted={!active} />
     </div>
@@ -298,7 +298,7 @@ function SettingsCard({
   );
 
   const className =
-    "flex min-h-[104px] items-center justify-between gap-5 rounded-md border border-divider/55 bg-soft-black/25 px-4 py-4 text-left transition duration-300 ease-atmospheric hover:border-muted-gold/35 hover:bg-soft-black/45 active:translate-y-px";
+    "lux-surface-quiet flex min-h-[104px] items-center justify-between gap-5 rounded-[var(--radius-card)] px-4 py-4 text-left transition duration-300 ease-atmospheric hover:border-muted-gold/35 active:translate-y-px";
 
   if (href) {
     return (
@@ -337,7 +337,7 @@ function SystemDiagnostics({
   };
 }) {
   return (
-    <details className="group rounded-md border border-divider/55 bg-soft-black/20">
+    <details className="lux-surface-quiet group rounded-[var(--radius-card)]">
       <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 text-[11px] uppercase tracking-editorial text-warm-ivory/60 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory">
         <span>System Diagnostics</span>
         <Chevron
