@@ -211,8 +211,15 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
         {cards.length === 0 ? (
           <RadarEmptyState />
         ) : visible.length === 0 ? (
-          <div className="py-12 text-center text-[13px] uppercase tracking-editorial text-warm-ivory/40">
-            Nothing in this lane
+          <div
+            className="py-12 text-center font-serif italic"
+            style={{
+              color: "var(--text-muted)",
+              fontSize: "20px",
+              lineHeight: 1.3,
+            }}
+          >
+            Nothing made the cut.
           </div>
         ) : (
           visible.map((card) => (
@@ -242,7 +249,9 @@ function FilterRow({
   return (
     <nav
       aria-label="Radar filters"
+      data-no-embla-drag
       className="mt-8 -mx-6 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      style={{ touchAction: "pan-x" }}
     >
       <ul className="flex items-center gap-7">
         {FILTERS.map((f) => {

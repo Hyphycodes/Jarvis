@@ -1,6 +1,15 @@
 import type { Metadata, Viewport } from "next";
+import { Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { DayPlanProvider } from "@/lib/dayPlanStore";
+
+const instrumentSerif = Instrument_Serif({
+  weight: "400",
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  variable: "--font-serif",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Jarvis",
@@ -18,7 +27,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#0A0A0B",
+  themeColor: "#0a0a08",
 };
 
 export default function RootLayout({
@@ -27,9 +36,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="bg-near-black">
+    <html lang="en" className={`bg-near-black ${instrumentSerif.variable}`}>
       <head>
-        <meta name="theme-color" content="#0A0A0B" />
+        <meta name="theme-color" content="#0a0a08" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta
@@ -37,16 +46,6 @@ export default function RootLayout({
           content="black-translucent"
         />
         <meta name="apple-mobile-web-app-title" content="Jarvis" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap"
-          rel="stylesheet"
-        />
       </head>
       <body className="bg-near-black text-warm-ivory antialiased">
         <DayPlanProvider>{children}</DayPlanProvider>

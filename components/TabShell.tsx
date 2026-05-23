@@ -1,17 +1,16 @@
 "use client";
 
-import { motion, useMotionValue } from "framer-motion";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import type { UseEmblaCarouselType } from "embla-carousel-react";
-import { Mic } from "./icons";
+import { BottomNav, type Tab } from "./BottomNav";
 
 type EmblaApi = NonNullable<UseEmblaCarouselType[1]>;
 
 type TabKey = "today" | "radar" | "circle" | "north";
 
-const TABS: { key: TabKey; href: string; label: string }[] = [
+const TABS: { key: TabKey; href: string; label: Tab }[] = [
   { key: "today", href: "/", label: "Today" },
   { key: "radar", href: "/radar", label: "Radar" },
   { key: "circle", href: "/circle", label: "Circle" },
@@ -27,8 +26,20 @@ function indexFromPath(pathname: string | null): number {
   return 0;
 }
 
-// Indicator left position in % of nav track. Last tab sits at 75%.
-const MAX_PCT = ((TABS.length - 1) / TABS.length) * 100;
+/**
+ * Predicate Embla calls before allowing a drag. Returns `false` if the
+ * touch originated inside an element marked with `data-no-embla-drag`
+ * (or one of its ancestors), so the page-level horizontal swipe doesn't
+ * fight nested horizontal scrollers like Radar filter tabs or Circle's
+ * filter strip.
+ */
+function watchDrag(_emblaApi: EmblaApi, event: TouchEvent | MouseEvent | PointerEvent) {
+  const target = event.target;
+  if (target instanceof Element) {
+    if (target.closest("[data-no-embla-drag]")) return false;
+  }
+  return true;
+}
 
 export function TabShell({
   today,
@@ -51,27 +62,10 @@ export function TabShell({
     containScroll: "trimSnaps",
     dragFree: false,
     duration: 22,
+    watchDrag,
   });
 
-  // Indicator `left` driven directly from Embla scroll. No spring — the
-  // finger is the transition.
-  const indicatorLeft = useMotionValue(`${targetIndex * (MAX_PCT / (TABS.length - 1))}%`);
   const lastReplacedIndex = useRef(targetIndex);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    function onScroll(api: EmblaApi) {
-      const progress = Math.max(0, Math.min(1, api.scrollProgress()));
-      indicatorLeft.set(`${progress * MAX_PCT}%`);
-    }
-    onScroll(emblaApi);
-    emblaApi.on("scroll", onScroll);
-    emblaApi.on("reInit", onScroll);
-    return () => {
-      emblaApi.off("scroll", onScroll);
-      emblaApi.off("reInit", onScroll);
-    };
-  }, [emblaApi, indicatorLeft]);
 
   // After a settle, sync URL via replace (so history isn't polluted).
   useEffect(() => {
@@ -95,23 +89,19 @@ export function TabShell({
     if (emblaApi.selectedScrollSnap() === targetIndex) return;
     emblaApi.scrollTo(targetIndex, true);
     lastReplacedIndex.current = targetIndex;
-    indicatorLeft.set(
-      `${targetIndex * (MAX_PCT / (TABS.length - 1))}%`,
-    );
-  }, [emblaApi, targetIndex, indicatorLeft]);
+  }, [emblaApi, targetIndex]);
 
   const onNavTap = useCallback(
-    (idx: number) => {
+    (idx: number, href: string) => {
       if (!emblaApi) {
-        router.replace(TABS[idx].href);
+        router.replace(href);
         return;
       }
       emblaApi.scrollTo(idx, true);
       lastReplacedIndex.current = idx;
-      indicatorLeft.set(`${idx * (MAX_PCT / (TABS.length - 1))}%`);
-      router.replace(TABS[idx].href);
+      router.replace(href);
     },
-    [emblaApi, router, indicatorLeft],
+    [emblaApi, router],
   );
 
   return (
@@ -125,11 +115,7 @@ export function TabShell({
         </div>
       </div>
 
-      <CarouselBottomNav
-        activeIndex={targetIndex}
-        indicatorLeft={indicatorLeft}
-        onNavTap={onNavTap}
-      />
+      <BottomNav active={TABS[targetIndex]?.label} onTabSelect={onNavTap} />
     </div>
   );
 }
@@ -144,61 +130,5 @@ function TabPanel({ children }: { children: ReactNode }) {
     >
       {children}
     </div>
-  );
-}
-
-function CarouselBottomNav({
-  activeIndex,
-  indicatorLeft,
-  onNavTap,
-}: {
-  activeIndex: number;
-  indicatorLeft: ReturnType<typeof useMotionValue<string>>;
-  onNavTap: (idx: number) => void;
-}) {
-  return (
-    <nav
-      aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px] border-t border-divider/40 bg-near-black/92 backdrop-blur"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
-    >
-      <div className="flex items-center justify-between gap-2 px-6 pt-2.5">
-        <div className="relative flex-1 pr-3">
-          <motion.span
-            aria-hidden
-            className="absolute top-0 h-px w-8 bg-muted-gold/70"
-            style={{ left: indicatorLeft }}
-          />
-          <ul className="grid grid-cols-4 items-center">
-            {TABS.map((tab, i) => {
-              const isActive = i === activeIndex;
-              return (
-                <li key={tab.key} className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => onNavTap(i)}
-                    className={
-                      "inline-flex min-h-9 items-center py-1.5 text-[10px] uppercase tracking-editorial transition duration-300 ease-atmospheric active:translate-y-px " +
-                      (isActive
-                        ? "text-warm-ivory"
-                        : "text-warm-ivory/40 hover:text-warm-ivory/70")
-                    }
-                  >
-                    {tab.label}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-        <button
-          type="button"
-          aria-label="Voice"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-muted-gold/40 text-soft-gold transition duration-300 ease-atmospheric hover:border-muted-gold/70 active:scale-95"
-        >
-          <Mic size={14} />
-        </button>
-      </div>
-    </nav>
   );
 }

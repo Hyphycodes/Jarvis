@@ -150,7 +150,9 @@ function FilterRow({
   return (
     <nav
       aria-label="Circle filters"
+      data-no-embla-drag
       className="mt-6 -mx-6 overflow-x-auto px-6"
+      style={{ touchAction: "pan-x" }}
     >
       <ul className="flex items-center gap-7">
         {FILTERS.map((f) => {

@@ -9,6 +9,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Sprint 4 tokens (authoritative)
+        bg: "var(--bg)",
+        surface: "var(--surface)",
+        border: "var(--border)",
+        "text-primary": "var(--text-primary)",
+        "text-muted": "var(--text-muted)",
+        gold: "var(--gold)",
+        "gold-dim": "var(--gold-dim)",
+        "status-green": "var(--status-green)",
+        "status-amber": "var(--status-amber)",
+
+        // Legacy tokens (preserved)
         "near-black": "var(--color-near-black)",
         "soft-black": "var(--color-soft-black)",
         charcoal: "var(--color-charcoal)",

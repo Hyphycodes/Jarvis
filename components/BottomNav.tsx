@@ -13,66 +13,125 @@ const TABS = [
 
 type TabLabel = (typeof TABS)[number]["label"];
 
+/**
+ * Global bottom nav — single source of truth across Today, Radar, Circle,
+ * North, and any other page that imports it.
+ *
+ * Spec:
+ *   - Flush to the very bottom (no float, no lift, no shadow, no blur)
+ *   - Solid var(--bg) background, 60px above the iOS safe-area inset
+ *   - Active tab marked by a 4×4 gold dot CENTERED below the label baseline
+ *   - Inactive tabs: var(--text-muted); active label: var(--gold)
+ *   - Right side: 40px circular border-1.5px var(--gold) mic button
+ *
+ * Pages that render this directly should include
+ *   padding-bottom: calc(60px + env(safe-area-inset-bottom))
+ * on their main scroll container. Pages wrapped by <TabShell> get this
+ * automatically (TabShell renders this component as a fixed overlay).
+ */
 export function BottomNav({
   active,
   onMic,
+  onTabSelect,
 }: {
   active?: TabLabel;
   onMic?: () => void;
+  /** Optional intercept (used by TabShell to scroll Embla in place). */
+  onTabSelect?: (index: number, href: string) => void;
 }) {
   const pathname = usePathname() ?? "/";
-  const routeActive =
+  const routeActive: TabLabel =
     active ??
     (TABS.find((t) =>
       t.href === "/" ? pathname === "/" : pathname.startsWith(t.href),
     )?.label ??
       "Today");
-  const activeIndex = TABS.findIndex((tab) => tab.label === routeActive);
 
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px] border-t border-divider/40 bg-near-black/92 backdrop-blur"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
+      className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px]"
+      style={{
+        background: "var(--bg)",
+        borderTop: "1px solid var(--border)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        // No shadow. No backdrop-blur. Solid.
+      }}
     >
-      <div className="flex items-center justify-between gap-2 px-6 pt-2.5">
-        <div className="relative flex-1 pr-3">
-          <span
-            aria-hidden
-            className="absolute top-0 h-px w-8 bg-muted-gold/70 transition-[left] duration-300 ease-atmospheric"
-            style={{
-              left: `${Math.max(activeIndex, 0) * 25}%`,
-            }}
-          />
-          <ul className="grid grid-cols-4 items-center">
-          {TABS.map((tab) => {
+      <div
+        className="flex items-center justify-between gap-2 px-6"
+        style={{ height: "60px" }}
+      >
+        <ul className="grid flex-1 grid-cols-4 items-center">
+          {TABS.map((tab, idx) => {
             const isActive = tab.label === routeActive;
-            return (
-              <li key={tab.label} className="min-w-0">
-                <Link
-                  href={tab.href}
-                  prefetch
+            const labelClass =
+              "uppercase tracking-[0.12em] text-[10px] font-mono transition-colors duration-300 ease-atmospheric";
+            const content = (
+              <span className="relative inline-flex flex-col items-center">
+                <span
                   className={
-                    "inline-flex min-h-9 items-center py-1.5 text-[10px] uppercase tracking-editorial transition duration-300 ease-atmospheric active:translate-y-px " +
+                    labelClass +
                     (isActive
-                      ? "text-warm-ivory"
-                      : "text-warm-ivory/40 hover:text-warm-ivory/70")
+                      ? " text-[var(--gold)]"
+                      : " text-[var(--text-muted)] hover:text-[var(--text-primary)]/70")
+                  }
+                  style={
+                    isActive
+                      ? { color: "var(--gold)" }
+                      : { color: "var(--text-muted)" }
                   }
                 >
                   {tab.label}
-                </Link>
+                </span>
+                <span
+                  aria-hidden
+                  className="mt-1 h-1 w-1 rounded-full"
+                  style={{
+                    background: isActive ? "var(--gold)" : "transparent",
+                  }}
+                />
+              </span>
+            );
+
+            return (
+              <li
+                key={tab.label}
+                className="flex items-center justify-center"
+              >
+                {onTabSelect ? (
+                  <button
+                    type="button"
+                    onClick={() => onTabSelect(idx, tab.href)}
+                    className="inline-flex h-full min-h-10 items-center justify-center px-3 active:translate-y-px"
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <Link
+                    href={tab.href}
+                    prefetch
+                    className="inline-flex h-full min-h-10 items-center justify-center px-3 active:translate-y-px"
+                  >
+                    {content}
+                  </Link>
+                )}
               </li>
             );
           })}
-          </ul>
-        </div>
+        </ul>
+
         <button
           type="button"
           aria-label="Voice"
           onClick={onMic}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-muted-gold/40 text-soft-gold transition duration-300 ease-atmospheric hover:border-muted-gold/70 active:scale-95"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-atmospheric active:scale-95"
+          style={{
+            border: "1.5px solid var(--gold)",
+            color: "var(--gold)",
+          }}
         >
-          <Mic size={14} />
+          <Mic size={15} />
         </button>
       </div>
     </nav>

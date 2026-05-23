@@ -1,422 +1,668 @@
-import Link from "next/link";
-import { AppFrame, SectionLabel } from "@/components";
-import { Arrow, Chevron } from "@/components/icons";
-import type { NorthLifeLane, NorthPayload } from "@/lib/ai/types";
+"use client";
 
-const PILLARS: { n: string; name: string; status: string; tint: string }[] = [
-  { n: "01", name: "Lifestyle", status: "Strong", tint: "rgba(184,146,74,0.10)" },
-  { n: "02", name: "Health", status: "Focus", tint: "rgba(201,169,110,0.08)" },
-  { n: "03", name: "Craft", status: "Building", tint: "rgba(232,228,168,0.06)" },
-  { n: "04", name: "Relationships", status: "Nurturing", tint: "rgba(184,146,74,0.12)" },
-  { n: "05", name: "Legacy", status: "Long Term", tint: "rgba(201,169,110,0.10)" },
+import { useState, type ReactNode, type SVGProps } from "react";
+import { AppFrame } from "@/components";
+import type { NorthPayload } from "@/lib/ai/types";
+
+// TODO(supabase): wire to north_pillars or a future life_categories table.
+// Sprint 4 design ships these statuses hardcoded — see prompt for rationale.
+const LIFE_CATEGORIES: Array<{
+  id: string;
+  name: string;
+  status: string;
+  tone: "green" | "amber";
+  description: string;
+  icon: (props: SVGProps<SVGSVGElement>) => ReactNode;
+}> = [
+  {
+    id: "body",
+    name: "Body",
+    status: "Active",
+    tone: "green",
+    description: "Strength, sunlight, mobility. Earn your nights.",
+    icon: BodyIcon,
+  },
+  {
+    id: "skill",
+    name: "Skill",
+    status: "Needs a rep",
+    tone: "amber",
+    description: "Tools you can actually use. Build something this week.",
+    icon: SkillIcon,
+  },
+  {
+    id: "creative",
+    name: "Creative",
+    status: "Warm",
+    tone: "amber",
+    description: "Music, frames, crates. Keep the lane open.",
+    icon: CreativeIcon,
+  },
+  {
+    id: "ownership",
+    name: "Ownership",
+    status: "Warm",
+    tone: "amber",
+    description: "Land, deals, leverage. Slow compounding moves.",
+    icon: OwnershipIcon,
+  },
+  {
+    id: "taste",
+    name: "Taste",
+    status: "Warm",
+    tone: "amber",
+    description: "Watches, menswear, dining. Refine the standard.",
+    icon: TasteIcon,
+  },
+  {
+    id: "relationships",
+    name: "Relationships",
+    status: "Warm",
+    tone: "amber",
+    description: "Small circle, deep contact. Reach for one this week.",
+    icon: RelationshipsIcon,
+  },
+  {
+    id: "peace",
+    name: "Peace",
+    status: "Protected",
+    tone: "green",
+    description: "Quiet. Faith. Solitude. The non-negotiable hour.",
+    icon: PeaceIcon,
+  },
 ];
 
-const STEPS: { text: string; tag: string }[] = [
-  { text: "Keep the body lane warm", tag: "Health" },
-  { text: "Review one ownership signal", tag: "Ownership" },
-  { text: "Clean up one creative lane", tag: "Creative" },
+// TODO(supabase): wire to north_signals or a future "next reps" table.
+const NEXT_REPS: Array<{
+  title: string;
+  sub: string;
+  category: string;
+  icon: (props: SVGProps<SVGSVGElement>) => ReactNode;
+}> = [
+  {
+    title: "Play basketball outside",
+    sub: "Get a recovery block in.",
+    category: "Body",
+    icon: BasketballIcon,
+  },
+  {
+    title: "Review one land listing",
+    sub: "Run a quick deal screen.",
+    category: "Ownership",
+    icon: MapPinSmallIcon,
+  },
+  {
+    title: "DJ crate cleanup",
+    sub: "One camera framing practice.",
+    category: "Creative",
+    icon: RecordIcon,
+  },
 ];
 
+// payload is preserved so the loader signature is unchanged; the redesign
+// renders hardcoded content per the Sprint 4 spec.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function NorthSigned({ payload }: { payload?: NorthPayload }) {
-  const northStar = payload?.northStar ?? {
-    title: "North",
-    subtitle: "Long-term direction.",
-  };
-  const pillars = payload?.pillars?.length
-    ? payload.pillars.map((pillar, index) => ({
-        n: String(index + 1).padStart(2, "0"),
-        name: pillar.title,
-        status: statusLabel(pillar.progress),
-        tint: PILLARS[index % PILLARS.length]?.tint ?? "rgba(184,146,74,0.10)",
-      }))
-    : PILLARS;
-  const lifeCadence = payload?.lifeCadence ?? [];
-  const steps = payload?.signals?.length
-    ? payload.signals.slice(0, 4).map((signal) => ({
-        text: signal.action ?? signal.title,
-        tag: signal.source,
-      }))
-    : lifeCadence.length
-      ? lifeCadence.slice(0, 3).map((lane) => ({
-          text: lane.nextUsefulRep,
-          tag: lane.title.split(" / ")[0] ?? lane.status,
-        }))
-    : STEPS;
-
+  void payload;
   return (
     <AppFrame>
-      <header className="flex flex-col gap-4">
-        <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
-          <h1 className="font-serif text-[56px] italic leading-[1.02] tracking-[-0.01em] text-warm-ivory">
-            North
-          </h1>
-          <span className="self-start pt-[10px] text-[12px] uppercase tracking-editorial text-warm-ivory/60">
-            {formatNorthDate()}
-          </span>
-        </div>
-        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/65">
-          {northStar.subtitle || "The life you’re building."}
-        </p>
-        <div className="h-px w-8 bg-muted-gold/50" />
-      </header>
-
-      <Hero />
-
-      <section className="mt-8 grid grid-cols-[1.05fr_1fr] items-start gap-6">
-        <div className="flex flex-col gap-3">
-          <span className="text-[11px] uppercase tracking-editorial text-muted-gold/85">
-            The North Star
-          </span>
-          <h2 className="font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.01em] text-warm-ivory">
-            {northStar.title}
-          </h2>
-          <div className="h-px w-6 bg-muted-gold/55" />
-          <p className="mt-1 text-[14px] leading-[1.55] text-warm-ivory/65">
-            A slower life. Owned.
-            <br />
-            Built through discipline,
-            <br />
-            taste, and real connection.
-          </p>
-          <button
-            type="button"
-            className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-editorial text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
-          >
-            View Vision <Arrow size={12} />
-          </button>
-        </div>
-        <Compass />
-      </section>
-
-      <div className="mt-10 h-px w-full bg-white/[0.06]" />
-
-      {lifeCadence.length > 0 ? (
-        <section className="mt-8">
-          <SectionLabel>Life Cadence / Skill Stack</SectionLabel>
-          <div className="mt-4 flex flex-col border-y border-white/[0.06]">
-            {lifeCadence.map((lane, index) => (
-              <LifeCadenceRow
-                key={lane.id}
-                lane={lane}
-                divider={index !== lifeCadence.length - 1}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="mt-8">
-        <SectionLabel>Pillars</SectionLabel>
-        <div className="mt-4 -mx-6 overflow-x-auto">
-          <ul className="flex gap-2 px-6">
-            {pillars.map((p) => (
-              <li key={p.n} className="shrink-0">
-                <PillarCard {...p} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="mt-10">
-        <SectionLabel
-          trailing={
-            <span className="inline-flex items-center gap-1.5 text-warm-ivory/70">
-              View All <Arrow size={12} />
-            </span>
-          }
-        >
-          Next Right Steps
-        </SectionLabel>
-        <ul className="mt-4 flex flex-col">
-          {steps.map((s, i) => (
-            <StepRow
-              key={s.text}
-              text={s.text}
-              tag={s.tag}
-              divider={i !== steps.length - 1}
-            />
-          ))}
-        </ul>
-      </section>
-
-      <aside className="mt-10 border-l-2 border-muted-gold/40 bg-soft-black/60 py-5 pl-5 pr-4">
-        <div className="text-[10px] uppercase tracking-editorial text-muted-gold/85">
-          North Reminder
-        </div>
-        <p className="mt-2 font-serif text-[20px] italic leading-[1.35] text-warm-ivory/85">
-          Discipline today. Freedom tomorrow.
-        </p>
-      </aside>
-
-      <Link
-        href="/account"
-        className="mt-8 flex items-center justify-between border-t border-divider/70 py-5 text-[11px] uppercase tracking-editorial text-warm-ivory/65 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
-      >
-        <span>Account &amp; Settings</span>
-        <Chevron direction="right" size={14} className="text-warm-ivory/45" />
-      </Link>
-
+      <Header />
+      <NorthStarCard />
+      <BuildSection />
+      <NextRepsSection />
+      <NorthReminderCard />
     </AppFrame>
   );
 }
 
-function LifeCadenceRow({
-  lane,
-  divider,
-}: {
-  lane: NorthLifeLane;
-  divider: boolean;
-}) {
+// ── Header ────────────────────────────────────────────────────────────────
+
+function Header() {
   return (
-    <article
-      className={
-        "grid grid-cols-[1fr_auto] gap-4 py-4 " +
-        (divider ? "border-b border-white/[0.06]" : "")
-      }
-    >
-      <div>
-        <div className="flex items-center gap-3">
-          <span
-            aria-hidden
-            className={
-              "h-2 w-2 rounded-full " +
-              (lane.status === "due"
-                ? "bg-muted-gold"
-                : lane.status === "cooling"
-                  ? "bg-warm-ivory/55"
-                  : lane.status === "protected"
-                    ? "bg-warm-ivory/30"
-                    : "bg-soft-gold/70")
-            }
-          />
-          <h3 className="font-serif text-[20px] leading-tight text-warm-ivory">
-            {lane.title}
-          </h3>
-        </div>
-        <p className="mt-2 max-w-[38ch] text-[13px] leading-[1.5] text-warm-ivory/62">
-          {lane.whyItMatters}
-        </p>
-        <p className="mt-3 text-[12px] leading-[1.45] text-warm-ivory/78">
-          {lane.nextUsefulRep}
-        </p>
+    <header className="flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-4">
+        <h1
+          className="font-serif tracking-[-0.02em]"
+          style={{
+            color: "var(--text-primary)",
+            fontSize: "52px",
+            lineHeight: 1,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          NORTH
+        </h1>
+        <span
+          className="font-mono uppercase tracking-[0.12em] pt-2"
+          style={{ color: "var(--gold)", fontSize: "11px" }}
+        >
+          {formatNorthDate()}
+        </span>
       </div>
-      <div className="min-w-[88px] text-right">
-        <div className="text-[10px] uppercase tracking-editorial text-muted-gold/80">
-          {lane.status}
-        </div>
-        <div className="mt-2 text-[11px] leading-[1.35] text-warm-ivory/50">
-          {lane.cadenceTarget}
-        </div>
-        {lane.lastTouched ? (
-          <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-warm-ivory/35">
-            {formatTouched(lane.lastTouched)}
-          </div>
-        ) : null}
-      </div>
-    </article>
+      <p
+        className="text-[14px]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Long-term direction.
+      </p>
+    </header>
   );
-}
-
-function statusLabel(progress: number | undefined): string {
-  if (typeof progress !== "number") return "Warm";
-  if (progress >= 0.75) return "Active";
-  if (progress >= 0.45) return "Building";
-  return "Warm";
-}
-
-function formatTouched(iso: string): string {
-  const time = new Date(iso).getTime();
-  if (Number.isNaN(time)) return "";
-  const days = Math.floor((Date.now() - time) / (24 * 60 * 60 * 1000));
-  if (days <= 0) return "touched today";
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
 }
 
 function formatNorthDate(): string {
-  return new Date().toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return new Date()
+    .toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+    .toUpperCase();
 }
 
-function Hero() {
-  return (
-    <div className="relative mt-8 -mx-6 h-[220px] overflow-hidden">
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(135deg, #1a1a1c 0%, #141416 45%, #0d0d0f 80%, #0a0a0b 100%)",
-        }}
-      />
-      {/* atmospheric glow suggesting a landscape silhouette */}
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(120% 80% at 50% 30%, rgba(232,228,168,0.05), transparent 55%), radial-gradient(80% 60% at 70% 80%, rgba(184,146,74,0.06), transparent 60%)",
-        }}
-      />
-      {/* horizon line */}
-      <div
-        aria-hidden
-        className="absolute left-0 right-0 top-[62%] h-px bg-warm-ivory/10"
-      />
-      {/* fade to near-black at the bottom so the hero dissolves */}
-      <div
-        aria-hidden
-        className="absolute inset-x-0 bottom-0 h-24"
-        style={{
-          background:
-            "linear-gradient(180deg, transparent 0%, #0A0A0B 100%)",
-        }}
-      />
-    </div>
-  );
-}
+// ── North Star Card ──────────────────────────────────────────────────────
 
-function Compass() {
-  const size = 168;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = size / 2 - 6;
+function NorthStarCard() {
   return (
-    <div
-      className="relative mx-auto"
-      style={{ width: size, height: size }}
-      aria-hidden
-    >
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        className="text-warm-ivory/20"
-      >
-        <circle
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1"
-        />
-        {/* cardinal ticks */}
-        <line x1={cx} y1={6} x2={cx} y2={18} stroke="currentColor" strokeWidth="1" />
-        <line x1={cx} y1={size - 6} x2={cx} y2={size - 18} stroke="currentColor" strokeWidth="1" />
-        <line x1={6} y1={cy} x2={18} y2={cy} stroke="currentColor" strokeWidth="1" />
-        <line x1={size - 6} y1={cy} x2={size - 18} y2={cy} stroke="currentColor" strokeWidth="1" />
-        {/* minor ticks */}
-        {Array.from({ length: 12 }).map((_, i) => {
-          const angle = (i / 12) * Math.PI * 2;
-          const x1 = cx + Math.sin(angle) * (r - 2);
-          const y1 = cy - Math.cos(angle) * (r - 2);
-          const x2 = cx + Math.sin(angle) * (r - 7);
-          const y2 = cy - Math.cos(angle) * (r - 7);
-          return (
-            <line
-              key={i}
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke="currentColor"
-              strokeWidth="1"
-              opacity="0.6"
-            />
-          );
-        })}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <div className="text-[9px] uppercase tracking-editorial text-warm-ivory/55">
-          N
-        </div>
-        <div className="mt-2 text-[9px] uppercase tracking-editorial text-warm-ivory/55">
-          Heading
-        </div>
-        <div className="font-serif text-[28px] leading-none text-warm-ivory">
-          27°
-        </div>
-        <div className="mt-1 text-[11px] text-warm-ivory/55">Umbria</div>
-      </div>
-    </div>
-  );
-}
-
-function PillarCard({
-  n,
-  name,
-  status,
-  tint,
-}: {
-  n: string;
-  name: string;
-  status: string;
-  tint: string;
-}) {
-  return (
-    <article
-      className="relative flex h-[180px] w-[112px] flex-col border border-muted-gold/20 bg-soft-black"
+    <section
+      className="relative mt-6 overflow-hidden"
       style={{
-        background:
-          "linear-gradient(180deg, #111113 0%, #0d0d0f 100%)",
+        border: "1px solid var(--border)",
+        borderRadius: "16px",
+        background: [
+          "radial-gradient(ellipse at 80% 60%, rgba(30,25,15,0.9) 0%, transparent 60%)",
+          "linear-gradient(160deg, #1a1a14 0%, #0f0f0a 40%, #1c1a12 100%)",
+        ].join(", "),
+        minHeight: "260px",
       }}
     >
-      <div className="px-3 pt-3">
-        <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/40">
-          {n}
-        </div>
-        <div className="mt-2 font-serif text-[16px] leading-tight text-warm-ivory">
-          {name}
-        </div>
-        <div className="mt-2 h-px w-5 bg-muted-gold/55" />
-      </div>
-      <div
+      {/* Mountain placeholder — swap /public/north-mountain.svg later. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/north-mountain.svg"
+        alt=""
         aria-hidden
-        className="mt-auto h-[78px] w-full"
+        className="pointer-events-none absolute bottom-0 right-0"
         style={{
-          background: `radial-gradient(80% 100% at 50% 100%, ${tint}, transparent 70%), linear-gradient(180deg, #141416 0%, #0a0a0b 100%)`,
+          width: "50%",
+          maxWidth: "260px",
+          opacity: 0.8,
         }}
       />
-      <div className="absolute inset-x-0 bottom-2 text-center text-[9px] uppercase tracking-editorial text-muted-gold/85">
-        {status}
+      <div className="relative z-10 flex flex-col gap-3 p-6">
+        <div className="flex items-center gap-2">
+          <GoldStar />
+          <span
+            className="font-mono uppercase"
+            style={{
+              color: "var(--gold)",
+              fontSize: "10px",
+              letterSpacing: "0.15em",
+            }}
+          >
+            The North Star
+          </span>
+        </div>
+        <h2
+          className="font-serif"
+          style={{
+            color: "var(--text-primary)",
+            fontSize: "26px",
+            lineHeight: 1.15,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          A slower life. Owned.
+        </h2>
+        <p
+          className="max-w-[34ch] text-[13px] leading-[1.55]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Built through discipline, taste, useful skill, and real connection.
+        </p>
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-1.5 self-start font-mono uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+          style={{
+            color: "var(--gold)",
+            fontSize: "11px",
+            letterSpacing: "0.12em",
+          }}
+        >
+          View The Standard <ArrowRightTiny />
+        </button>
       </div>
-    </article>
+    </section>
   );
 }
 
-function StepRow({
-  text,
-  tag,
-  divider,
-}: {
-  text: string;
-  tag: string;
-  divider: boolean;
-}) {
+function GoldStar() {
   return (
-    <li
-      className={
-        "flex items-center justify-between gap-4 py-4 " +
-        (divider ? "border-b border-white/[0.06]" : "")
-      }
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 2 L13.5 10.5 L22 12 L13.5 13.5 L12 22 L10.5 13.5 L2 12 L10.5 10.5 Z"
+        fill="var(--gold)"
+      />
+    </svg>
+  );
+}
+
+function ArrowRightTiny() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M5 12 H19 M13 6 L19 12 L13 18"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// ── The Build Section ─────────────────────────────────────────────────────
+
+function BuildSection() {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3
+            className="font-mono uppercase"
+            style={{
+              color: "var(--text-primary)",
+              fontSize: "11px",
+              letterSpacing: "0.15em",
+            }}
+          >
+            The Build
+          </h3>
+          <p
+            className="mt-1 text-[13px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Your life, in motion.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 font-mono uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+          style={{
+            color: "var(--gold)",
+            fontSize: "11px",
+            letterSpacing: "0.12em",
+          }}
+        >
+          View All <ArrowRightTiny />
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-[10px]">
+        {LIFE_CATEGORIES.map((cat) => (
+          <CategoryAccordion
+            key={cat.id}
+            category={cat}
+            open={openId === cat.id}
+            onToggle={() => setOpenId(openId === cat.id ? null : cat.id)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CategoryAccordion({
+  category,
+  open,
+  onToggle,
+}: {
+  category: (typeof LIFE_CATEGORIES)[number];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = category.icon;
+  const dotColor =
+    category.tone === "green" ? "var(--status-green)" : "var(--status-amber)";
+
+  return (
+    <div
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "12px",
+      }}
     >
-      <div className="flex items-center gap-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-4 px-4 py-[14px] text-left"
+      >
+        <span className="shrink-0">
+          <Icon width={22} height={22} stroke="var(--gold)" strokeWidth={1.5} fill="none" />
+        </span>
         <span
-          aria-hidden
-          className="h-[18px] w-[18px] shrink-0 rounded-full border border-muted-gold/45"
-        />
-        <span className="text-[14px] leading-[1.4] text-warm-ivory/90">
-          {text}
+          className="flex-1 font-serif"
+          style={{
+            color: "var(--text-primary)",
+            fontSize: "17px",
+            lineHeight: 1.1,
+          }}
+        >
+          {category.name}
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          <span
+            className="font-mono uppercase"
+            style={{
+              color: "var(--text-muted)",
+              fontSize: "10px",
+              letterSpacing: "0.12em",
+            }}
+          >
+            {category.status}
+          </span>
+          <span
+            aria-hidden
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: dotColor }}
+          />
+          <span
+            aria-hidden
+            className="ml-1 transition-transform duration-300 ease-atmospheric"
+            style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+          >
+            <ChevronDownIcon />
+          </span>
+        </span>
+      </button>
+
+      <div
+        className="overflow-hidden transition-[max-height,opacity] duration-300 ease-atmospheric"
+        style={{
+          maxHeight: open ? "120px" : "0px",
+          opacity: open ? 1 : 0,
+        }}
+      >
+        <div
+          className="px-4 pb-[14px]"
+          style={{ paddingLeft: "calc(22px + 16px + 16px)" }}
+        >
+          <p
+            className="text-[13px] leading-[1.5]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {category.description}
+          </p>
+          <button
+            type="button"
+            className="mt-3 inline-flex items-center gap-1.5 font-mono uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+            style={{
+              color: "var(--gold)",
+              fontSize: "11px",
+              letterSpacing: "0.12em",
+            }}
+          >
+            Log Rep <ArrowRightTiny />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 9 L12 15 L18 9"
+        stroke="var(--text-muted)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// ── Next Reps Section ────────────────────────────────────────────────────
+
+function NextRepsSection() {
+  return (
+    <section className="mt-10">
+      <h3
+        className="font-mono uppercase"
+        style={{
+          color: "var(--text-primary)",
+          fontSize: "11px",
+          letterSpacing: "0.15em",
+        }}
+      >
+        Next Reps
+      </h3>
+      <p className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
+        Three moves. Maximum impact.
+      </p>
+
+      <ul className="mt-4 flex flex-col">
+        {NEXT_REPS.map((rep, idx) => {
+          const Icon = rep.icon;
+          return (
+            <li
+              key={rep.title}
+              className="flex items-center gap-4 py-3"
+              style={
+                idx !== NEXT_REPS.length - 1
+                  ? { borderBottom: "1px solid var(--border)" }
+                  : undefined
+              }
+            >
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  border: "1px solid var(--gold-dim)",
+                  background: "rgba(184,146,42,0.05)",
+                }}
+              >
+                <Icon
+                  width={18}
+                  height={18}
+                  stroke="var(--gold)"
+                  strokeWidth={1.5}
+                  fill="none"
+                />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-[15px] font-medium"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {rep.title}
+                </div>
+                <div
+                  className="text-[12px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {rep.sub}
+                </div>
+              </div>
+              <span
+                className="font-mono uppercase shrink-0"
+                style={{
+                  color: "var(--gold)",
+                  fontSize: "10px",
+                  letterSpacing: "0.12em",
+                }}
+              >
+                {rep.category}
+              </span>
+              <span aria-hidden className="shrink-0 opacity-70">
+                <ChevronRightTiny />
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function ChevronRightTiny() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M9 6 L15 12 L9 18"
+        stroke="var(--text-muted)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// ── North Reminder Card ──────────────────────────────────────────────────
+
+function NorthReminderCard() {
+  return (
+    <section
+      className="mt-10"
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: "16px",
+        background: [
+          "radial-gradient(ellipse at 80% 60%, rgba(30,25,15,0.7) 0%, transparent 60%)",
+          "linear-gradient(160deg, #1a1a14 0%, #0f0f0a 40%, #1c1a12 100%)",
+        ].join(", "),
+        padding: "20px 24px",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <GoldStar />
+        <span
+          className="font-mono uppercase"
+          style={{
+            color: "var(--gold)",
+            fontSize: "10px",
+            letterSpacing: "0.15em",
+          }}
+        >
+          North Reminder
         </span>
       </div>
-      <span className="shrink-0 text-[10px] uppercase tracking-editorial text-muted-gold/70">
-        {tag}
-      </span>
-    </li>
+      <p
+        className="mt-3 font-serif italic"
+        style={{
+          color: "var(--text-primary)",
+          fontSize: "18px",
+          lineHeight: 1.35,
+        }}
+      >
+        Discipline today. Freedom tomorrow.
+      </p>
+    </section>
+  );
+}
+
+// ── Icons (inline, minimal, 22×22 default, strokeWidth 1.5) ─────────────
+
+function BodyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="13" cy="5" r="2" />
+      <path d="M9 22 L11 14 L7 11 L9 7 L13 9 L17 8 L17 11 L14 14 L15 17 L18 22" />
+    </svg>
+  );
+}
+
+function SkillIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1.2" />
+    </svg>
+  );
+}
+
+function CreativeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M9 18 V6 L19 4 V16" />
+      <circle cx="7" cy="18" r="2.2" />
+      <circle cx="17" cy="16" r="2.2" />
+    </svg>
+  );
+}
+
+function OwnershipIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 6 L9 4 L15 6 L21 4 V18 L15 20 L9 18 L3 20 Z" />
+      <path d="M9 4 V18" />
+      <path d="M15 6 V20" />
+    </svg>
+  );
+}
+
+function TasteIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M7 3 H17 L16 10 A4 4 0 0 1 8 10 Z" />
+      <path d="M12 14 V21" />
+      <path d="M8 21 H16" />
+    </svg>
+  );
+}
+
+function RelationshipsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="16" cy="9" r="2.5" />
+      <path d="M2 20 C2 16 5 14 8 14 C11 14 14 16 14 20" />
+      <path d="M14 20 C14 17 17 15.5 19.5 15.5 C21 15.5 22 16 22 17.5" />
+    </svg>
+  );
+}
+
+function PeaceIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 4 C9 9 9 14 12 19 C15 14 15 9 12 4 Z" />
+      <path d="M4 14 C8 14 11 17 12 19 C9 19 6 18 4 14 Z" />
+      <path d="M20 14 C16 14 13 17 12 19 C15 19 18 18 20 14 Z" />
+    </svg>
+  );
+}
+
+function BasketballIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12 H21 M12 3 V21" />
+      <path d="M5 5 C9 9 9 15 5 19" />
+      <path d="M19 5 C15 9 15 15 19 19" />
+    </svg>
+  );
+}
+
+function MapPinSmallIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 22 C16 16 19 12 19 9 A7 7 0 0 0 5 9 C5 12 8 16 12 22 Z" />
+      <circle cx="12" cy="9" r="2.5" />
+    </svg>
+  );
+}
+
+function RecordIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
   );
 }

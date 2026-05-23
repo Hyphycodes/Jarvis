@@ -3,16 +3,31 @@
 @tailwind utilities;
 
 :root {
-  --color-near-black: #0A0A0B;
+  /* Sprint 4 design tokens (new — these are authoritative going forward) */
+  --bg: #0a0a08;
+  --surface: rgba(255, 255, 255, 0.03);
+  --border: rgba(255, 255, 255, 0.07);
+  --text-primary: #f0ece0;
+  --text-muted: rgba(240, 236, 224, 0.45);
+  --gold: #b8922a;
+  --gold-dim: rgba(184, 146, 42, 0.55);
+  --status-green: #4a7c59;
+  --status-amber: #b8922a;
+
+  /* Legacy tokens (preserved for existing components) */
+  --color-near-black: #0a0a08;
   --color-soft-black: #111113;
-  --color-charcoal: #1A1A1C;
-  --color-warm-ivory: #F0ECD8;
-  --color-muted-gold: #B8924A;
-  --color-soft-gold: #C9A96E;
-  --color-divider: #2A2A2E;
+  --color-charcoal: #1a1a1c;
+  --color-warm-ivory: #f0ece0;
+  --color-muted-gold: #b8922a;
+  --color-soft-gold: #c9a96e;
+  --color-divider: #2a2a2e;
   --color-overlay: rgba(0, 0, 0, 0.6);
 
-  --font-serif: "DM Serif Display", "Times New Roman", serif;
+  /* Instrument Serif is loaded via next/font/google in app/layout.tsx and
+   * exposed as --font-serif. A system-font fallback chain keeps the page
+   * usable while the web font loads. */
+  --font-serif: "Instrument Serif", "Times New Roman", serif;
   --font-sans: "Neue Haas Grotesk", "Inter", system-ui, -apple-system, sans-serif;
 
   --ease-atmospheric: cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -22,6 +37,8 @@
 
   --safe-top: env(safe-area-inset-top);
   --safe-bottom: env(safe-area-inset-bottom);
+  --nav-h: 60px;
+  --nav-total-h: calc(var(--nav-h) + env(safe-area-inset-bottom));
 }
 
 html,
