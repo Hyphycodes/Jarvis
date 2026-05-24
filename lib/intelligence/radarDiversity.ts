@@ -22,7 +22,7 @@ export function selectDiverseRadarSet(
   maxCount = 10,
 ): RadarItem[] {
   const sorted = [...candidates]
-    .filter((item) => item.decision.admission === "radar")
+    .filter((item) => item.radarDisposition === "active")
     .sort((a, b) => b.score - a.score);
   const selected: RadarItem[] = [];
   const groupCounts = new Map<string, number>();
@@ -50,4 +50,3 @@ export function selectDiverseRadarSet(
 
   return selected;
 }
-

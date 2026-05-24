@@ -91,14 +91,14 @@ export type ConsiderationBriefView = {
 export function buildConsiderationBrief(item: IndexedItem): ConsiderationBriefView {
   const payload = asRecord(item.rawPayload);
   const briefing = item.briefing ?? fallbackBriefing(item, payload);
-  const verdict = inferVerdict(item, briefing);
+  const verdict = inferVerdict(item, briefing, payload);
   const sourceEvidence = readSourceEvidence(item, payload, briefing);
   const location = readLocation(item, payload);
   const media = readMedia(item, payload);
   const indicators = buildIndicators(item, briefing, sourceEvidence);
   const whyItMatters = buildWhyItMatters(item, briefing, indicators);
   const practicalFit = buildPracticalFit(item, briefing, location);
-  const bestMove = bestMoveCopy(verdict, briefing);
+  const bestMove = bestMoveCopy(verdict, briefing, payload);
   const valueSignal = buildValueSignal(item, briefing, indicators);
   const purposeLabel = stringValue(payload.purpose_label) ?? purposeLabelForItem(item);
   const briefDisplayDepth =
@@ -157,9 +157,14 @@ export function sourceDomainForItem(item: IndexedItem): string | undefined {
   return safeDomain(url);
 }
 
-function inferVerdict(item: IndexedItem, briefing: ItemBriefing): ConsiderationVerdict {
+function inferVerdict(
+  item: IndexedItem,
+  briefing: ItemBriefing,
+  payload: Record<string, unknown>,
+): ConsiderationVerdict {
   if (item.status === "passed" || item.status === "archived") return "pass";
   if (item.status === "planned" || briefing.best_next_action === "plan") return "plan";
+  if (readDisposition(payload, "radar") === "active") return "move";
   switch (briefing.best_next_action) {
     case "save":
       return item.destination === "upcoming" ? "plan" : "move";
@@ -209,10 +214,18 @@ function primaryActionForVerdict(
 function bestMoveCopy(
   verdict: ConsiderationVerdict,
   briefing: ItemBriefing,
+  payload: Record<string, unknown>,
 ): { title: string; body: string } {
   const take = cleanText(briefing.jarvis_take);
+  const activeRadar = readDisposition(payload, "radar") === "active";
   switch (verdict) {
     case "move":
+      if (activeRadar && /not urgent|no rush|holding|hold/i.test(take)) {
+        return {
+          title: "Worth keeping in view.",
+          body: "Not urgent, but strong enough to stay visible.",
+        };
+      }
       return {
         title: "Save for comparison.",
         body: take || "Strong fit, low friction. Keep it close enough to act on.",
@@ -238,6 +251,18 @@ function bestMoveCopy(
         body: take || "Not decision-ready yet. Let it leave the board.",
       };
   }
+}
+
+function readDisposition(
+  payload: Record<string, unknown>,
+  surface: "radar" | "today" | "plan",
+): string | undefined {
+  const key = `${surface}_disposition`;
+  const topLevel = payload[key];
+  if (typeof topLevel === "string") return topLevel;
+  const intelligence = asRecord(payload.intelligence);
+  const nested = intelligence[key];
+  return typeof nested === "string" ? nested : undefined;
 }
 
 function buildFacts(

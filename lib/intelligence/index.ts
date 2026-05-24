@@ -21,8 +21,10 @@ export { evaluateForPlan, evaluateForSurface, enrichRadarItem } from "@/lib/inte
 export {
   buildRadarBoard,
   curateRadarCandidates,
+  isPromotableWhenUnderfilled,
   isStrongRadarItem,
   mergeRadarIntelligencePayload,
+  promoteQualifiedHoldingItems,
   readCurrentRadarBoard,
   readRadarCandidatePool,
   rotateWeakActiveRadarItems,
@@ -32,4 +34,3 @@ export { refillRadarBoard, scheduleRadarAutoRefill } from "@/lib/intelligence/ra
 export { evaluatePlanReadiness } from "@/lib/intelligence/radarPlanReadiness";
 export { selectDiverseRadarSet } from "@/lib/intelligence/radarDiversity";
 export { scoreRadarCandidate } from "@/lib/intelligence/radarScoring";
-

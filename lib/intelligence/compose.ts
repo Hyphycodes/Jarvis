@@ -11,17 +11,29 @@ export function composeSurfaceCopy(input: {
     truth.missingDetails.length > 0
       ? `Missing: ${truth.missingDetails.slice(0, 2).join(", ")}.`
       : "";
+  const nonUrgentActiveAngle = /not urgent|no rush|holding|hold/i.test(signal.strongestAngle)
+    ? nonUrgentRadarCopy(signal)
+    : signal.strongestAngle;
   return {
     title: signal.moveTitle,
     oneLine: signal.reasonSurfaced,
     reasonSurfaced: signal.reasonSurfaced,
-    strongestAngle: signal.strongestAngle,
+    strongestAngle: nonUrgentActiveAngle,
     nextMove:
       signal.suggestedAction === "plan"
         ? "Open the plan path."
         : signal.suggestedAction === "hold" || signal.suggestedAction === "research"
-          ? missing || "Hold until one more detail is clear."
-          : signal.strongestAngle,
+          ? nonUrgentActiveAngle || missing || "Worth keeping in view."
+          : nonUrgentActiveAngle,
   };
 }
 
+function nonUrgentRadarCopy(signal: SignalProfile): string {
+  if (/golf|horse|outdoor|weekend|activity/i.test(`${signal.category} ${signal.moveTitle}`)) {
+    return "Good weekend lane. Not urgent, but strong enough to stay visible.";
+  }
+  if (/creative|style|idea|ownership|land/i.test(`${signal.category} ${signal.purposeLabel}`)) {
+    return "Worth keeping in view while the lane is warm.";
+  }
+  return "Not urgent, but strong enough to stay visible.";
+}

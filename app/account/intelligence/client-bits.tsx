@@ -29,6 +29,11 @@ type RefreshSummary = {
     reviewed?: number;
     invalid_active_found?: number;
   };
+  promoted_holding?: {
+    reviewed?: number;
+    promoted?: number;
+    blocked?: number;
+  };
 };
 
 export function RefreshRadarButton({
@@ -97,6 +102,9 @@ export function RefreshRadarButton({
             : ""}
           shortlisted {result.shortlisted} · selected {result.selected} ·
           rejected {result.rejected} · expired {result.expired}
+          {result.promoted_holding?.promoted
+            ? ` · promoted ${result.promoted_holding.promoted} from Holding`
+            : ""}
           {result.fallback_used ? " · fallback brain" : " · Claude brain"}
           {result.fallback_reason ? ` · ${result.fallback_reason}` : ""}
         </p>

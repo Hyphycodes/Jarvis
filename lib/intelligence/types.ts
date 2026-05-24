@@ -144,6 +144,9 @@ export type RadarItem = {
   };
   missingInfo: string[];
   suggestedAction: string;
+  radarDisposition: "active" | "holding" | "archive";
+  todayDisposition: "today" | "not_today";
+  planDisposition: "ready" | "seed" | "not_ready";
   planSlug?: string;
   canGeneratePlan: boolean;
   diversityGroup: string;

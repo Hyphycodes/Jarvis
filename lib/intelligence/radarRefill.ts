@@ -5,6 +5,7 @@ import { RADAR_ACTIVE_ITEM_LIMIT, RADAR_MIN_ACTIVE_ITEM_TARGET } from "@/lib/bra
 import { runAmbientIntelligence } from "@/lib/intelligence/ambientRuns";
 import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
 import {
+  promoteQualifiedHoldingItems,
   readCurrentRadarBoard,
   rotateWeakActiveRadarItems,
 } from "@/lib/intelligence/radarCurator";
@@ -23,6 +24,7 @@ export type RadarRefillSummary = {
   runs: AmbientRunSummary[];
   cleanup?: Awaited<ReturnType<typeof cleanupRadar>>;
   rotated?: Awaited<ReturnType<typeof rotateWeakActiveRadarItems>>;
+  promoted_holding?: Awaited<ReturnType<typeof promoteQualifiedHoldingItems>>;
   missing_context: string[];
 };
 
@@ -36,6 +38,7 @@ export async function refillRadarBoard(input: {
   const cleanup = await cleanupRadar(owner.id);
   const rotated = input.force ? await rotateWeakActiveRadarItems(owner.id) : undefined;
   let board = await readCurrentRadarBoard();
+  let promotedHolding: Awaited<ReturnType<typeof promoteQualifiedHoldingItems>> | undefined;
   const runs: AmbientRunSummary[] = [];
   const maxAttempts = input.maxAttempts ?? 2;
 
@@ -53,8 +56,22 @@ export async function refillRadarBoard(input: {
       runs,
       cleanup,
       rotated,
+      promoted_holding: promotedHolding,
       missing_context: board.missingContext,
     };
+  }
+
+  if (board.items.length < RADAR_MIN_ACTIVE_ITEM_TARGET) {
+    promotedHolding = await promoteQualifiedHoldingItems(
+      owner.id,
+      Math.min(
+        RADAR_MIN_ACTIVE_ITEM_TARGET - board.items.length,
+        RADAR_ACTIVE_ITEM_LIMIT - board.items.length,
+      ),
+    );
+    if (promotedHolding.promoted > 0) {
+      board = await readCurrentRadarBoard();
+    }
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -66,6 +83,21 @@ export async function refillRadarBoard(input: {
     });
     runs.push(run);
     board = await readCurrentRadarBoard();
+    if (board.items.length < RADAR_MIN_ACTIVE_ITEM_TARGET) {
+      const nextPromotion = await promoteQualifiedHoldingItems(
+        owner.id,
+        Math.min(
+          RADAR_MIN_ACTIVE_ITEM_TARGET - board.items.length,
+          RADAR_ACTIVE_ITEM_LIMIT - board.items.length,
+        ),
+      );
+      if (nextPromotion.promoted > 0) {
+        promotedHolding = mergePromotionResults(promotedHolding, nextPromotion);
+        board = await readCurrentRadarBoard();
+      } else if (!promotedHolding) {
+        promotedHolding = nextPromotion;
+      }
+    }
     if (run.skipped || (run.inserted + run.updated + run.selected === 0 && attempt > 0)) {
       break;
     }
@@ -80,6 +112,7 @@ export async function refillRadarBoard(input: {
     activeBefore: beforeBoard.items.length,
     activeAfter: board.items.length,
     attempts: runs.length,
+    promotedHolding,
     missing,
   });
 
@@ -94,6 +127,7 @@ export async function refillRadarBoard(input: {
     runs,
     cleanup,
     rotated,
+    promoted_holding: promotedHolding,
     missing_context: missing,
   };
 }
@@ -119,3 +153,16 @@ export async function scheduleRadarAutoRefill(input: {
   }
 }
 
+function mergePromotionResults(
+  current: Awaited<ReturnType<typeof promoteQualifiedHoldingItems>> | undefined,
+  next: Awaited<ReturnType<typeof promoteQualifiedHoldingItems>>,
+): Awaited<ReturnType<typeof promoteQualifiedHoldingItems>> {
+  if (!current) return next;
+  return {
+    reviewed: current.reviewed + next.reviewed,
+    promoted: current.promoted + next.promoted,
+    blocked: current.blocked + next.blocked,
+    promoted_ids: [...current.promoted_ids, ...next.promoted_ids],
+    reasons: [...current.reasons, ...next.reasons],
+  };
+}

@@ -34,6 +34,7 @@ All constants live in `lib/brain/constants.ts`.
 | `RADAR_STALE_SHOWN_DAYS` | 14 | Days before a shown item is stale |
 | `RADAR_MIN_CONFIDENCE` | 0.65 | Minimum confidence to reach Active Radar |
 | `RADAR_ADMISSION_MIN_CONFIDENCE` | 0.72 | Decision Council minimum for the visible front room |
+| `RADAR_UNDERFILLED_PROMOTION_FLOOR` | 0.52 | Medium-quality floor for promoting Holding while Active Radar is below target |
 | `RADAR_DEFAULT_SELECTED_LIMIT` | 5 | Curator's default max selections per run |
 | `RADAR_HARD_SELECTED_LIMIT` | 10 | Absolute ceiling on Curator selections |
 | `RADAR_SHORTLIST_LIMIT` | 20 | Candidates passed to Curator from scorer |
@@ -97,18 +98,19 @@ are candidates for Google Places enrichment downstream.
 POST /api/radar/refresh
   1. refillRadarBoard() — bounded manual refill, no endless append
   2. cleanupRadar() — bad/noisy active rows leave the front room
-  3. rotateWeakActiveRadarItems() when force=true — weak/stale shown rows make room
-  4. Check cooldown (30 min). Return {skipped:true} if blocked.
-  5. expireOldCandidates() — time-expired events → status="expired"
-  6. buildBrainContext() — founder, memory, signals, weather, inventory
-  7. buildInterestGraph() — seed + memory + behavior nudges  ← Sprint 2.2
-  8. runTasteStrategist() — exploration lanes (Claude)        ← Sprint 2.2
-  9. buildCuriosityPlan() — lanes → typed source plan         ← Sprint 2.2
- 10. gather:
+  3. promoteQualifiedHoldingItems() — underfilled boards scan Holding before new discovery
+  4. rotateWeakActiveRadarItems() when force=true — weak/stale shown rows make room
+  5. Check cooldown (30 min). Return {skipped:true} if blocked.
+  6. expireOldCandidates() — time-expired events → status="expired"
+  7. buildBrainContext() — founder, memory, signals, weather, inventory
+  8. buildInterestGraph() — seed + memory + behavior nudges  ← Sprint 2.2
+  9. runTasteStrategist() — exploration lanes (Claude)        ← Sprint 2.2
+ 10. buildCuriosityPlan() — lanes → typed source plan         ← Sprint 2.2
+ 11. gather:
      - Lane-driven: gatherFromCuriosityPlan(plan)
      - Static fallback: gatherRadarCandidates() (no lanes returned)
- 11. ingestCandidates() per lane — PROTECTED_STATUSES always skipped
- 12. runRadarCuration():
+ 12. ingestCandidates() per lane — PROTECTED_STATUSES always skipped
+ 13. runRadarCuration():
      a. Build pool (radar + holding, status discovered/shown)
      b. Exclude recently-passed items (from context.recentActions)
      c. shortlistByScore() — deterministic top-N by score
@@ -230,6 +232,9 @@ briefing conventions. It stores UI-safe metadata in `surfaced_items.payload`:
 - `purpose_label`
 - `vibe`
 - `diversity_group`
+- `radar_disposition`
+- `today_disposition`
+- `plan_disposition`
 - `reason_surfaced`
 - `strongest_angle`
 - `missing_info`
@@ -257,8 +262,8 @@ after the window are eligible to re-enter the pool on the next refresh.
 - Let Claude directly write to the database.
 - Overwrite `saved`, `passed`, `planned`, `completed`, `archived`, or `opened` status.
 - Run SerpAPI speculatively (shopping only on explicit product request).
-- Render more than 5 front-room cards, even if more rows are technically active.
-- Route an item to Active Radar with Decision Council confidence < `RADAR_ADMISSION_MIN_CONFIDENCE` (0.72).
+- Render more than 10 front-room cards, even if more rows are technically active.
+- Treat "no rush" as a Radar blocker. Urgency belongs to Today; Radar can keep worthwhile possibilities visible.
 - Show placeholder cards to authenticated users.
 
 ## Ambient Radar
@@ -287,6 +292,18 @@ Active Radar is the front room. It only renders `destination="radar"` rows in
 `discovered` candidates, Holding items, Watch items, source leads, weak evidence,
 social snippets, literal query matches, and "watch for stronger evidence" briefs
 do not render on Radar.
+
+Radar worthiness is separate from Today urgency and Plan readiness:
+
+- `radar_disposition=active` means the item is worth keeping visible.
+- `today_disposition=today` means the timing is strong enough for Today.
+- `plan_disposition=ready|seed|not_ready` controls whether plan generation has
+  enough truth-safe detail.
+
+When Active Radar is below `RADAR_MIN_ACTIVE_ITEM_TARGET`, a medium-confidence
+Holding item can be promoted if it has a clear title, category/vibe, surfaced
+reason, acceptable evidence, and no hard truth/source blockers. "Good signal,
+not urgent" is not a reason to hide an otherwise strong Radar possibility.
 
 Zero cards is a valid outcome. The signed-in empty state says: "Nothing made the
 cut."

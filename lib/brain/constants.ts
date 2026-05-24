@@ -38,6 +38,10 @@ export const RADAR_SHORTLIST_LIMIT = 20;
  *  An empty selected[] is always valid — silence is better than filler. */
 export const RADAR_MIN_CONFIDENCE = 0.65;
 
+/** Medium-quality Holding item floor used only when Active Radar is underfilled.
+ *  Radar does not require urgency; Today does. */
+export const RADAR_UNDERFILLED_PROMOTION_FLOOR = 0.52;
+
 // ── Category quotas (per refresh run) ────────────────────────────────────────
 
 /** Max dining / restaurant items per refresh. */
