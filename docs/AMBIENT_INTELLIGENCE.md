@@ -34,11 +34,28 @@ budget into `brain_decision_runs.raw_output.budget`.
 ## Endpoints
 
 - `POST /api/intelligence/run`
-- `POST /api/radar/refresh` (legacy/manual debug path, delegates to Radar Discovery)
+- `POST /api/radar/refresh` (manual debug path, runs bounded Radar refill)
 - `POST /api/radar/cleanup`
 
 The code is cron-ready in shape, but automatic Vercel Cron should only be wired
 after cadence and budget are monitored in production.
+
+## Radar Refill Contract
+
+Manual refresh and post-action auto-refill both use the same board rule:
+
+- target at least 5 strong Active Radar items when possible
+- never exceed 10 active items
+- cleanup weak/noisy active rows before adding
+- preserve saved, planned, completed, and archived rows
+- avoid recent Pass near-duplicates
+- stop after bounded attempts
+- return fewer than 5 rather than padding with weak filler
+
+Post-response refill is triggered after Save, Pass, Archive, Plan, Move to
+Holding, or Add to Upcoming only when the strong active board drops below the
+target. It uses the existing ambient/source/candidate pipeline; page loads do
+not trigger discovery.
 
 ## Quality Rules
 

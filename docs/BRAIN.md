@@ -18,15 +18,38 @@
 │  5.  gatherFromCuriosityPlan()← real source calls, capped        │
 │  6.  ingestCandidates()       ← upsert into surfaced_items       │
 │  7.  runRadarCuration()       ← score, curator, critic, briefing │
-│  8.  briefing quality gate    ← keep weak output out of Radar    │
-│  9.  enforceActiveRadarCap()  ← rotate excess to Holding         │
-│ 10.  pruneStaleHolding()      ← archive aged Holding             │
-│ 11.  logDecisionRun()         ← strategy snapshot stored         │
+│  8.  Intelligence Core        ← signal, truth, diversity, plan    │
+│  9.  briefing/front-room gate ← keep weak output out of Radar     │
+│ 10.  enforceActiveRadarCap()  ← rotate excess to Holding          │
+│ 11.  pruneStaleHolding()      ← archive aged Holding              │
+│ 12.  logDecisionRun()         ← strategy snapshot stored          │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The pipeline runs ONLY from `POST /api/radar/refresh`. Page loads never trigger any of it.
+The pipeline runs ONLY from owner actions and ambient endpoints such as
+`POST /api/radar/refresh` and `POST /api/intelligence/run`. Page loads never
+trigger discovery or external source calls.
+
+## Intelligence Core (Sprint 7)
+
+`lib/intelligence` is the shared entrypoint for the Radar curation engine:
+
+- Context pass: wraps `buildBrainContext()` and carries Weekly Rhythm, memory,
+  recent actions, active Radar inventory, plans, weather, and founder taste.
+- Signal pass: profiles category, vibe, purpose label, effort, spend, source
+  trust, evidence quality, and practical friction.
+- Judgment pass: wraps the Decision Council and preserves the strict
+  `radar | holding | discovered | archive` admission result.
+- Taste pass: reads the Taste Constitution instead of literal keyword matches.
+- Rhythm pass: uses the workday/evening/weekend cadence to protect focus.
+- Truth pass: tracks known and missing details without inventing facts.
+- Composition pass: produces UI-safe copy for cards, Today rows, and plan seeds.
+- Plan readiness pass: prepares a truth-safe `planSeed` only for strong
+  high-confidence items.
+
+Radar uses this core to maintain a 5-item target and 10-item cap while still
+returning fewer than 5 when the pool is not strong enough.
 
 ## Interest Graph (`lib/brain/interests.ts`, `lib/brain/interestSeed.ts`, `lib/brain/interestGraph.ts`)
 

@@ -11,6 +11,11 @@ import {
   mergeBriefingIntoPayload,
 } from "@/lib/brain/briefingTypes";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
+import { enrichRadarItem } from "@/lib/intelligence/core";
+import {
+  isStrongRadarItem,
+  mergeRadarIntelligencePayload,
+} from "@/lib/intelligence/radarCurator";
 import { runCurator, summarizeContext } from "@/lib/brain/curator";
 import { runCritic } from "@/lib/brain/critic";
 import { shortlistByScore } from "@/lib/brain/router";
@@ -116,9 +121,8 @@ export async function runRadarCuration(options: {
       .map((a) => a.title),
   );
 
-  const pool = fullPool.filter(
-    (item) => !recentlyPassedTitles.has(item.title),
-  );
+  const recentPasses = context.recentActions.filter((a) => a.status === "passed");
+  const pool = fullPool.filter((item) => !isNearRecentPass(item, recentPasses, recentlyPassedTitles));
 
   const recentPassCategories = context.recentActions
     .filter((a) => a.status === "passed")
@@ -172,9 +176,11 @@ export async function runRadarCuration(options: {
     });
   }
 
+  const intelligenceGated = attachRadarIntelligence(gated, shortlist, context);
+
   const { selectedApplied, rejectedApplied } = await applyDecision(
     owner.id,
-    gated,
+    intelligenceGated,
     pool,
   );
 
@@ -190,20 +196,20 @@ export async function runRadarCuration(options: {
     runType: options.runType ?? "radar.refresh",
     inputSummary: summarizeContext(context),
     candidateIds: shortlist.map((s) => s.item.id),
-    selectedIds: gated.selected.map((s) => s.itemId),
-    rejectedIds: gated.rejected.map((r) => r.itemId),
-    model: gated.fallbackUsed || !hasAnthropic() ? "deterministic" : "claude",
+    selectedIds: intelligenceGated.selected.map((s) => s.itemId),
+    rejectedIds: intelligenceGated.rejected.map((r) => r.itemId),
+    model: intelligenceGated.fallbackUsed || !hasAnthropic() ? "deterministic" : "claude",
     rawOutput: {
-      decision: gated,
+      decision: intelligenceGated,
       strategy: options.strategy ?? null,
-      fallback_reason: gated.fallbackReason,
+      fallback_reason: intelligenceGated.fallbackReason,
       ...(options.rawOutputExtra ?? {}),
     } as unknown as BrainDecision,
   });
 
   return {
     shortlisted: shortlist.length,
-    decision: gated,
+    decision: intelligenceGated,
     appliedSelected: selectedApplied,
     appliedRejected: rejectedApplied,
     decisionRunId,
@@ -508,6 +514,76 @@ function enforceBriefingQuality(
   };
 }
 
+function attachRadarIntelligence(
+  decision: BrainDecision,
+  shortlist: ScoredItem[],
+  context: Awaited<ReturnType<typeof buildBrainContext>>,
+): BrainDecision {
+  const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
+  const selected: BrainDecision["selected"] = [];
+  const rejected: BrainDecision["rejected"] = [...decision.rejected];
+  const notes: string[] = [];
+
+  for (const sel of decision.selected) {
+    const scored = scoreByItemId.get(sel.itemId);
+    if (!scored) {
+      selected.push(sel);
+      continue;
+    }
+    const item: IndexedItem = {
+      ...scored.item,
+      briefing: sel.briefing ?? scored.item.briefing,
+      score: sel.confidence,
+      tags: uniq([...scored.item.tags, ...sel.tags]),
+      reasons: uniq([...scored.item.reasons, sel.reason, sel.displayAngle]).filter(Boolean),
+    };
+    const radarIntelligence = enrichRadarItem({ item, context });
+    let destination = sel.destination;
+
+    if (destination === "radar" && !isStrongRadarItem(radarIntelligence)) {
+      const admission = radarIntelligence.decision.admission;
+      if (admission === "archive" || admission === "discovered") {
+        rejected.push({
+          itemId: sel.itemId,
+          reason:
+            radarIntelligence.decision.rejection_reason ??
+            `Radar hard gate: ${radarIntelligence.decision.negative_flags.join(", ") || "below quality floor"}`,
+          suggestedStatus: admission === "archive" ? "archived" : "discovered",
+        });
+        notes.push(`${sel.itemId}: Radar hard gate rejected`);
+        continue;
+      }
+      destination = "holding";
+      notes.push(`${sel.itemId}: Radar hard gate moved to Holding`);
+    }
+
+    selected.push({
+      ...sel,
+      destination,
+      confidence: Math.min(sel.confidence, radarIntelligence.score),
+      reason: radarIntelligence.reasonSurfaced,
+      displayAngle: radarIntelligence.strongestAngle,
+      radarDecision: radarIntelligence.decision,
+      radarIntelligence,
+      tags: uniq([
+        ...sel.tags,
+        radarIntelligence.vibe,
+        radarIntelligence.decision.purpose_label,
+        radarIntelligence.diversityGroup,
+      ]).filter(Boolean),
+    });
+  }
+
+  return {
+    ...decision,
+    selected,
+    rejected,
+    notes: [decision.notes, notes.length ? `Radar intelligence: ${notes.join("; ")}` : ""]
+      .filter(Boolean)
+      .join(" | "),
+  };
+}
+
 // ── Apply decision ────────────────────────────────────────────────────────────
 
 async function applyDecision(
@@ -531,16 +607,15 @@ async function applyDecision(
       sel.displayAngle,
     ]).filter(Boolean);
     const tags = uniq([...existing.tags, ...sel.tags]).filter(Boolean);
-    const payload = sel.radarDecision
-      ? mergeObjectPayload(
-          sel.briefing
-            ? mergeBriefingIntoPayload(existing.rawPayload, sel.briefing, sel.briefingMeta)
-            : existing.rawPayload,
-          { radar_decision: sel.radarDecision },
-        )
-      : sel.briefing
+    let payload = sel.briefing
       ? mergeBriefingIntoPayload(existing.rawPayload, sel.briefing, sel.briefingMeta)
       : existing.rawPayload;
+    if (sel.radarDecision) {
+      payload = mergeObjectPayload(payload, { radar_decision: sel.radarDecision });
+    }
+    if (sel.radarIntelligence) {
+      payload = mergeRadarIntelligencePayload(payload, sel.radarIntelligence);
+    }
 
     const { error } = await supabase
       .from("surfaced_items")
@@ -719,6 +794,41 @@ async function logDecisionRun(input: {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+function isNearRecentPass(
+  item: IndexedItem,
+  recentPasses: Awaited<ReturnType<typeof buildBrainContext>>["recentActions"],
+  exactTitles: Set<string>,
+): boolean {
+  if (exactTitles.has(item.title)) return true;
+  const title = normalizeTitle(item.title);
+  const category = item.category ?? item.type;
+  return recentPasses.some((passed) => {
+    const passedTitle = normalizeTitle(passed.title);
+    if (!passedTitle || !title) return false;
+    const sameCategory = passed.category && category && passed.category === category;
+    if (sameCategory && (passedTitle.includes(title) || title.includes(passedTitle))) {
+      return true;
+    }
+    return jaccard(title, passedTitle) >= 0.72;
+  });
+}
+
+function normalizeTitle(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function jaccard(a: string, b: string): number {
+  const aSet = new Set(a.split(" ").filter((word) => word.length > 2));
+  const bSet = new Set(b.split(" ").filter((word) => word.length > 2));
+  if (aSet.size === 0 || bSet.size === 0) return 0;
+  let intersection = 0;
+  for (const word of aSet) {
+    if (bSet.has(word)) intersection++;
+  }
+  const union = new Set([...aSet, ...bSet]).size;
+  return union === 0 ? 0 : intersection / union;
+}
 
 function uniq<T>(values: T[]): T[] {
   return Array.from(new Set(values));

@@ -219,6 +219,15 @@ into existing JSON fields:
 - `surfaced_items.payload.purpose_label`: optional purpose label
 - `surfaced_items.payload.radar_decision`: Decision Council admission, scores,
   move title, purpose label, display depth, and positive/negative signals
+- `surfaced_items.payload.vibe`: board diversity / feel classification
+- `surfaced_items.payload.diversity_group`: selection bucket used to avoid
+  repetitive Radar boards
+- `surfaced_items.payload.reason_surfaced`: UI-safe reason the item belongs
+- `surfaced_items.payload.strongest_angle`: strongest concise owner-facing angle
+- `surfaced_items.payload.missing_info`: facts Jarvis knows are still missing
+- `surfaced_items.payload.score_breakdown`: deterministic Radar score parts
+- `surfaced_items.payload.plan_readiness`: truth-safe plan seed readiness
+- `surfaced_items.payload.intelligence`: latest Intelligence Core snapshot
 - `surfaced_items.payload.source_trust`: source trust audit for research items
 - `brain_decision_runs.raw_output.ambient`: run type and policy
 - `brain_decision_runs.raw_output.budget`: estimated cost and caps

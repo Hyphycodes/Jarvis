@@ -40,6 +40,24 @@ Briefings live inside `surfaced_items.payload.briefing`:
 `payload.briefing_meta` stores the source fingerprint, generation timestamp, and
 fallback reason when deterministic copy was used.
 
+Sprint 7 adds adjacent Intelligence Core fields in the same payload JSON. These
+do not replace `payload.briefing`; they give Radar and Plan generation a stable
+decision snapshot:
+
+- `move_title`
+- `purpose_label`
+- `vibe`
+- `diversity_group`
+- `reason_surfaced`
+- `strongest_angle`
+- `missing_info`
+- `score_breakdown`
+- `plan_readiness`
+
+`plan_readiness` is truth-safe. It may include a `planSeed` for strong items,
+but it never invents addresses, hours, prices, weather, bookings, reservations,
+or confirmations.
+
 ## Quality Flags
 
 Supported flags:

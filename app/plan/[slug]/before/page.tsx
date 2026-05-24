@@ -44,7 +44,7 @@ export default async function PlanBeforePage({
 
       <section className="mt-10 px-5">
         <Block label="What to wear">
-          <div className="grid grid-cols-[minmax(0,1fr)_140px] gap-5">
+          <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-4 sm:grid-cols-[minmax(0,1fr)_140px] sm:gap-5">
             <ul className="flex flex-col">
               {brief.before.wear.map((line, i) => (
                 <li

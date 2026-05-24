@@ -244,9 +244,34 @@ export const memoryUpdateProposalSchema = z
   })
   .strict();
 
+const behaviorLearningSchema = z
+  .object({
+    category: z.string().optional(),
+    vibe: z.string().optional(),
+    sourceDomain: z.string().optional(),
+    purposeLabel: z.string().optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    reasonSurfaced: z.string().optional(),
+    actionTitle: z.string().optional(),
+    passReason: z.string().optional(),
+  })
+  .strict();
+
 export const userBehaviorSignalSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("radar.save"), itemId: z.string().min(1) }).strict(),
-  z.object({ type: z.literal("radar.pass"), itemId: z.string().min(1) }).strict(),
+  z
+    .object({
+      type: z.literal("radar.save"),
+      itemId: z.string().min(1),
+      learning: behaviorLearningSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("radar.pass"),
+      itemId: z.string().min(1),
+      learning: behaviorLearningSchema.optional(),
+    })
+    .strict(),
   z.object({ type: z.literal("plan.open"), planId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("plan.activate"), planId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("plan.complete"), planId: z.string().min(1) }).strict(),
@@ -287,6 +312,7 @@ export const userBehaviorSignalSchema = z.discriminatedUnion("type", [
       type: z.literal("item.save"),
       itemId: z.string().min(1),
       category: z.string().optional(),
+      learning: behaviorLearningSchema.optional(),
     })
     .strict(),
   z
@@ -294,6 +320,7 @@ export const userBehaviorSignalSchema = z.discriminatedUnion("type", [
       type: z.literal("item.pass"),
       itemId: z.string().min(1),
       category: z.string().optional(),
+      learning: behaviorLearningSchema.optional(),
     })
     .strict(),
   z
@@ -301,6 +328,7 @@ export const userBehaviorSignalSchema = z.discriminatedUnion("type", [
       type: z.literal("item.plan"),
       itemId: z.string().min(1),
       planId: z.string().optional(),
+      learning: behaviorLearningSchema.optional(),
     })
     .strict(),
   z
@@ -313,6 +341,7 @@ export const userBehaviorSignalSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("item.archive"),
       itemId: z.string().min(1),
+      learning: behaviorLearningSchema.optional(),
     })
     .strict(),
   z

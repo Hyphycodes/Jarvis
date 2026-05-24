@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import {
   dispatchItemAction,
   type ItemAction,
 } from "@/lib/actions/items";
+import { scheduleRadarAutoRefill } from "@/lib/intelligence/radarRefill";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,10 +61,22 @@ export async function POST(
       planId: parsed?.planId,
       destination: parsed?.destination,
     });
+    if (shouldAutoRefill(action)) {
+      after(() =>
+        scheduleRadarAutoRefill({
+          trigger: `item.${action}`,
+          itemId: id,
+        }),
+      );
+    }
     return NextResponse.json(result);
   } catch (error) {
     return handleError(error);
   }
+}
+
+function shouldAutoRefill(action: ItemAction): boolean {
+  return ["save", "pass", "archive", "plan", "move-holding", "add-upcoming"].includes(action);
 }
 
 async function safeJson(request: Request): Promise<unknown> {

@@ -33,7 +33,7 @@ export function PlanHero({
       {/* Background image / gradient */}
       <div
         aria-hidden
-        className="absolute inset-x-0 top-0 h-[420px] overflow-hidden"
+        className="absolute inset-x-0 top-0 h-[400px] overflow-hidden sm:h-[420px]"
       >
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -68,7 +68,7 @@ export function PlanHero({
       </div>
 
       {/* Content */}
-      <div className="relative px-5 pb-6" style={{ paddingTop: "240px" }}>
+      <div className="relative px-5 pb-6" style={{ paddingTop: "clamp(210px, 55vw, 240px)" }}>
         <div
           className="font-mono text-[11px] uppercase tracking-[0.2em]"
           style={{ color: "var(--text-muted)" }}
@@ -79,7 +79,7 @@ export function PlanHero({
           className="mt-3 font-serif italic"
           style={{
             color: "var(--text-primary)",
-            fontSize: "56px",
+            fontSize: "clamp(48px, 13vw, 56px)",
             lineHeight: 1.02,
             letterSpacing: "-0.005em",
           }}

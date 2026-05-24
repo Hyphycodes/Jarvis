@@ -1,6 +1,7 @@
 import type { IndexedItem, IndexItemStatus } from "@/lib/index/types";
 import type { BriefingMeta, ItemBriefing } from "@/lib/brain/briefingTypes";
 import type { RadarDecision } from "@/lib/brain/decisionCouncilTypes";
+import type { RadarItem } from "@/lib/intelligence/types";
 
 export type BrainSelection = {
   itemId: string;
@@ -19,6 +20,7 @@ export type BrainSelection = {
   briefing?: ItemBriefing;
   briefingMeta?: BriefingMeta;
   radarDecision?: RadarDecision;
+  radarIntelligence?: RadarItem;
 };
 
 export type BrainRejection = {

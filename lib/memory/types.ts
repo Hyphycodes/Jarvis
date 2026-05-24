@@ -49,8 +49,8 @@ export type MemoryUpdateProposal = {
 };
 
 export type UserBehaviorSignal =
-  | { type: "radar.save"; itemId: string }
-  | { type: "radar.pass"; itemId: string }
+  | { type: "radar.save"; itemId: string; learning?: BehaviorLearningPayload }
+  | { type: "radar.pass"; itemId: string; learning?: BehaviorLearningPayload }
   | { type: "plan.open"; planId: string }
   | { type: "plan.activate"; planId: string }
   | { type: "plan.complete"; planId: string }
@@ -61,11 +61,11 @@ export type UserBehaviorSignal =
   | { type: "memory.archive"; memoryProposalId: string }
   | { type: "item.show"; itemId: string }
   | { type: "item.open"; itemId: string }
-  | { type: "item.save"; itemId: string; category?: string }
-  | { type: "item.pass"; itemId: string; category?: string }
-  | { type: "item.plan"; itemId: string; planId?: string }
+  | { type: "item.save"; itemId: string; category?: string; learning?: BehaviorLearningPayload }
+  | { type: "item.pass"; itemId: string; category?: string; learning?: BehaviorLearningPayload }
+  | { type: "item.plan"; itemId: string; planId?: string; learning?: BehaviorLearningPayload }
   | { type: "item.complete"; itemId: string }
-  | { type: "item.archive"; itemId: string }
+  | { type: "item.archive"; itemId: string; learning?: BehaviorLearningPayload }
   | { type: "item.restore"; itemId: string }
   // Sprint 3.1 — plan as first-class object
   | { type: "plan.generated"; planId: string; itemId?: string; fallbackUsed?: boolean }
@@ -84,4 +84,15 @@ export type MemoryDecision = {
   strength: BehaviorSignalStrength;
   reason: string;
   evidence: string[];
+};
+
+export type BehaviorLearningPayload = {
+  category?: string;
+  vibe?: string;
+  sourceDomain?: string;
+  purposeLabel?: string;
+  confidence?: number;
+  reasonSurfaced?: string;
+  actionTitle?: string;
+  passReason?: string;
 };

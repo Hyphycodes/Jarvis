@@ -190,6 +190,19 @@ export type RadarCard = {
   summary: string;
   displayCategory?: string;
   purposeLabel?: string;
+  vibe?: string;
+  diversityGroup?: string;
+  reasonSurfaced?: string;
+  strongestAngle?: string;
+  missingInfo?: string[];
+  planReadiness?: {
+    shouldPreparePlan: boolean;
+    confidence: number;
+    knownDetails: string[];
+    missingDetails: string[];
+    planSeed?: unknown;
+  };
+  scoreBreakdown?: Record<string, number>;
   oneLine?: string;
   jarvisTake?: string;
   verdictLabel?: string;

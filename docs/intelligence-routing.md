@@ -49,9 +49,19 @@ explicit correction > plan complete/activate > plan open > radar save/pass
 
 ## Save/pass learning
 
-`radar.save` and `radar.pass` are small taste signals. They can create pending
-memory proposals, but do not silently mutate long-term taste. Future scoring can
-read accepted memory plus behavior history to improve Radar and Today routing.
+`radar.save`, `radar.pass`, `item.save`, and `item.pass` are small taste
+signals. Sprint 7 enriches these payloads with category, vibe, source domain,
+purpose label, confidence, surfaced reason, and action title when available.
+They can create pending memory proposals, but do not silently mutate long-term
+taste. The next Radar run can still use the recent behavior immediately:
+
+- Save lightly strengthens similar vibe/category/source patterns.
+- Pass suppresses near-duplicates and low-fit patterns without overfitting one tap.
+- Plan/complete signals are stronger than simple opens.
+
+When an action drops the strong Radar board below the 5-item target, Jarvis can
+schedule a bounded post-response refill. The refill respects the 10-item cap and
+does not pad with weak filler.
 
 ## Future API adapters
 

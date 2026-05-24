@@ -19,6 +19,7 @@ import type { BrainDecisionRunRow } from "@/lib/types/database";
 import {
   RADAR_REFRESH_COOLDOWN_MINUTES,
   RADAR_ACTIVE_ITEM_LIMIT,
+  RADAR_MIN_ACTIVE_ITEM_TARGET,
   RADAR_MIN_CONFIDENCE,
 } from "@/lib/brain/constants";
 
@@ -93,10 +94,11 @@ export default async function IntelligencePage() {
             <h2 className="text-[11px] uppercase tracking-editorial text-muted-gold">
               Radar Status
             </h2>
-            <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <StatPill label="Active" value={radarStats.activeCount} cap={RADAR_ACTIVE_ITEM_LIMIT} />
+              <StatPill label="Target" value={RADAR_MIN_ACTIVE_ITEM_TARGET} />
               <StatPill label="Holding" value={radarStats.holdingCount} />
-              <StatPill label="Min confidence" value={`${Math.round(RADAR_MIN_CONFIDENCE * 100)}%`} />
+              <StatPill label="Floor" value={`${Math.round(RADAR_MIN_CONFIDENCE * 100)}%`} />
             </div>
             {lastRun ? (
               <p className="mt-3 text-[11px] text-warm-ivory/40">
@@ -425,7 +427,7 @@ async function safeRadarStats(): Promise<{
         .from("surfaced_items")
         .select("id", { count: "exact", head: true })
         .eq("destination", "radar")
-        .eq("status", "shown"),
+        .in("status", ["shown", "opened"]),
       supabase
         .from("surfaced_items")
         .select("id", { count: "exact", head: true })

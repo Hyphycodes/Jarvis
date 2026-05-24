@@ -8,6 +8,7 @@ import { actionTitleForItem } from "@/lib/brain/actionTitles";
 import { buildNorthLifeCadence } from "@/lib/brain/lifeCadence";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
+import { RADAR_ACTIVE_ITEM_LIMIT } from "@/lib/brain/constants";
 import {
   buildConsiderationBrief,
   heroImageForItem,
@@ -285,12 +286,12 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
     const items = await listIndexItems({
       destination: "radar",
       status: ["shown", "opened"],
-      limit: 24,
+      limit: RADAR_ACTIVE_ITEM_LIMIT * 2,
     });
     return items
       .filter((item) => evaluateActiveRadarItem(item).allowed)
       .sort(compareRadarItems)
-      .slice(0, 5)
+      .slice(0, RADAR_ACTIVE_ITEM_LIMIT)
       .map(toRadarCard);
   } catch (error) {
     logSurfaceError("radar", error);
@@ -558,8 +559,17 @@ function toRadarCard(item: IndexedItem): RadarCard {
   const planSlug = readPlanSlug(item.rawPayload);
   const briefing = item.briefing;
   const consideration = buildConsiderationBrief(item);
-  const actionTitle = actionTitleForItem(item).title;
-  const purposeLabel = purposeLabelForItem(item);
+  const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const intelligence = isRecord(payload.intelligence) ? payload.intelligence : {};
+  const actionTitle = stringValue(payload.move_title) ?? stringValue(intelligence.move_title) ?? actionTitleForItem(item).title;
+  const purposeLabel =
+    stringValue(payload.purpose_label) ??
+    stringValue(intelligence.purpose_label) ??
+    purposeLabelForItem(item);
+  const reasonSurfaced = stringValue(payload.reason_surfaced) ?? stringValue(intelligence.reason_surfaced);
+  const strongestAngle = stringValue(payload.strongest_angle) ?? stringValue(intelligence.strongest_angle);
+  const planReadiness = readPlanReadiness(payload.plan_readiness ?? intelligence.plan_readiness);
+  const scoreBreakdown = readNumberRecord(payload.score_breakdown ?? intelligence.score_breakdown);
   return {
     id: item.id,
     source: item.source,
@@ -569,11 +579,18 @@ function toRadarCard(item: IndexedItem): RadarCard {
     planSlug,
     category,
     title: actionTitle || briefing?.display_title || item.title,
-    summary: briefing?.one_line ?? item.description ?? item.subtitle ?? "",
+    summary: reasonSurfaced ?? briefing?.one_line ?? item.description ?? item.subtitle ?? "",
     displayCategory: briefing?.display_category,
     purposeLabel,
+    vibe: stringValue(payload.vibe) ?? stringValue(intelligence.vibe),
+    diversityGroup: stringValue(payload.diversity_group) ?? stringValue(intelligence.diversity_group),
+    reasonSurfaced,
+    strongestAngle,
+    missingInfo: readStringArray(payload.missing_info ?? intelligence.missing_info),
+    planReadiness,
+    scoreBreakdown,
     oneLine: briefing?.one_line,
-    jarvisTake: briefing?.jarvis_take,
+    jarvisTake: strongestAngle ?? briefing?.jarvis_take,
     verdictLabel: consideration.verdictLabel,
     verdictTone: consideration.verdictTone,
     bestMoveTitle: consideration.bestMoveTitle,
@@ -592,11 +609,11 @@ function toRadarCard(item: IndexedItem): RadarCard {
     datetime: item.startsAt ?? undefined,
     imageUrl: heroImageForItem(item) ?? undefined,
     placeholderKind: consideration.media.placeholderKind,
-    score: briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
+    score: planReadiness?.confidence ?? briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
-    whyItFits: briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
-    whyNow: briefing?.why_now ?? item.reasons[1] ?? "Available now.",
-    actions: { save: true, pass: true, openPlan: Boolean(planSlug) },
+    whyItFits: reasonSurfaced ?? briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
+    whyNow: briefing?.why_now ?? strongestAngle ?? item.reasons[1] ?? "Available now.",
+    actions: { save: true, pass: true, openPlan: Boolean(planSlug || planReadiness?.shouldPreparePlan) },
     routeOnSave: ["radar.saved"],
     routeOnPass: ["radar.passed"],
   };
@@ -1001,6 +1018,35 @@ function formatToday(): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return values.length > 0 ? values : undefined;
+}
+
+function readNumberRecord(value: unknown): Record<string, number> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === "number");
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function readPlanReadiness(value: unknown): RadarCard["planReadiness"] | undefined {
+  if (!isRecord(value)) return undefined;
+  const confidence = typeof value.confidence === "number" ? value.confidence : undefined;
+  if (confidence == null) return undefined;
+  return {
+    shouldPreparePlan: value.shouldPreparePlan === true,
+    confidence,
+    knownDetails: readStringArray(value.knownDetails) ?? [],
+    missingDetails: readStringArray(value.missingDetails) ?? [],
+    planSeed: value.planSeed,
+  };
 }
 
 function readSlugFromKeyStats(value: unknown): string | undefined {

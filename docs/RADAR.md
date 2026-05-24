@@ -14,7 +14,7 @@ Jarvis should think more and show less.
 
 | Layer | Where | Status | Size | Description |
 |-------|-------|--------|------|-------------|
-| **Active Radar** | `destination="radar"` `status in ("shown","opened")` | visible | 0–5 | The front room. Confident moves worth attention now. |
+| **Active Radar** | `destination="radar"` `status in ("shown","opened")` | visible | 0–10, target 5+ | The front room. Confident moves worth attention now. Fewer than 5 is valid when not enough makes the cut. |
 | **Upcoming** | `destination="upcoming"` or saved/planned with future `starts_at` | saved/planned | unbounded | The agenda. Dated saved/planned items grouped by Today/Tomorrow/This Week/Later/No Date. |
 | **Holding / Later** | `destination="holding"` `status="discovered"/"shown"` | discovered | ≤30 | The back room. Strong finds that aren't urgent right now. Eligible for promotion to Radar when timing is right. |
 | **Archive / History** | All destinations | saved, passed, planned, completed, expired, archived | Unbounded | Everything seen, acted on, or aged out. Searchable in `/account/history`. |
@@ -28,13 +28,14 @@ All constants live in `lib/brain/constants.ts`.
 
 | Constant | Default | Purpose |
 |----------|---------|---------|
+| `RADAR_MIN_ACTIVE_ITEM_TARGET` | 5 | Healthy board target. Never padded with weak filler |
 | `RADAR_IDEAL_ACTIVE_ITEM_LIMIT` | 7 | Soft target for Active Radar size |
-| `RADAR_ACTIVE_ITEM_LIMIT` | 12 | Hard cap — items beyond this rotate to Holding |
+| `RADAR_ACTIVE_ITEM_LIMIT` | 10 | Hard cap — items beyond this rotate to Holding |
 | `RADAR_STALE_SHOWN_DAYS` | 14 | Days before a shown item is stale |
 | `RADAR_MIN_CONFIDENCE` | 0.65 | Minimum confidence to reach Active Radar |
 | `RADAR_ADMISSION_MIN_CONFIDENCE` | 0.72 | Decision Council minimum for the visible front room |
 | `RADAR_DEFAULT_SELECTED_LIMIT` | 5 | Curator's default max selections per run |
-| `RADAR_HARD_SELECTED_LIMIT` | 9 | Absolute ceiling on Curator selections |
+| `RADAR_HARD_SELECTED_LIMIT` | 10 | Absolute ceiling on Curator selections |
 | `RADAR_SHORTLIST_LIMIT` | 20 | Candidates passed to Curator from scorer |
 | `PASSED_RESURFACE_DAYS` | 30 | Days before a passed item re-enters the pool |
 | `HOLDING_ITEM_LIMIT` | 30 | Max Holding items; oldest are archived over the limit |
@@ -94,17 +95,20 @@ are candidates for Google Places enrichment downstream.
 
 ```
 POST /api/radar/refresh
-  1. Check cooldown (30 min). Return {skipped:true} if blocked.
-  2. expireOldCandidates() — time-expired events → status="expired"
-  3. buildBrainContext() — founder, memory, signals, weather, inventory
-  4. buildInterestGraph() — seed + memory + behavior nudges  ← Sprint 2.2
-  5. runTasteStrategist() — exploration lanes (Claude)        ← Sprint 2.2
-  6. buildCuriosityPlan() — lanes → typed source plan         ← Sprint 2.2
-  7. gather:
+  1. refillRadarBoard() — bounded manual refill, no endless append
+  2. cleanupRadar() — bad/noisy active rows leave the front room
+  3. rotateWeakActiveRadarItems() when force=true — weak/stale shown rows make room
+  4. Check cooldown (30 min). Return {skipped:true} if blocked.
+  5. expireOldCandidates() — time-expired events → status="expired"
+  6. buildBrainContext() — founder, memory, signals, weather, inventory
+  7. buildInterestGraph() — seed + memory + behavior nudges  ← Sprint 2.2
+  8. runTasteStrategist() — exploration lanes (Claude)        ← Sprint 2.2
+  9. buildCuriosityPlan() — lanes → typed source plan         ← Sprint 2.2
+ 10. gather:
      - Lane-driven: gatherFromCuriosityPlan(plan)
      - Static fallback: gatherRadarCandidates() (no lanes returned)
-  8. ingestCandidates() per lane — PROTECTED_STATUSES always skipped
-  9. runRadarCuration():
+ 11. ingestCandidates() per lane — PROTECTED_STATUSES always skipped
+ 12. runRadarCuration():
      a. Build pool (radar + holding, status discovered/shown)
      b. Exclude recently-passed items (from context.recentActions)
      c. shortlistByScore() — deterministic top-N by score
@@ -116,7 +120,9 @@ POST /api/radar/refresh
      i. applyDecision() — write status/destination/payload.briefing to DB
      j. enforceActiveRadarCap() — rotate excess shown→holding or discovered
      k. pruneStaleHolding() — archive aged Holding items
-     l. logDecisionRun() → brain_decision_runs (decision + strategy snapshot)
+     l. Intelligence Core enrichment — vibe, diversity group, score breakdown,
+        missing info, and PlanReadiness are written into payload JSON
+     m. logDecisionRun() → brain_decision_runs (decision + strategy snapshot)
 ```
 
 See [`docs/BRAIN.md`](./BRAIN.md) for the Interest Graph + Taste Strategist + Curiosity Engine details.
@@ -165,8 +171,8 @@ Signed-in Radar is database-backed only. `loadRadarSurface()` reads
 `surfaced_items` through `listIndexItems()` for the signed-in/viewable owner,
 filters to `destination="radar"` and visible statuses (`shown`, `opened`),
 then applies the Decision Council gate again before rendering. It excludes
-expired items, sorts by timing, score, then recency, and returns at most 5
-cards.
+expired items, sorts by timing, score, then recency, and returns at most 10
+cards. Page load never performs external research or refill work.
 
 Authenticated users never see fallback demo cards. If no real rows match,
 Radar renders the empty state:
@@ -206,6 +212,34 @@ or debug labels. The footer keeps the supported item lifecycle actions:
 Save/Pass controls are outside the card body link, so they do not navigate
 accidentally. Radar only surfaces the plan indicator; it does not force
 plan-linked items straight into the plan.
+
+After Save, Pass, Archive, Plan, Move to Holding, or Add to Upcoming, the API
+checks the strong Active Radar board. If it drops below
+`RADAR_MIN_ACTIVE_ITEM_TARGET`, Jarvis schedules a bounded post-response refill.
+The refill uses existing supported source/candidate flows, respects the 10-item
+cap, avoids recent Pass near-duplicates, and returns fewer than 5 if the
+available pool is not strong enough.
+
+## Intelligence Core Payload
+
+Sprint 7 adds a thin `lib/intelligence` core that wraps the existing Decision
+Council, Taste Constitution, source trust, Weekly Rhythm, life cadence, and
+briefing conventions. It stores UI-safe metadata in `surfaced_items.payload`:
+
+- `move_title`
+- `purpose_label`
+- `vibe`
+- `diversity_group`
+- `reason_surfaced`
+- `strongest_angle`
+- `missing_info`
+- `score_breakdown`
+- `plan_readiness`
+- `intelligence.enriched_at`
+
+`plan_readiness.shouldPreparePlan=true` is only set for high-confidence items
+with enough known details. It can include a truth-safe `planSeed`, but never
+invents addresses, hours, prices, weather, reservations, or bookings.
 
 ## Memory of Rejections
 

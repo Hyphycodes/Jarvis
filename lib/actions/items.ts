@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { recordBehaviorSignal } from "@/lib/memory/behaviorSignals";
+import { behaviorMetadataForItem } from "@/lib/intelligence/memoryWriteback";
 import {
   getIndexItem,
   updateIndexItemStatus,
@@ -122,6 +123,7 @@ export async function saveItem(input: {
       type: "item.save",
       itemId: input.itemId,
       category: item?.category,
+      learning: behaviorMetadataForItem(item, "save"),
     },
     { nextDestination },
   );
@@ -133,6 +135,7 @@ export async function passItem(input: { itemId: string }): Promise<ItemActionRes
     type: "item.pass",
     itemId: input.itemId,
     category: item?.category,
+    learning: behaviorMetadataForItem(item, "pass"),
   });
 }
 
@@ -147,7 +150,12 @@ export async function planItem(input: {
   return transition(
     input.itemId,
     "planned",
-    { type: "item.plan", itemId: input.itemId, planId: input.planId },
+    {
+      type: "item.plan",
+      itemId: input.itemId,
+      planId: input.planId,
+      learning: behaviorMetadataForItem(item, "save"),
+    },
     {
       patchPayload: input.planId
         ? { plan_id: input.planId, plan_status: "active" }
@@ -168,6 +176,7 @@ export async function archiveItem(input: { itemId: string }): Promise<ItemAction
   return transition(input.itemId, "archived", {
     type: "item.archive",
     itemId: input.itemId,
+    learning: behaviorMetadataForItem(await getIndexItem(input.itemId), "archive"),
   });
 }
 

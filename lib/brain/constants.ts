@@ -8,12 +8,15 @@
 
 // ── Active Radar limits ─────────────────────────────────────────────────────
 
+/** Minimum target for a healthy Radar board. Never padded with weak filler. */
+export const RADAR_MIN_ACTIVE_ITEM_TARGET = 5;
+
 /** Ideal number of items shown on Radar at any time. */
 export const RADAR_IDEAL_ACTIVE_ITEM_LIMIT = 7;
 
 /** Hard ceiling for shown Radar items. Above this, stale/low-scored items
  *  move to Holding or are reset to discovered. */
-export const RADAR_ACTIVE_ITEM_LIMIT = 12;
+export const RADAR_ACTIVE_ITEM_LIMIT = 10;
 
 /** Days before a "shown" Radar item is considered stale and eligible for
  *  rotation into Holding / Later. */
@@ -25,7 +28,7 @@ export const RADAR_STALE_SHOWN_DAYS = 14;
 export const RADAR_DEFAULT_SELECTED_LIMIT = 5;
 
 /** Absolute max — Curator result is sliced to this even if Claude returns more. */
-export const RADAR_HARD_SELECTED_LIMIT = 9;
+export const RADAR_HARD_SELECTED_LIMIT = RADAR_ACTIVE_ITEM_LIMIT;
 
 /** Candidates passed to the Curator from the deterministic shortlist. */
 export const RADAR_SHORTLIST_LIMIT = 20;
