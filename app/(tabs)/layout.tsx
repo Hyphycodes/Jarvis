@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth";
 import { TabShell } from "@/components/TabShell";
 import {
+  loadCircleSurface,
   loadNorthSurface,
   loadRadarSurface,
   loadTodaySurface,
@@ -29,9 +30,21 @@ export default async function TabsLayout({
   const user = await getSessionUser();
   const signedIn = !!user;
 
-  const [todayPayload, radarCards, northPayload] = signedIn
-    ? await Promise.all([loadTodaySurface(), loadRadarSurface(), loadNorthSurface()])
-    : [null, [], null];
+  const [todayPayload, radarCards, northPayload, circlePayload] = signedIn
+    ? await Promise.all([
+        loadTodaySurface(),
+        loadRadarSurface(),
+        loadNorthSurface(),
+        loadCircleSurface(),
+      ])
+    : [null, [], null, null];
+
+  const hasCircleData =
+    signedIn &&
+    Boolean(
+      circlePayload &&
+        (circlePayload.people.length > 0 || circlePayload.updates.length > 0),
+    );
 
   return (
     <TabShell
@@ -43,8 +56,20 @@ export default async function TabsLayout({
         )
       }
       radar={signedIn ? <RadarSigned items={radarCards} /> : <RadarEmpty />}
-      circle={signedIn ? <CircleSigned /> : <CircleEmpty />}
-      north={signedIn ? <NorthSigned payload={northPayload ?? undefined} /> : <NorthEmpty />}
+      circle={
+        hasCircleData && circlePayload ? (
+          <CircleSigned payload={circlePayload} />
+        ) : (
+          <CircleEmpty />
+        )
+      }
+      north={
+        signedIn ? (
+          <NorthSigned payload={northPayload ?? undefined} />
+        ) : (
+          <NorthEmpty />
+        )
+      }
     />
   );
 }

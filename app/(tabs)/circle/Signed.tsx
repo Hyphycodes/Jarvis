@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   AppFrame,
   Orbit,
@@ -8,122 +7,90 @@ import {
   type OrbitNode,
 } from "@/components";
 import { Chevron } from "@/components/icons";
+import type { CirclePerson, CircleUpdate } from "@/lib/ai/types";
 
-const FILTERS = [
-  "Homies",
-  "Real Estate",
-  "Creatives",
-  "Faith",
-  "Italy",
-] as const;
-type Filter = (typeof FILTERS)[number];
+/**
+ * Sprint 5 — Circle realigned to OG reference and wired to real data.
+ *
+ * Reads from `loadCircleSurface()` via app/(tabs)/layout.tsx. No more
+ * hardcoded ORBIT_NODES / UPDATES. No filter row (the OG has none and the
+ * previous filter was decorative — it never actually filtered anything).
+ */
 
-// TODO(intelligence): Replace signed Circle people/updates with CirclePayload
-// from routeIntelligence once the relationship graph reads from Supabase.
-const ORBIT_NODES: OrbitNode[] = [
-  { id: "marco", name: "Marco Calvani", recency: "3w", x: 0, y: -1, faded: true, size: 48 },
-  { id: "elena", name: "Elena Rossi", role: "Designer", recency: "2d", x: -0.7, y: -0.45, size: 60 },
-  { id: "miles", name: "Miles Carter", role: "Producer", recency: "1d", x: 0.7, y: -0.45, size: 60 },
-  { id: "lucia", name: "Lucia Moretti", recency: "2m", x: -1.05, y: 0.1, faded: true, size: 44 },
-  { id: "noah", name: "Noah Bennett", recency: "5d", x: 1.05, y: 0.1, faded: true, size: 44 },
-  { id: "niko", name: "Niko Alvarez", role: "Filmmaker", recency: "3d", x: -0.7, y: 0.55, size: 60 },
-  { id: "simone", name: "Simone Park", role: "DJ", recency: "4d", x: 0.7, y: 0.55, size: 60 },
-  { id: "adrian", name: "Adrian Foke", recency: "3m", x: 0, y: 1, faded: true, size: 48 },
-];
+type CirclePayload = {
+  people: CirclePerson[];
+  updates: CircleUpdate[];
+};
 
-const UPDATES: {
-  id: string;
-  name: string;
-  role: string;
-  note: string;
-  date: string;
-}[] = [
-  {
-    id: "u1",
-    name: "Elena Rossi",
-    role: "Designer",
-    note: "Asked about the next Velour drop. Should send the lookbook.",
-    date: "May 15",
-  },
-  {
-    id: "u2",
-    name: "Miles Carter",
-    role: "Producer",
-    note: "Sent the new track. Hasn’t replied — worth a nudge.",
-    date: "May 14",
-  },
-  {
-    id: "u3",
-    name: "Niko Alvarez",
-    role: "Filmmaker",
-    note: "You’ve been meaning to introduce him to Marco — make it happen.",
-    date: "May 13",
-  },
-  {
-    id: "u4",
-    name: "Simone Park",
-    role: "DJ",
-    note: "Hasn’t sent over the masters yet. Light reminder.",
-    date: "May 12",
-  },
-];
+export function CircleSigned({ payload }: { payload?: CirclePayload }) {
+  const people = payload?.people ?? [];
+  const updates = payload?.updates ?? [];
 
-export function CircleSigned() {
-  const [filter, setFilter] = useState<Filter>("Creatives");
+  const orbitNodes = buildOrbitNodes(people);
+  const peopleById = new Map(people.map((p) => [p.id, p]));
 
   return (
     <AppFrame>
-      <header className="flex flex-col gap-4">
+      <header className="flex flex-col gap-3 pt-6">
         <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
-          <h1 className="font-serif text-[56px] italic leading-[1.02] tracking-[-0.01em] text-warm-ivory">
+          <h1 className="font-serif text-[52px] italic leading-[1.02] tracking-[-0.005em] text-warm-ivory">
             Circle
           </h1>
-          <span className="self-start pt-[10px] text-[11px] uppercase tracking-[0.16em] text-warm-ivory/58">
-            May 17, 2025
+          <span className="self-start pt-[8px] text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
+            {formatToday()}
           </span>
         </div>
-        <p className="max-w-[42ch] text-[16px] leading-[1.5] text-warm-ivory/62">
-          The people shaping your taste and creative work.
+        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/62">
+          Your inner circle. Key relationships
+          <br />
+          and recent context.
         </p>
-        <div className="h-px w-8 bg-muted-gold/35" />
+        <div className="h-px w-8 bg-muted-gold/30" />
       </header>
 
-      <FilterRow active={filter} onChange={setFilter} />
+      <div className="mt-8">
+        {orbitNodes.length > 0 ? (
+          <Orbit
+            size={360}
+            center={<JMonogram />}
+            nodes={orbitNodes}
+          />
+        ) : (
+          <div className="flex h-[200px] items-center justify-center text-center font-serif italic text-[20px] text-warm-ivory/45">
+            Your circle is quiet right now.
+          </div>
+        )}
 
-      <div
-        key={filter}
-        className="mt-6"
-        style={{ animation: "cross-fade 200ms var(--ease-atmospheric)" }}
-      >
-        <Orbit
-          size={360}
-          center={
-            <div
-              className="flex items-center justify-center rounded-full border border-muted-gold/70"
-              style={{
-                width: 84,
-                height: 84,
-                background:
-                  "radial-gradient(circle at 50% 40%, #1c1c1f 0%, #0a0a0b 80%)",
-                boxShadow: "0 0 24px rgba(184,146,74,0.18)",
-              }}
+        {people.length > 8 ? (
+          <div className="mt-2 flex justify-center">
+            <a
+              href="/account/history"
+              className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80"
             >
-              <span className="font-serif text-[26px] leading-none text-warm-ivory">
-                J.
-              </span>
-            </div>
-          }
-          nodes={ORBIT_NODES}
-        />
+              View All <span aria-hidden>→</span>
+            </a>
+          </div>
+        ) : null}
       </div>
 
-      <section className="mt-8 flex flex-col">
+      <section className="mt-10 flex flex-col">
         <SectionLabel>Updates</SectionLabel>
-        <ul className="lux-surface mt-3 flex flex-col overflow-hidden rounded-[var(--radius-card)]">
-          {UPDATES.map((u, i) => (
-            <UpdateRow key={u.id} {...u} divider={i !== UPDATES.length - 1} />
-          ))}
-        </ul>
+        {updates.length > 0 ? (
+          <ul className="lux-surface mt-4 flex flex-col overflow-hidden rounded-[var(--radius-card)]">
+            {updates.map((u, i) => (
+              <UpdateRow
+                key={u.id}
+                update={u}
+                person={peopleById.get(u.personId)}
+                divider={i !== updates.length - 1}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-[13px] leading-[1.5] text-warm-ivory/50">
+            No recent updates from your circle.
+          </p>
+        )}
 
         <button
           type="button"
@@ -135,79 +102,91 @@ export function CircleSigned() {
           </span>
         </button>
       </section>
-
     </AppFrame>
   );
 }
 
-function FilterRow({
-  active,
-  onChange,
-}: {
-  active: Filter;
-  onChange: (f: Filter) => void;
-}) {
+// ── Orbit node builder ──────────────────────────────────────────────────────
+
+/**
+ * Convert real CirclePerson[] into deterministic OrbitNode positions.
+ *
+ * Up to 8 nodes shown. Sort by closenessScore desc. The highest-closeness
+ * person goes top (12 o'clock); the rest distribute around the ring
+ * clockwise. Inner ring (size 60, no fade) for closeness >= 0.5; outer
+ * ring (size 44, fade) for the rest.
+ */
+function buildOrbitNodes(people: CirclePerson[]): OrbitNode[] {
+  if (people.length === 0) return [];
+  const sorted = [...people]
+    .sort((a, b) => b.closenessScore - a.closenessScore)
+    .slice(0, 8);
+  const count = sorted.length;
+
+  return sorted.map((person, idx) => {
+    // Distribute evenly around the circle starting at top (-π/2).
+    const angle = (-Math.PI / 2) + (idx * (Math.PI * 2)) / count;
+    const isInner = person.closenessScore >= 0.5;
+    const radius = isInner ? 0.78 : 1.05;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    return {
+      id: person.id,
+      name: person.name,
+      role: person.role,
+      recency: formatRecency(person.lastInteraction),
+      x,
+      y,
+      faded: person.closenessScore < 0.4,
+      size: isInner ? 60 : 44,
+    };
+  });
+}
+
+function JMonogram() {
   return (
-    <nav
-      aria-label="Circle filters"
-      data-no-embla-drag
-      className="mt-6 -mx-6 overflow-x-auto px-6"
-      style={{ touchAction: "pan-x" }}
+    <div
+      className="flex items-center justify-center rounded-full border border-muted-gold/70"
+      style={{
+        width: 84,
+        height: 84,
+        background:
+          "radial-gradient(circle at 50% 40%, #1c1c1f 0%, #0a0a0b 80%)",
+        boxShadow: "0 0 24px rgba(184,146,74,0.18)",
+      }}
     >
-      <ul className="flex items-center gap-7">
-        {FILTERS.map((f) => {
-          const isActive = f === active;
-          return (
-            <li key={f} className="shrink-0">
-              <button
-                type="button"
-                onClick={() => onChange(f)}
-                className={
-                  "relative pb-1.5 text-[11px] uppercase tracking-[0.2em] transition-opacity duration-300 ease-atmospheric " +
-                  (isActive
-                    ? "text-warm-ivory"
-                    : "text-warm-ivory/35 hover:text-warm-ivory/70")
-                }
-              >
-                {f}
-                {isActive ? (
-                  <span
-                    aria-hidden
-                    className="absolute -bottom-0 left-0 h-px w-full bg-muted-gold"
-                  />
-                ) : null}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+      <span className="font-serif text-[26px] italic leading-none text-warm-ivory">
+        J.
+      </span>
+    </div>
   );
 }
 
+// ── Update row ──────────────────────────────────────────────────────────────
+
 function UpdateRow({
-  name,
-  role,
-  note,
-  date,
+  update,
+  person,
   divider,
 }: {
-  name: string;
-  role: string;
-  note: string;
-  date: string;
+  update: CircleUpdate;
+  person?: CirclePerson;
   divider: boolean;
 }) {
+  const name = person?.name ?? update.title ?? "Update";
+  const role = person?.role;
+  const date = formatShortDate(update.createdAt);
+
   return (
     <li
       className={
         "grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-4 " +
-        (divider ? "border-b border-white/[0.065]" : "")
+        (divider ? "border-b border-white/[0.055]" : "")
       }
     >
       <div
         aria-hidden
-        className="h-11 w-11 rounded-full border border-muted-gold/60"
+        className="h-11 w-11 rounded-full border border-muted-gold/55"
         style={{
           background:
             "radial-gradient(ellipse at 50% 35%, rgba(246,239,221,0.12) 0%, #141411 70%, #090908 100%)",
@@ -217,17 +196,67 @@ function UpdateRow({
         <div className="font-serif text-[17px] italic leading-tight text-warm-ivory">
           {name}
         </div>
-        <div className="mt-0.5 text-[10px] uppercase tracking-editorial text-muted-gold/85">
-          {role}
-        </div>
-        <p className="mt-2 text-[14px] leading-[1.45] text-warm-ivory/66">
-          {note}
+        {role ? (
+          <div className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-gold/85">
+            {role}
+          </div>
+        ) : null}
+        <p className="mt-2 text-[14px] leading-[1.45] text-warm-ivory/68">
+          {update.summary}
         </p>
+        {update.suggestedAction ? (
+          <p className="mt-1 text-[12px] leading-[1.4] text-warm-ivory/45">
+            {update.suggestedAction}
+          </p>
+        ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2 pt-1 text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+      <div className="flex shrink-0 items-center gap-2 pt-1 text-[11px] uppercase tracking-[0.18em] text-warm-ivory/45">
         {date}
         <Chevron direction="right" size={12} />
       </div>
     </li>
   );
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatRecency(iso?: string): string | undefined {
+  if (!iso) return undefined;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return undefined;
+    const diff = Date.now() - d.getTime();
+    const days = Math.max(0, Math.floor(diff / (24 * 60 * 60 * 1000)));
+    if (days === 0) return "today";
+    if (days === 1) return "1d";
+    if (days < 14) return `${days}d`;
+    const weeks = Math.floor(days / 7);
+    if (weeks < 8) return `${weeks}w`;
+    const months = Math.floor(days / 30);
+    return `${months}m`;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatShortDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d
+      .toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      .toUpperCase();
+  } catch {
+    return "";
+  }
+}
+
+function formatToday(): string {
+  return new Date()
+    .toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+    .toUpperCase();
 }

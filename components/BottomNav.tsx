@@ -70,15 +70,10 @@ export function BottomNav({
             const content = (
               <span className="relative inline-flex flex-col items-center">
                 <span
-                  className={
-                    labelClass +
-                    (isActive
-                      ? " text-[var(--gold)]"
-                      : " text-[var(--text-muted)] hover:text-[var(--text-primary)]/70")
-                  }
+                  className={labelClass}
                   style={
                     isActive
-                      ? { color: "var(--gold)" }
+                      ? { color: "var(--text-primary)" }
                       : { color: "var(--text-muted)" }
                   }
                 >
@@ -88,7 +83,9 @@ export function BottomNav({
                   aria-hidden
                   className="mt-1 h-1 w-1 rounded-full"
                   style={{
-                    background: isActive ? "var(--gold)" : "transparent",
+                    background: isActive
+                      ? "var(--text-primary)"
+                      : "transparent",
                   }}
                 />
               </span>
