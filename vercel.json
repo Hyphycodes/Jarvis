@@ -7,6 +7,14 @@
     {
       "path": "/api/intelligence/run?run_type=weekend_preview",
       "schedule": "0 21 * * 5"
+    },
+    {
+      "path": "/api/library/scout",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/library/process-candidates",
+      "schedule": "0 9 * * *"
     }
   ]
 }

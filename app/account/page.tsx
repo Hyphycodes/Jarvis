@@ -12,6 +12,7 @@ import {
   Link2,
   Lock,
   LogOut,
+  MapPin,
   ShieldCheck,
   Sparkle,
   User,
@@ -26,6 +27,9 @@ type AccountStatus = {
   hasFounderProfile: boolean;
   memoryCount: number;
   integrationCount: number;
+  libraryCount: number;
+  pendingCandidates: number;
+  libraryNewThisWeek: number;
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -180,6 +184,27 @@ export default async function AccountPage() {
         ) : null}
       </section>
 
+      <section className="mt-10">
+        <div className="lux-label">
+          Places Library
+        </div>
+        <AccountNavRow
+          href="/account/library"
+          icon={<MapPin size={20} />}
+          title="Browse Library"
+          description={
+            status.libraryCount > 0
+              ? `${status.libraryCount} place${status.libraryCount !== 1 ? "s" : ""} known${status.libraryNewThisWeek > 0 ? ` · ${status.libraryNewThisWeek} new this week` : ""}`
+              : "The Scout is building your library autonomously."
+          }
+        />
+        {status.pendingCandidates > 0 ? (
+          <p className="mt-3 text-[13px] leading-[1.5] text-warm-ivory/40">
+            {status.pendingCandidates} candidate{status.pendingCandidates !== 1 ? "s" : ""} in the research queue.
+          </p>
+        ) : null}
+      </section>
+
       <footer className="mt-12 flex items-center justify-center gap-2 text-[12px] text-warm-ivory/35">
         <Lock size={12} />
         <span>All data is private and encrypted.</span>
@@ -192,19 +217,35 @@ export default async function AccountPage() {
 async function loadAccountStatus(userId: string): Promise<AccountStatus> {
   try {
     const supabase = await getServerSupabase();
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [founderRes, memoryRes] = await Promise.all([
-      supabase
-        .from("founder_profile")
-        .select("id")
-        .eq("user_id", userId)
-        .maybeSingle(),
-      supabase
-        .from("memory_items")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("status", "active"),
-    ]);
+    const [founderRes, memoryRes, libraryRes, pendingRes, newThisWeekRes] =
+      await Promise.all([
+        supabase
+          .from("founder_profile")
+          .select("id")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("memory_items")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .eq("status", "active"),
+        supabase
+          .from("places_library")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId),
+        supabase
+          .from("place_candidates")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .eq("status", "pending"),
+        supabase
+          .from("places_library")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .gte("first_seen_at", oneWeekAgo),
+      ]);
 
     if (founderRes.error) {
       console.error("[surface-loader] account.founderProfile", founderRes.error);
@@ -217,6 +258,9 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       hasFounderProfile: !!founderRes.data,
       memoryCount: memoryRes.count ?? 0,
       integrationCount: 0,
+      libraryCount: libraryRes.count ?? 0,
+      pendingCandidates: pendingRes.count ?? 0,
+      libraryNewThisWeek: newThisWeekRes.count ?? 0,
     };
   } catch (error) {
     console.error("[surface-loader] account.status", error);
@@ -224,6 +268,9 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       hasFounderProfile: false,
       memoryCount: 0,
       integrationCount: 0,
+      libraryCount: 0,
+      pendingCandidates: 0,
+      libraryNewThisWeek: 0,
     };
   }
 }
