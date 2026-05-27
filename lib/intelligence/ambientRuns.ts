@@ -62,8 +62,11 @@ export async function runAmbientIntelligence(input: {
   runType: AmbientRunType;
   force?: boolean;
   testMode?: boolean;
+  ownerUserId?: string;
 }): Promise<AmbientRunSummary> {
-  const owner = await requireOwner();
+  const owner = input.ownerUserId
+    ? { id: input.ownerUserId }
+    : await requireOwner();
   const runType = input.runType;
   const budget = await createIntelligenceBudget({
     userId: owner.id,

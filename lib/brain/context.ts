@@ -6,7 +6,7 @@ import { getDefaultLocation } from "@/lib/env";
 import { hasGooglePlaces } from "@/lib/sources/googlePlaces";
 import { getCurrentWeather } from "@/lib/sources/openMeteo";
 import { normalizeWeeklyRhythm } from "@/lib/schedule/weeklyRhythm";
-import type { BrainContextPacket } from "@/lib/brain/types";
+import type { BrainContextPacket, PersonContext } from "@/lib/brain/types";
 import type {
   FounderProfileRow,
   MemoryItemRow,
@@ -25,7 +25,7 @@ export async function buildBrainContext(
   const supabase = await getServerSupabase();
   const home = safeHome();
 
-  const [founderRes, memoryRes, signalsRes, actionsRes, pillarsRes, planRes] =
+  const [founderRes, memoryRes, signalsRes, actionsRes, pillarsRes, planRes, peopleRes, updatesRes] =
     await Promise.all([
       supabase
         .from("founder_profile")
@@ -64,6 +64,18 @@ export async function buildBrainContext(
         .order("live_enabled", { ascending: false })
         .order("updated_at", { ascending: false })
         .limit(1),
+      supabase
+        .from("circle_people")
+        .select("id,name,category,role,closeness_score,last_interaction,notes")
+        .eq("user_id", owner.id)
+        .order("closeness_score", { ascending: false })
+        .limit(20),
+      supabase
+        .from("circle_updates")
+        .select("person_id,title,summary,urgency")
+        .eq("user_id", owner.id)
+        .order("created_at", { ascending: false })
+        .limit(40),
     ]);
 
   const founder = (founderRes.data ?? null) as FounderProfileRow | null;
@@ -86,6 +98,37 @@ export async function buildBrainContext(
     "title" | "active_signals"
   >[];
   const plan = (planRes.data?.[0] ?? null) as PlanRow | null;
+
+  const circleRaw = (peopleRes.data ?? []) as {
+    id: string;
+    name: string;
+    category: string;
+    role: string | null;
+    closeness_score: number;
+    last_interaction: string | null;
+    notes: string[];
+  }[];
+
+  const latestUpdate = new Map<string, { title: string; summary: string; urgency: string }>();
+  for (const u of (updatesRes.data ?? []) as {
+    person_id: string | null;
+    title: string;
+    summary: string;
+    urgency: string;
+  }[]) {
+    if (u.person_id && !latestUpdate.has(u.person_id)) {
+      latestUpdate.set(u.person_id, { title: u.title, summary: u.summary, urgency: u.urgency });
+    }
+  }
+
+  const people: PersonContext[] = circleRaw.map((p) => ({
+    name: p.name,
+    relationship: p.role ?? null,
+    category: p.category,
+    last_interaction: p.last_interaction,
+    notable_traits: p.notes ?? [],
+    recent_update: latestUpdate.get(p.id) ?? null,
+  }));
 
   let weather: BrainContextPacket["weather"] = null;
   if (options.includeWeather !== false && (hasGooglePlaces() || true)) {
@@ -156,6 +199,7 @@ export async function buildBrainContext(
       workLocation: weeklyRhythm.work_location,
       timezone: weeklyRhythm.timezone,
     },
+    people,
   };
 }
 

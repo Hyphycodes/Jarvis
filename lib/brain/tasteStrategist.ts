@@ -28,6 +28,7 @@ import {
   RADAR_IDEAL_ACTIVE_ITEM_LIMIT,
   HOLDING_ITEM_LIMIT,
 } from "@/lib/brain/constants";
+import { getSeasonalContext } from "@/lib/brain/seasonality";
 
 // ── Lane shape ───────────────────────────────────────────────────────────────
 
@@ -257,6 +258,14 @@ function renderPrompt(input: StrategistInput): string {
       hard_active_cap: RADAR_ACTIVE_ITEM_LIMIT,
       hard_holding_cap: HOLDING_ITEM_LIMIT,
       weather: context.weather,
+      seasonal_context: getSeasonalContext(now),
+      people: (context.people ?? []).slice(0, 10).map((p) => ({
+        name: p.name,
+        relationship: p.relationship ?? p.category,
+        traits: p.notable_traits.slice(0, 3),
+        last_seen: p.last_interaction,
+        update: p.recent_update?.title ?? null,
+      })),
       active_plan: context.activePlan,
       instructions: [
         "Return 0–6 lanes. 0 is valid.",
@@ -265,6 +274,7 @@ function renderPrompt(input: StrategistInput): string {
         "Strong-but-not-urgent → suggested_destination: 'holding'.",
         "Long-term / direction → 'north'. Time-sensitive + high confidence → 'radar'.",
         "Do not propose product/shopping lanes unless the interest_area is product/style/watch/gear.",
+        "When an item could meaningfully involve someone from the people list (a place good for that person's heritage, family-friendly for a toddler, etc.), note the connection in why_it_fits.",
       ],
     },
     null,

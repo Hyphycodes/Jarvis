@@ -3,6 +3,19 @@ import type { BriefingMeta, ItemBriefing } from "@/lib/brain/briefingTypes";
 import type { RadarDecision } from "@/lib/brain/decisionCouncilTypes";
 import type { RadarItem } from "@/lib/intelligence/types";
 
+export type PersonContext = {
+  name: string;
+  relationship: string | null;
+  category: string;
+  last_interaction: string | null;
+  notable_traits: string[];
+  recent_update?: {
+    title: string;
+    summary: string;
+    urgency: string;
+  } | null;
+};
+
 export type BrainSelection = {
   itemId: string;
   destination:
@@ -91,6 +104,7 @@ export type BrainContextPacket = {
     workLocation: string;
     timezone: string;
   };
+  people: PersonContext[];
 };
 
 export type ScoredItem = {

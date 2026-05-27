@@ -4,8 +4,8 @@ import { useState, type ReactNode, type SVGProps } from "react";
 import { AppFrame } from "@/components";
 import type { NorthPayload } from "@/lib/ai/types";
 
-// TODO(supabase): wire to north_pillars or a future life_categories table.
-// Sprint 4 design ships these statuses hardcoded — see prompt for rationale.
+// NOTE: North surface currently renders hardcoded reference data.
+// Wiring to north_pillars/north_signals is deferred — see docs/PHASE_NORTH_WIRING.md
 const LIFE_CATEGORIES: Array<{
   id: string;
   name: string;

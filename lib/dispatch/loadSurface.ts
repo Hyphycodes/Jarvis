@@ -844,6 +844,7 @@ function buildNorthContext(input: {
       workLocation: input.rhythm.work_location,
       timezone: input.rhythm.timezone,
     },
+    people: [],
   };
 }
 
