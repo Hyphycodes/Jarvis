@@ -7,6 +7,7 @@ import type {
   BrainDecision,
   CurationInput,
 } from "@/lib/brain/types";
+import type { PlacesLibraryRow } from "@/lib/types/database";
 import {
   RADAR_DEFAULT_SELECTED_LIMIT,
   RADAR_IDEAL_ACTIVE_ITEM_LIMIT,
@@ -53,6 +54,11 @@ SOURCES:
   decision-ready, route it to "holding" or reject it to "discovered".
 - Do not place an item in Active Radar just because it matches a query literally.
 
+KNOWN PLACES
+When a candidate has a \`known_place\` block, treat the verdict as Jarvis's own existing opinion.
+Weight it heavily. Only override if there is specific new evidence (a fresh event, a chef change,
+breaking news) that meaningfully changes the situation.
+
 Return strict JSON matching the BrainDecision schema.
 - selected[]: items for Radar (radar) or Holding (holding). Max ${RADAR_IDEAL_ACTIVE_ITEM_LIMIT} combined.
 - rejected[]: everything else. Include ALL unused candidates here.
@@ -92,6 +98,17 @@ export async function runCurator(input: CurationInput): Promise<BrainDecision> {
   }
 }
 
+function buildLibraryLookup(
+  entries: PlacesLibraryRow[] | undefined,
+): Map<string, PlacesLibraryRow> {
+  const map = new Map<string, PlacesLibraryRow>();
+  for (const entry of entries ?? []) {
+    map.set(entry.name.toLowerCase().trim(), entry);
+    map.set(entry.slug, entry);
+  }
+  return map;
+}
+
 function renderCuratorPrompt(input: CurationInput, max: number): string {
   const { context, shortlist } = input;
 
@@ -100,22 +117,37 @@ function renderCuratorPrompt(input: CurationInput, max: number): string {
   const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
   const isWeekday = now.getDay() >= 1 && now.getDay() <= 4;
 
-  const candidates = shortlist.map((c) => ({
-    id: c.item.id,
-    title: c.item.title,
-    category: c.item.category,
-    type: c.item.type,
-    score: c.score,
-    score_reasons: c.reasons,
-    subtitle: c.item.subtitle,
-    description: c.item.description?.slice(0, 320),
-    location: c.item.locationName ?? c.item.address,
-    starts_at: c.item.startsAt,
-    expires_at: c.item.expiresAt,
-    tags: c.item.tags,
-    source: c.item.source,
-    destination_hint: c.item.destination,
-  }));
+  const libraryLookup = buildLibraryLookup(input.libraryEntries);
+
+  const candidates = shortlist.map((c) => {
+    const lookupKey = (c.item.locationName ?? c.item.title ?? "").toLowerCase().trim();
+    const known = libraryLookup.get(lookupKey);
+    return {
+      id: c.item.id,
+      title: c.item.title,
+      category: c.item.category,
+      type: c.item.type,
+      score: c.score,
+      score_reasons: c.reasons,
+      subtitle: c.item.subtitle,
+      description: c.item.description?.slice(0, 320),
+      location: c.item.locationName ?? c.item.address,
+      starts_at: c.item.startsAt,
+      expires_at: c.item.expiresAt,
+      tags: c.item.tags,
+      source: c.item.source,
+      destination_hint: c.item.destination,
+      known_place: known
+        ? {
+            verdict: known.verdict,
+            strength: known.verdict_strength,
+            best_for: known.best_for,
+            not_for: known.not_for,
+            times_surfaced: known.times_surfaced,
+          }
+        : undefined,
+    };
+  });
 
   return JSON.stringify(
     {

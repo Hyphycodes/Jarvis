@@ -1,0 +1,196 @@
+import "server-only";
+
+import { hasAnthropic } from "@/lib/ai/anthropic";
+import { generateStructured } from "@/lib/ai/structured";
+import { hasGooglePlaces, searchPlaces } from "@/lib/sources/googlePlaces";
+import { hasTavily, searchWeb } from "@/lib/sources/tavily";
+import { HIGH_TRUST_DOMAINS } from "@/lib/intelligence/sourceTrust";
+import { getDefaultLocation } from "@/lib/env";
+
+export type ResearcherOutput = {
+  canonical_name: string;
+  slug: string;
+  place_type:
+    | "restaurant"
+    | "bar"
+    | "lounge"
+    | "venue"
+    | "shop"
+    | "hotel"
+    | "cultural"
+    | "ritual"
+    | "outdoor";
+  neighborhood: string | null;
+  cuisine_or_focus: string;
+  price_level: "$" | "$$" | "$$$" | "$$$$" | "unknown";
+  hours_summary: string;
+  vibe_keywords: string[];
+  sources_cited: Array<{ url: string; publication: string; snippet: string }>;
+  events_observed: Array<{ type: string; day?: string; notes: string }>;
+  seasonal_notes: string | null;
+  confidence: number;
+  uncertainties: string[];
+};
+
+const SYSTEM_PROMPT = `You are Jarvis's RESEARCHER. You build a structured dossier for a single Chicago place by synthesizing canonical data and editorial sources.
+
+You are not a critic. You are not a marketer. You are a thorough analyst. Your job is accuracy and depth.
+
+RULES
+- Use ONLY information present in the provided sources. Never invent addresses, hours, chef names, or events.
+- If a fact is unclear or contradicted across sources, note it in \`uncertainties\` rather than guessing.
+- \`vibe_keywords\` should be evocative and specific — "low-lit hotel-restaurant intimate" not "nice cozy fancy."
+- \`events_observed\` only contains events explicitly mentioned in sources. If the article says "Wednesday jazz nights," include it. If no events are mentioned, return an empty array.
+- \`confidence\` reflects how strong your sources are: 3+ trusted publications = high (0.8+), 1 trusted + thin coverage = medium (0.5-0.7), unclear/sparse = low (under 0.5).
+- \`seasonal_notes\` only if explicitly grounded in sources — "patio opens in summer" if a source mentioned it, otherwise null.
+
+Return strict JSON matching the ResearcherOutput schema.`;
+
+function makeSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function priceLevelFromGoogle(
+  level: string | undefined,
+): ResearcherOutput["price_level"] {
+  switch (level) {
+    case "PRICE_LEVEL_INEXPENSIVE": return "$";
+    case "PRICE_LEVEL_MODERATE": return "$$";
+    case "PRICE_LEVEL_EXPENSIVE": return "$$$";
+    case "PRICE_LEVEL_VERY_EXPENSIVE": return "$$$$";
+    default: return "unknown";
+  }
+}
+
+function deterministicFallback(name: string, reason: string): ResearcherOutput {
+  return {
+    canonical_name: name,
+    slug: makeSlug(name),
+    place_type: "restaurant",
+    neighborhood: null,
+    cuisine_or_focus: "unknown",
+    price_level: "unknown",
+    hours_summary: "unknown",
+    vibe_keywords: [],
+    sources_cited: [],
+    events_observed: [],
+    seasonal_notes: null,
+    confidence: 0.3,
+    uncertainties: [reason],
+  };
+}
+
+export async function researchPlace(
+  name: string,
+  context?: { discoveredUrl?: string; snippet?: string },
+): Promise<ResearcherOutput> {
+  const home = (() => {
+    try { return getDefaultLocation(); }
+    catch { return { lat: 41.85, lng: -87.65 }; }
+  })();
+
+  // 1. Google Places: canonical location data
+  let googleData: Record<string, unknown> | null = null;
+  if (hasGooglePlaces()) {
+    try {
+      const results = await searchPlaces({
+        query: `${name} Chicago`,
+        lat: home.lat,
+        lng: home.lng,
+        maxResults: 3,
+      });
+      const top = results[0];
+      if (top) {
+        googleData = {
+          name: top.displayName?.text ?? name,
+          address: top.formattedAddress,
+          lat: top.location?.latitude,
+          lng: top.location?.longitude,
+          price_level: priceLevelFromGoogle(top.priceLevel),
+          open_now: top.currentOpeningHours?.openNow,
+          types: top.types?.slice(0, 5),
+          editorial_summary: top.editorialSummary?.text,
+          rating: top.rating,
+          rating_count: top.userRatingCount,
+        };
+      }
+    } catch (err) {
+      console.warn("[researcher] Google Places failed", { name, err });
+    }
+  }
+
+  // 2. Tavily: editorial coverage (two parallel searches)
+  const editorialSources: Array<{ url: string; title: string; content: string }> = [];
+  if (hasTavily()) {
+    try {
+      const [trusted, broad] = await Promise.allSettled([
+        searchWeb({
+          query: `"${name}" Chicago`,
+          maxResults: 5,
+          includeDomains: HIGH_TRUST_DOMAINS,
+        }),
+        searchWeb({
+          query: `"${name}" Chicago restaurant review`,
+          maxResults: 3,
+        }),
+      ]);
+
+      const seen = new Set<string>();
+      for (const res of [trusted, broad]) {
+        if (res.status !== "fulfilled") continue;
+        for (const r of res.value.results) {
+          if (!seen.has(r.url)) {
+            seen.add(r.url);
+            editorialSources.push({ url: r.url, title: r.title, content: r.content });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[researcher] Tavily search failed", { name, err });
+    }
+  }
+
+  if (!hasAnthropic()) {
+    return deterministicFallback(name, "No Anthropic key — dossier not synthesized");
+  }
+
+  const prompt = JSON.stringify(
+    {
+      place_name: name,
+      google_data: googleData,
+      editorial_sources: editorialSources.slice(0, 8).map((s) => ({
+        url: s.url,
+        title: s.title,
+        snippet: s.content.slice(0, 400),
+      })),
+      context_snippet: context?.snippet ?? null,
+      context_url: context?.discoveredUrl ?? null,
+      instructions: [
+        "Build a structured dossier using ONLY the provided sources.",
+        "Return strict JSON matching ResearcherOutput.",
+      ],
+    },
+    null,
+    2,
+  );
+
+  try {
+    const raw = await generateStructured<ResearcherOutput>({
+      system: SYSTEM_PROMPT,
+      prompt,
+      schemaName: "ResearcherOutput",
+      temperature: 0.2,
+      maxTokens: 2048,
+    });
+    // Ensure slug is set
+    const slug = raw.slug?.trim() || makeSlug(raw.canonical_name ?? name);
+    return { ...raw, slug, canonical_name: raw.canonical_name ?? name };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error("[researcher] structured generation failed", { name, reason });
+    return deterministicFallback(name, `Claude error: ${reason}`);
+  }
+}

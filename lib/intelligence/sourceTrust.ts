@@ -34,6 +34,8 @@ const HIGH_TRUST: Record<string, string> = {
   "highsnobiety.com": "style",
 };
 
+export const HIGH_TRUST_DOMAINS = Object.keys(HIGH_TRUST);
+
 const LOW_TRUST = [
   "instagram.com",
   "facebook.com",

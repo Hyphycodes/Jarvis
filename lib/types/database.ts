@@ -934,3 +934,49 @@ export type NorthSignalRow =
   Database["public"]["Tables"]["north_signals"]["Row"];
 export type BrainDecisionRunRow =
   Database["public"]["Tables"]["brain_decision_runs"]["Row"];
+
+// Standalone types for tables added in migration 0006 (not yet in generated Database union)
+export type PlaceCandidateRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  discovered_via: string | null;
+  discovered_at: string;
+  status: string;
+  notes: string | null;
+  quick_classification: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlacesLibraryRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  slug: string;
+  place_type: string | null;
+  neighborhood: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  cuisine_or_focus: string | null;
+  price_level: string | null;
+  hours_summary: string | null;
+  vibe_keywords: string[];
+  sources_cited: unknown;
+  verdict: string | null;
+  verdict_strength: number | null;
+  best_for: string[];
+  not_for: string[];
+  compared_to: string | null;
+  events_observed: unknown;
+  seasonal_notes: string | null;
+  first_seen_at: string;
+  last_researched_at: string;
+  last_refreshed_at: string;
+  times_surfaced: number;
+  last_surfaced_at: string | null;
+  user_feedback_signal: string | null;
+  created_at: string;
+  updated_at: string;
+};

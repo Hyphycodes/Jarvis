@@ -85,6 +85,14 @@ export async function runRadarCuration(options: {
   const supabase = await getServerSupabase();
   const context = await buildBrainContext();
 
+  // Pre-fetch places library for curator/critic known-place injection
+  const { data: libraryEntries } = await supabase
+    .from("places_library")
+    .select("*")
+    .eq("user_id", owner.id)
+    .order("last_surfaced_at", { ascending: false, nullsFirst: false })
+    .limit(200);
+
   const now = new Date(context.now);
 
   // Pool: Radar items that are still in play.
@@ -149,12 +157,14 @@ export async function runRadarCuration(options: {
     context,
     shortlist,
     maxSelected,
+    libraryEntries: (libraryEntries ?? []) as import("@/lib/types/database").PlacesLibraryRow[],
   });
 
   const critiqued = await runCritic({
     context,
     decision: curated,
     shortlist,
+    libraryEntries: (libraryEntries ?? []) as import("@/lib/types/database").PlacesLibraryRow[],
   });
 
   const briefed = await attachBriefings(

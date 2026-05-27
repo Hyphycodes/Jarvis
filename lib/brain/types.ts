@@ -2,6 +2,7 @@ import type { IndexedItem, IndexItemStatus } from "@/lib/index/types";
 import type { BriefingMeta, ItemBriefing } from "@/lib/brain/briefingTypes";
 import type { RadarDecision } from "@/lib/brain/decisionCouncilTypes";
 import type { RadarItem } from "@/lib/intelligence/types";
+import type { PlacesLibraryRow } from "@/lib/types/database";
 
 export type PersonContext = {
   name: string;
@@ -117,4 +118,5 @@ export type CurationInput = {
   context: BrainContextPacket;
   shortlist: ScoredItem[];
   maxSelected?: number;
+  libraryEntries?: PlacesLibraryRow[];
 };

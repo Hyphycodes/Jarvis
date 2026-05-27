@@ -7,6 +7,7 @@ import type {
   BrainDecision,
   ScoredItem,
 } from "@/lib/brain/types";
+import type { PlacesLibraryRow } from "@/lib/types/database";
 import { RADAR_MIN_CONFIDENCE } from "@/lib/brain/constants";
 
 const FALLBACK_HOLDING_CONFIDENCE_FLOOR = 0.45;
@@ -51,6 +52,7 @@ export async function runCritic(input: {
   context: BrainContextPacket;
   decision: BrainDecision;
   shortlist: ScoredItem[];
+  libraryEntries?: PlacesLibraryRow[];
 }): Promise<BrainDecision> {
   if (!hasAnthropic()) {
     // Deterministic fallback: apply confidence floor and category caps.
@@ -73,17 +75,31 @@ export async function runCritic(input: {
         founder_avoid: input.context.founder.avoidKeywords,
         dealbreakers: input.context.founder.dealbreakers,
         previous_decision: input.decision,
-        shortlist_lookup: input.shortlist.map((s) => ({
-          id: s.item.id,
-          title: s.item.title,
-          category: s.item.category,
-          type: s.item.type,
-          score: s.score,
-          reasons: s.reasons,
-          tags: s.item.tags,
-          source: s.item.source,
-          starts_at: s.item.startsAt,
-        })),
+        shortlist_lookup: (() => {
+          const libraryMap = new Map<string, PlacesLibraryRow>();
+          for (const entry of input.libraryEntries ?? []) {
+            libraryMap.set(entry.name.toLowerCase().trim(), entry);
+            libraryMap.set(entry.slug, entry);
+          }
+          return input.shortlist.map((s) => {
+            const lookupKey = (s.item.locationName ?? s.item.title ?? "").toLowerCase().trim();
+            const known = libraryMap.get(lookupKey);
+            return {
+              id: s.item.id,
+              title: s.item.title,
+              category: s.item.category,
+              type: s.item.type,
+              score: s.score,
+              reasons: s.reasons,
+              tags: s.item.tags,
+              source: s.item.source,
+              starts_at: s.item.startsAt,
+              known_place: known
+                ? { verdict: known.verdict, strength: known.verdict_strength, best_for: known.best_for }
+                : undefined,
+            };
+          });
+        })(),
         min_confidence: RADAR_MIN_CONFIDENCE,
         instructions: [
           "Reject items with confidence < " + RADAR_MIN_CONFIDENCE + " → suggestedStatus: 'discovered'.",
