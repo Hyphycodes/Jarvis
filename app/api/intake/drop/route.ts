@@ -4,9 +4,11 @@ import { getAnthropicClient, DEFAULT_MODEL, hasAnthropic } from "@/lib/ai/anthro
 import { hasTavily, extractUrls } from "@/lib/sources/tavily";
 import { getLibraryEntryByName, researchAndStore } from "@/lib/actions/placesLibrary";
 import { writeVerdict } from "@/lib/brain/verdictWriter";
+import { writeEventVerdict } from "@/lib/brain/eventVerdict";
 import { buildBrainContext } from "@/lib/brain/context";
 import { researchPlace } from "@/lib/brain/researcher";
 import type { VerdictOutput } from "@/lib/brain/verdictWriter";
+import type { EventVerdictOutput } from "@/lib/brain/eventVerdict";
 import type { PlacesLibraryRow } from "@/lib/types/database";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +35,11 @@ type DropContext = {
 type DropResult = {
   ok: true;
   venue_name: string | null;
+  is_event: boolean;
+  event_details?: { datetime: string | null; artist_or_host: string | null } | null;
   libraryEntry: PlacesLibraryRow | null;
   verdict: VerdictOutput | null;
+  event_verdict: EventVerdictOutput | null;
   action_recommendation: string;
 };
 
@@ -46,6 +51,15 @@ function actionFromVerdict(verdict: VerdictOutput | null): string {
     case "high": return "Worth acting on. Save it.";
     case "medium": return "Put it in Holding.";
     default: return "Keep an eye on it.";
+  }
+}
+
+function actionFromEventVerdict(verdict: EventVerdictOutput | null): string {
+  if (!verdict) return "Keep an eye on it.";
+  switch (verdict.recommended_action) {
+    case "surface_radar": return "Worth going. Get a ticket.";
+    case "hold": return "Put it on the radar.";
+    default: return "Skip this one.";
   }
 }
 
@@ -279,51 +293,90 @@ export async function POST(req: Request) {
       }
     }
 
-    // 5. Write a Drop verdict
+    // 5. Determine if this is event-shaped or place-shaped
+    const isEvent = Boolean(
+      dropContext.event_details?.datetime ||
+      dropContext.event_details?.artist_or_host,
+    );
+
+    // 6. Write a verdict — event path or place path
     let verdict: VerdictOutput | null = null;
+    let event_verdict: EventVerdictOutput | null = null;
+
     try {
       const brainContext = await buildBrainContext({ includeWeather: false });
 
-      const effectiveDossier = dossier ?? (libraryEntry
-        ? {
-            canonical_name: libraryEntry.name,
-            slug: libraryEntry.slug,
-            place_type: libraryEntry.place_type as "restaurant",
-            neighborhood: libraryEntry.neighborhood,
-            cuisine_or_focus: libraryEntry.cuisine_or_focus ?? "",
-            price_level: (libraryEntry.price_level ?? "unknown") as "$",
-            hours_summary: libraryEntry.hours_summary ?? "",
-            vibe_keywords: libraryEntry.vibe_keywords ?? [],
-            sources_cited: (libraryEntry.sources_cited as Array<{ url: string; publication: string; snippet: string }>) ?? [],
-            events_observed: (libraryEntry.events_observed as Array<{ type: string; day?: string; notes: string }>) ?? [],
-            seasonal_notes: libraryEntry.seasonal_notes,
-            confidence: libraryEntry.verdict_strength ?? 0.5,
-            uncertainties: [],
-          }
-        : null);
-
-      if (effectiveDossier) {
-        // Add drop-specific instruction to context
-        const dropBrainContext = {
-          ...brainContext,
-          founder: {
-            ...brainContext.founder,
-          },
+      if (isEvent && dropContext.venue_name) {
+        // Event path: use Event Verdict Writer
+        const syntheticEvent = {
+          id: "drop-" + Date.now(),
+          user_id: "",
+          title: dropContext.event_details?.artist_or_host
+            ? `${dropContext.event_details.artist_or_host} at ${dropContext.venue_name}`
+            : `Event at ${dropContext.venue_name}`,
+          slug: null,
+          event_type: "other" as const,
+          venue_name: dropContext.venue_name,
+          library_place_id: libraryEntry?.id ?? null,
+          named_entities: dropContext.event_details?.artist_or_host
+            ? [dropContext.event_details.artist_or_host]
+            : [],
+          starts_at: dropContext.event_details?.datetime ?? new Date().toISOString(),
+          ends_at: null,
+          ticket_url: dropContext.source_url,
+          price_level: null,
+          vibe_keywords: [],
+          description: dropContext.raw_text || null,
+          sources_cited: null,
+          verdict: null,
+          verdict_strength: null,
+          discovered_at: new Date().toISOString(),
+          discovered_via: dropContext.source_url,
+          status: "pending",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
+        event_verdict = await writeEventVerdict(syntheticEvent, libraryEntry, brainContext);
+      } else {
+        // Place path: use Place Verdict Writer
+        const effectiveDossier = dossier ?? (libraryEntry
+          ? {
+              canonical_name: libraryEntry.name,
+              slug: libraryEntry.slug,
+              place_type: libraryEntry.place_type as "restaurant",
+              neighborhood: libraryEntry.neighborhood,
+              cuisine_or_focus: libraryEntry.cuisine_or_focus ?? "",
+              price_level: (libraryEntry.price_level ?? "unknown") as "$",
+              hours_summary: libraryEntry.hours_summary ?? "",
+              vibe_keywords: libraryEntry.vibe_keywords ?? [],
+              sources_cited: (libraryEntry.sources_cited as Array<{ url: string; publication: string; snippet: string }>) ?? [],
+              events_observed: (libraryEntry.events_observed as Array<{ type: string; day?: string; notes: string }>) ?? [],
+              seasonal_notes: libraryEntry.seasonal_notes,
+              confidence: libraryEntry.verdict_strength ?? 0.5,
+              uncertainties: [],
+            }
+          : null);
 
-        verdict = await writeVerdict(effectiveDossier, dropBrainContext);
+        if (effectiveDossier) {
+          verdict = await writeVerdict(effectiveDossier, brainContext);
+        }
       }
     } catch (err) {
       console.warn("[drop] Verdict writing failed", err);
     }
 
-    const action_recommendation = actionFromVerdict(verdict);
+    const action_recommendation = isEvent
+      ? actionFromEventVerdict(event_verdict)
+      : actionFromVerdict(verdict);
 
     const result: DropResult = {
       ok: true,
       venue_name: dropContext.venue_name,
+      is_event: isEvent,
+      event_details: dropContext.event_details,
       libraryEntry,
       verdict,
+      event_verdict,
       action_recommendation,
     };
 

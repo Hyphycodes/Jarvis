@@ -105,6 +105,8 @@ export type TodayPayload = {
   nextMove?: TodayCommandItem;
   todayStack?: TodayCommandItem[];
   upcoming?: TodayCommandItem[];
+  /** Events happening today or tonight from current_events */
+  tonightEvents?: TodayCommandItem[];
 };
 
 export type TodayCommandItem = {

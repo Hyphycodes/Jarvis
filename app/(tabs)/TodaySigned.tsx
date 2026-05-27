@@ -27,6 +27,7 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
   );
   const grabItems = payload?.grabList ?? [];
   const signals = payload?.todayStack ?? [];
+  const tonightEvents = payload?.tonightEvents ?? [];
   const planSlug = payload?.livePlan?.slug;
 
   return (
@@ -73,6 +74,7 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
 
       {grabItems.length > 0 ? <GrabList items={grabItems} /> : null}
 
+      <TonightSection items={tonightEvents} />
       <SignalsSection items={signals} />
 
       <DropItIn />
@@ -193,6 +195,64 @@ function GrabList({ items }: { items: GrabListEntry[] }) {
       ) : null}
     </section>
   );
+}
+
+// ── Tonight ──────────────────────────────────────────────────────────────────
+
+function TonightSection({ items }: { items: TodayCommandItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="mt-10">
+      <SectionLabel
+        trailing={
+          <span className="text-[11px] uppercase tracking-[0.2em] text-muted-gold/70">
+            Tonight
+          </span>
+        }
+      >
+        Events
+      </SectionLabel>
+      <ul className="mt-4 flex flex-col gap-3">
+        {items.map((item) => (
+          <li key={item.id}>
+            <TonightEventRow item={item} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function TonightEventRow({ item }: { item: TodayCommandItem }) {
+  const time = item.startsAt ? formatEventTime(item.startsAt) : null;
+  return (
+    <div className="flex items-start gap-3 border-l border-muted-gold/55 bg-soft-black/40 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] leading-[1.4] text-warm-ivory/88">{item.title}</div>
+        {item.subtitle ? (
+          <div className="mt-0.5 text-[12px] text-warm-ivory/45">{item.subtitle}</div>
+        ) : null}
+        {item.reason ? (
+          <div className="mt-1 line-clamp-2 text-[12px] leading-[1.45] text-warm-ivory/52">
+            {item.reason}
+          </div>
+        ) : null}
+      </div>
+      {time ? (
+        <div className="shrink-0 pt-0.5 text-[11px] text-muted-gold/70">{time}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatEventTime(iso: string): string | null {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return null;
+  }
 }
 
 // ── Signals ─────────────────────────────────────────────────────────────────

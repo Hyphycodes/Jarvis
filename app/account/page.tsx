@@ -30,6 +30,7 @@ type AccountStatus = {
   libraryCount: number;
   pendingCandidates: number;
   libraryNewThisWeek: number;
+  tastemakerCount: number;
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -198,6 +199,16 @@ export default async function AccountPage() {
               : "The Scout is building your library autonomously."
           }
         />
+        <AccountNavRow
+          href="/account/tastemakers"
+          icon={<Sparkle size={20} />}
+          title="Tastemakers"
+          description={
+            status.tastemakerCount > 0
+              ? `${status.tastemakerCount} people tracked · swept weekly`
+              : "Add the promoters, DJs, and chefs whose moves you follow."
+          }
+        />
         {status.pendingCandidates > 0 ? (
           <p className="mt-3 text-[13px] leading-[1.5] text-warm-ivory/40">
             {status.pendingCandidates} candidate{status.pendingCandidates !== 1 ? "s" : ""} in the research queue.
@@ -219,7 +230,7 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
     const supabase = await getServerSupabase();
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [founderRes, memoryRes, libraryRes, pendingRes, newThisWeekRes] =
+    const [founderRes, memoryRes, libraryRes, pendingRes, newThisWeekRes, tastemakersRes] =
       await Promise.all([
         supabase
           .from("founder_profile")
@@ -245,6 +256,10 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
           .select("id", { count: "exact", head: true })
           .eq("user_id", userId)
           .gte("first_seen_at", oneWeekAgo),
+        supabase
+          .from("tastemakers")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId),
       ]);
 
     if (founderRes.error) {
@@ -261,6 +276,7 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       libraryCount: libraryRes.count ?? 0,
       pendingCandidates: pendingRes.count ?? 0,
       libraryNewThisWeek: newThisWeekRes.count ?? 0,
+      tastemakerCount: tastemakersRes.count ?? 0,
     };
   } catch (error) {
     console.error("[surface-loader] account.status", error);
@@ -271,6 +287,7 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       libraryCount: 0,
       pendingCandidates: 0,
       libraryNewThisWeek: 0,
+      tastemakerCount: 0,
     };
   }
 }

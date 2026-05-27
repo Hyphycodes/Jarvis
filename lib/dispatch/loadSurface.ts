@@ -28,6 +28,7 @@ import type {
   CirclePersonRow,
   CircleUpdateRow,
   BehaviorSignalRow,
+  CurrentEventRow,
   FounderProfileRow,
   NorthPillarRow,
   NorthSignalRow,
@@ -62,7 +63,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     if (!id) return emptyTodayPayload();
 
     const supabase = await getServerSupabase();
-    const [timelineRes, primaryPlanRes, todayItemsRes, upcomingItemsRes, upcomingCountRes, dayOf, rhythmRes] =
+    const [timelineRes, primaryPlanRes, todayItemsRes, upcomingItemsRes, upcomingCountRes, dayOf, rhythmRes, tonightEventsRes] =
       await Promise.all([
         supabase
           .from("today_timeline_items")
@@ -102,12 +103,39 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .select("weekly_rhythm")
           .eq("user_id", id)
           .maybeSingle(),
+        // Tonight's events: starts_at today or within next 24h, status verified or surfaced
+        supabase
+          .from("current_events")
+          .select("*")
+          .eq("user_id", id)
+          .in("status", ["verified", "surfaced"])
+          .gte("starts_at", new Date().toISOString())
+          .lte("starts_at", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(5),
       ]);
 
     logQueryError("today.timeline", timelineRes.error);
     logQueryError("today.plan", primaryPlanRes.error);
     logQueryError("today.items", todayItemsRes.error);
     logQueryError("today.rhythm", rhythmRes.error);
+    logQueryError("today.tonightEvents", tonightEventsRes.error);
+
+    const tonightEventRows = (tonightEventsRes.data ?? []) as CurrentEventRow[];
+    const tonightEvents: TodayCommandItem[] = tonightEventRows.map((ev) => ({
+      id: ev.id,
+      title: ev.title,
+      subtitle: ev.venue_name,
+      summary: ev.verdict ?? ev.description ?? undefined,
+      source: "event_pulse",
+      type: "event",
+      category: "events",
+      destination: "radar",
+      status: ev.status,
+      startsAt: ev.starts_at,
+      locationName: ev.venue_name,
+      reason: ev.verdict ?? undefined,
+    }));
 
     const timelineRows = (timelineRes.data ?? []) as TodayTimelineItemRow[];
     const planRow = (primaryPlanRes.data?.[0] ?? null) as PlanRow | null;
@@ -274,6 +302,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       nextMove,
       todayStack: todayStack.length > 0 ? todayStack : undefined,
       upcoming: upcomingItems.slice(0, 3),
+      tonightEvents: tonightEvents.length > 0 ? tonightEvents : undefined,
     };
   } catch (error) {
     logSurfaceError("today", error);
