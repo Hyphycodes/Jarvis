@@ -83,7 +83,8 @@ async function fetchAndExtract(
 
 function dedupeKey(venue: string, startsAt: string): string {
   const v = venue.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const d = startsAt.slice(0, 16);
+  // Date only — same venue on the same calendar day = same event
+  const d = startsAt.slice(0, 10);
   return `${v}:${d}`;
 }
 

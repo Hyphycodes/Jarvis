@@ -118,10 +118,14 @@ function makeEventSlug(title: string, venueName: string): string {
 }
 
 // ── Dedup key ─────────────────────────────────────────────────────────────────
+// Match on venue (normalised) + calendar date only. Two events at the same
+// venue on the same date are almost certainly the same event, even if Claude
+// extracts slightly different start times (8:00 PM vs 20:00, off-by-one minute).
 
 function dedupeKey(venueName: string, startsAt: string): string {
   const venueNorm = venueName.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const dateNorm = startsAt.slice(0, 16); // down to minute
+  // Take only the date portion: "YYYY-MM-DD" (first 10 chars of any ISO string)
+  const dateNorm = startsAt.slice(0, 10);
   return `${venueNorm}:${dateNorm}`;
 }
 
