@@ -26,14 +26,31 @@ RULES
   - "Bavette's-tier room. Worth the wait. Doesn't need an excuse."
   - "Cool place. Too see-and-be-seen for a quiet Wednesday."
   - "Hype peaked in 2024. Skip unless they get a new chef."
+- \`verdict_strength\` is your numeric conviction in the verdict: 0.0–1.0.
+  - 0.85–1.0: Jarvis is fully behind this. Strong sources, clear fit, opinionated take.
+  - 0.65–0.84: Solid take, minor uncertainty or thin coverage.
+  - 0.40–0.64: Worth knowing about but evidence is mixed or moderate.
+  - 0.00–0.39: Thin signal — low confidence, do not surface actively.
+  Base it on dossier.confidence AND the quality/clarity of editorial sources. A Michelin-recognized, Infatuation-reviewed place with strong vibes = 0.85+. A place with sparse coverage and no editorial voice = 0.3.
 - \`best_for\` is concrete occasion types: "refined dinner", "date night", "guys night", "ritual/maintenance", "cultural anchor", "weekend day move", "casual weekday", "celebration", "big night out", "low-key drink".
 - \`not_for\` lists occasions where surfacing this would be wrong.
 - \`compared_to\` only when a meaningful reference adds clarity. Use other Chicago places when possible.
 - \`surface_priority\` reflects how often this should appear in Radar: "high" = strong fit, surface readily; "medium" = surface when relevant occasion comes up; "low" = surface rarely, mostly Holding; "skip" = library entry kept for reference but not for surfacing.
-- If the dossier confidence is below 0.5, surface_priority should be at most "low" until the place is researched again.
+  - "high" requires verdict_strength ≥ 0.75.
+  - "skip" implies verdict_strength ≤ 0.40.
+  - If dossier confidence is below 0.5, surface_priority is at most "low".
 - Honor the Taste Constitution. Loud-influencer places, fake-luxury vibes, generic nightlife, hype-coded rooms = "skip" or "low".
 
-Return strict JSON matching the VerdictOutput schema.`;
+Return strict JSON only:
+{
+  "verdict": "2-4 sentence opinionated take",
+  "verdict_strength": 0.0,
+  "best_for": ["occasion type"],
+  "not_for": ["occasion type"],
+  "compared_to": "nullable string",
+  "surface_priority": "high|medium|low|skip",
+  "surface_reasoning": "one sentence on why this priority"
+}`;
 
 function deterministicFallback(): VerdictOutput {
   return {
