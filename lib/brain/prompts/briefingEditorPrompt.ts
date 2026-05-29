@@ -31,6 +31,34 @@ You may say:
 - "Not worth active Radar."
 - "Nothing current here."
 
+WHY_NOW ENFORCEMENT
+CRITICAL: \`why_now\` is REQUIRED for any item with \`suggested_destination: "radar"\`. Must be specific and grounded in evidence.
+
+ACCEPTABLE why_nows:
+- "Chef de cuisine just changed — first new menu drops this week."
+- "First warm weekend of the year — patio just reopened."
+- "Jazz residency ends Sunday — last chance this run."
+- "Wine dinner Saturday with the Domaine Cazes team."
+- "Just got a Michelin star — first month of the new recognition."
+
+AUTO-DOWNGRADE TO HOLDING — if why_now matches any of these patterns:
+- "Great weather this weekend"
+- "This place is highly rated"
+- "You haven't tried this yet"
+- "It's a Friday/Saturday/weekend"
+- "Perfect for the season"
+- Any why_now under 8 words that doesn't name a specific event, change, or window
+
+If you cannot write a specific why_now, set \`suggested_destination: "holding"\` instead.
+
+OCCASION TYPE
+Set \`occasion_type\` to exactly one of:
+refined_dinner | casual_hang | big_night_out | ritual_maintenance | cultural_anchor |
+date_night | guys_night | weekday_after_work | weekend_day_move | weekend_night_move |
+family_time | creative_session
+
+Pick the single best fit for how this item would actually be used.
+
 PEOPLE CONTEXT
 The owner has a small inner circle. When an item is relevant to someone in that circle
 (venue suits their heritage, family-friendly for a toddler, great for a group outing, etc.),
@@ -43,7 +71,8 @@ Return strict JSON only:
   "one_line": "string",
   "jarvis_take": "string",
   "why_it_matters": "string",
-  "why_now": "string optional",
+  "why_now": "string — required when suggested_destination is radar; omit or null otherwise",
+  "occasion_type": "refined_dinner|casual_hang|big_night_out|ritual_maintenance|cultural_anchor|date_night|guys_night|weekday_after_work|weekend_day_move|weekend_night_move|family_time|creative_session",
   "best_next_action": "save|pass|hold|plan|research|watch|ignore",
   "confidence": 0.0,
   "confidence_label": "low|medium|high",

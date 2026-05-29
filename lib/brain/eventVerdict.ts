@@ -4,6 +4,7 @@ import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import type { CurrentEventRow, PlacesLibraryRow } from "@/lib/types/database";
+import type { OccasionType } from "@/lib/brain/occasionTypes";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ export type EventVerdictOutput = {
   verdict: string;
   verdict_strength: number;
   recommended_action: "surface_radar" | "hold" | "reject";
+  occasion_type?: OccasionType;
 };
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -36,7 +38,8 @@ Return strict JSON only:
 {
   "verdict": "2-4 sentence opinionated take",
   "verdict_strength": 0.0,
-  "recommended_action": "surface_radar" | "hold" | "reject"
+  "recommended_action": "surface_radar" | "hold" | "reject",
+  "occasion_type": "refined_dinner|casual_hang|big_night_out|ritual_maintenance|cultural_anchor|date_night|guys_night|weekday_after_work|weekend_day_move|weekend_night_move|family_time|creative_session"
 }`;
 
 // ── Fallback ──────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ import {
   recordBudgetUsage,
 } from "@/lib/intelligence/budget";
 import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
+import { detectAndProposePatterns } from "@/lib/intelligence/patternDetector";
 
 export type AmbientRunSummary = {
   ok: boolean;
@@ -125,6 +126,12 @@ export async function runAmbientIntelligence(input: {
       summary.errors.push(`promote: ${err instanceof Error ? err.message : String(err)}`);
     }
     summary.cleaned = await cleanupRadar(owner.id);
+    try {
+      const supabase = await getServerSupabase();
+      await detectAndProposePatterns(owner.id, supabase);
+    } catch (err) {
+      summary.errors.push(`patterns: ${err instanceof Error ? err.message : String(err)}`);
+    }
     summary.decision_run_id = await logAmbientRun(owner.id, runType, summary);
     return { ...summary, budget: budgetForLog(workingBudget) };
   }

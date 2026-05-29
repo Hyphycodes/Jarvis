@@ -148,6 +148,19 @@ export function evaluateCandidateForRadar(
   };
 }
 
+const GENERIC_WHY_NOW_PATTERNS = [
+  /great weather/i,
+  /highly rated/i,
+  /haven't tried/i,
+  /perfect for the season/i,
+  /it'?s (a |an )?(friday|saturday|sunday|weekend)/i,
+];
+
+function isGenericWhyNow(whyNow: string | undefined): boolean {
+  if (!whyNow || whyNow.trim().split(" ").length < 8) return true;
+  return GENERIC_WHY_NOW_PATTERNS.some((p) => p.test(whyNow));
+}
+
 function decideAdmission(input: {
   candidate: IndexedItem;
   briefing?: ItemBriefing;
@@ -167,6 +180,8 @@ function decideAdmission(input: {
   if (blocking.length > 0) return "holding";
   if (confidence < RADAR_ADMISSION_MIN_CONFIDENCE) return "holding";
   if (briefing.suggested_destination !== "radar") return "holding";
+  // why_now gate: generic or missing why_now → demote to holding
+  if (isGenericWhyNow(briefing.why_now)) return "holding";
   return "radar";
 }
 

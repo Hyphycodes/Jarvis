@@ -19,6 +19,7 @@ import {
 import { runCurator, summarizeContext } from "@/lib/brain/curator";
 import { runCritic } from "@/lib/brain/critic";
 import { shortlistByScore } from "@/lib/brain/router";
+import { inferRecentCadence } from "@/lib/brain/lifeCadence";
 import type { BrainDecision, ScoredItem } from "@/lib/brain/types";
 import type { IndexedItem } from "@/lib/index/types";
 import type { SurfacedItemRow } from "@/lib/types/database";
@@ -148,8 +149,14 @@ export async function runRadarCuration(options: {
     maxItems: options.maxShortlist ?? RADAR_SHORTLIST_LIMIT,
   });
 
+  // 6.3 — Cadence-aware aperture
+  const cadence = await inferRecentCadence({ userId: owner.id, supabase });
+  const cadenceMax =
+    cadence.intensity === "heavy" ? 1 :
+    cadence.intensity === "moderate" ? 3 : 2;
+
   const maxSelected = Math.min(
-    options.maxSelected ?? RADAR_DEFAULT_SELECTED_LIMIT,
+    options.maxSelected ?? Math.min(cadenceMax, RADAR_DEFAULT_SELECTED_LIMIT),
     RADAR_HARD_SELECTED_LIMIT,
   );
 
@@ -176,7 +183,25 @@ export async function runRadarCuration(options: {
 
   // Post-critique gates (code-enforced, not just prompt hints)
   const qualityGated = enforceBriefingQuality(briefed, shortlist, context);
-  const gated = enforceGates(qualityGated, shortlist, now);
+
+  // 6.2 — Occasion type saturation check
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentByOccasion } = await supabase
+    .from("surfaced_items")
+    .select("occasion_type, location_name, tags")
+    .eq("user_id", owner.id)
+    .gte("updated_at", sevenDaysAgo)
+    .not("occasion_type", "is", null);
+  const occasionSaturated = enforceOccasionSaturation(
+    qualityGated,
+    shortlist,
+    (recentByOccasion ?? []) as Array<{ occasion_type: string | null; location_name: string | null; tags: string[] }>,
+  );
+
+  // 6.4 — Novelty floor enforcement
+  const noveltyEnforced = enforceNoveltyFloor(occasionSaturated, shortlist, libraryEntries ?? []);
+
+  const gated = enforceGates(noveltyEnforced, shortlist, now);
   if (gated.fallbackUsed) {
     console.warn("[brain.curation] fallback brain applied", {
       fallbackReason: gated.fallbackReason ?? gated.notes,
@@ -521,6 +546,106 @@ function enforceBriefingQuality(
     notes: [decision.notes, notes.length ? `Briefing gate: ${notes.join("; ")}` : ""]
       .filter(Boolean)
       .join(" | "),
+  };
+}
+
+// ── 6.2 Occasion type saturation ─────────────────────────────────────────────
+
+function enforceOccasionSaturation(
+  decision: BrainDecision,
+  shortlist: ScoredItem[],
+  recentByOccasion: Array<{ occasion_type: string | null; location_name: string | null; tags: string[] }>,
+): BrainDecision {
+  const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
+  const selected: BrainDecision["selected"] = [];
+  const notes: string[] = [];
+
+  for (const sel of decision.selected) {
+    const occasionType = sel.briefing?.occasion_type;
+    if (!occasionType || sel.destination !== "radar") {
+      selected.push(sel);
+      continue;
+    }
+    const sameType = recentByOccasion.filter((r) => r.occasion_type === occasionType);
+    if (sameType.length < 1) {
+      selected.push(sel);
+      continue;
+    }
+    const scored = scoreByItemId.get(sel.itemId);
+    const neighborhood = scored?.item.tags.find((t) => t.startsWith("neighborhood:")) ??
+      scored?.item.locationName ?? null;
+    const differentNeighborhood = sameType.every((r) => {
+      const rNbhd = r.location_name;
+      return rNbhd !== neighborhood;
+    });
+    if (differentNeighborhood) {
+      selected.push(sel);
+    } else {
+      selected.push({ ...sel, destination: "holding" });
+      notes.push(`${sel.itemId}: occasion_type saturation (${occasionType}) → holding`);
+    }
+  }
+
+  return {
+    ...decision,
+    selected,
+    notes: [decision.notes, notes.length ? `Occasion saturation: ${notes.join("; ")}` : ""]
+      .filter(Boolean).join(" | "),
+  };
+}
+
+// ── 6.4 Novelty floor ────────────────────────────────────────────────────────
+
+function enforceNoveltyFloor(
+  decision: BrainDecision,
+  shortlist: ScoredItem[],
+  libraryEntries: import("@/lib/types/database").PlacesLibraryRow[],
+): BrainDecision {
+  const radarSelected = decision.selected.filter((s) => s.destination === "radar");
+  if (radarSelected.length <= 1) return decision;
+
+  const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
+  const libraryByName = new Map(libraryEntries.map((e) => [e.name?.toLowerCase() ?? "", e]));
+
+  function getTimesSurfaced(sel: BrainDecision["selected"][number]): number {
+    const scored = scoreByItemId.get(sel.itemId);
+    const name = (scored?.item.locationName ?? scored?.item.title ?? "").toLowerCase();
+    const entry = libraryByName.get(name);
+    return entry?.times_surfaced ?? 0;
+  }
+
+  const neverSurfacedCount = radarSelected.filter((s) => getTimesSurfaced(s) === 0).length;
+  const ratio = neverSurfacedCount / radarSelected.length;
+
+  if (ratio >= 0.6) return decision;
+
+  // Demote most-seen items until ratio clears 0.6
+  const sorted = [...radarSelected].sort((a, b) => getTimesSurfaced(b) - getTimesSurfaced(a));
+  const demotedIds = new Set<string>();
+  let remaining = [...sorted];
+
+  while (
+    remaining.length > 1 &&
+    remaining.filter((s) => getTimesSurfaced(s) === 0).length / remaining.length < 0.6
+  ) {
+    const demoted = remaining.shift();
+    if (demoted) demotedIds.add(demoted.itemId);
+  }
+
+  const notes: string[] = [];
+  const selected = decision.selected.map((sel) => {
+    if (demotedIds.has(sel.itemId)) {
+      notes.push(`${sel.itemId}: novelty floor → holding`);
+      return { ...sel, destination: "holding" as const };
+    }
+    return sel;
+  });
+
+  return {
+    ...decision,
+    selected,
+    notes: [decision.notes, notes.length ? `Novelty floor: ${notes.join("; ")}` : ""]
+      .filter(Boolean).join(" | "),
   };
 }
 

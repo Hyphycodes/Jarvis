@@ -494,6 +494,7 @@ export interface Database {
           expires_at: string | null;
           url: string | null;
           image_url: string | null;
+          occasion_type: string | null;
           reasons: string[];
           tags: string[];
           created_at: string;
@@ -522,6 +523,7 @@ export interface Database {
           expires_at?: string | null;
           url?: string | null;
           image_url?: string | null;
+          occasion_type?: string | null;
           reasons?: string[];
           tags?: string[];
           created_at?: string;
@@ -550,6 +552,7 @@ export interface Database {
           expires_at?: string | null;
           url?: string | null;
           image_url?: string | null;
+          occasion_type?: string | null;
           reasons?: string[];
           tags?: string[];
           created_at?: string;
@@ -954,6 +957,7 @@ export type CurrentEventRow = {
   sources_cited: unknown;
   verdict: string | null;
   verdict_strength: number | null;
+  occasion_type?: string | null;
   discovered_at: string;
   discovered_via: string | null;
   status: string;

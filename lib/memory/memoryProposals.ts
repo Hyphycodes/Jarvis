@@ -53,12 +53,23 @@ export async function listPendingMemoryProposals(): Promise<MemoryUpdateProposal
     .eq("status", "pending")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as MemoryUpdateProposalRow[]).map(toMemoryUpdateProposal);
+
+  const now = Date.now();
+  return ((data ?? []) as MemoryUpdateProposalRow[])
+    .filter((row) => {
+      // Filter out snoozed proposals that haven't woken up yet
+      const meta = isRecord(row.metadata) ? row.metadata : {};
+      const snoozedUntil = typeof meta.snoozed_until === "string"
+        ? new Date(meta.snoozed_until).getTime()
+        : null;
+      return snoozedUntil === null || snoozedUntil <= now;
+    })
+    .map(toMemoryUpdateProposal);
 }
 
 export async function decideMemoryProposal(input: {
   id: string;
-  action: "accept" | "reject" | "archive";
+  action: "accept" | "reject" | "archive" | "snooze";
 }): Promise<void> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
@@ -70,6 +81,19 @@ export async function decideMemoryProposal(input: {
     .maybeSingle();
   if (readError) throw new Error(readError.message);
   if (!proposal) throw new Error("Memory proposal not found.");
+
+  // Snooze: update metadata, leave status as pending
+  if (input.action === "snooze") {
+    const snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const existingMeta = isRecord(proposal.metadata) ? proposal.metadata : {};
+    const { error: snoozeError } = await supabase
+      .from("memory_update_proposals")
+      .update({ metadata: { ...existingMeta, snoozed_until: snoozedUntil } })
+      .eq("id", input.id)
+      .eq("user_id", owner.id);
+    if (snoozeError) throw new Error(snoozeError.message);
+    return;
+  }
 
   if (input.action === "accept") {
     await createCanonicalMemory({
@@ -98,6 +122,10 @@ export async function decideMemoryProposal(input: {
     .eq("id", input.id)
     .eq("user_id", owner.id);
   if (updateError) throw new Error(updateError.message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function toMemoryUpdateProposal(

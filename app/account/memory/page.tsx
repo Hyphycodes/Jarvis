@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { listPendingMemoryProposals } from "@/lib/memory/memoryProposals";
 import { BackButton, MotionPage } from "@/components";
-import { ProposalActions } from "./client-bits";
+import { ProposalReview } from "./client-bits";
 
 export const metadata = { title: "Memory · Account" };
 export const dynamic = "force-dynamic";
@@ -14,6 +14,8 @@ export default async function MemoryReviewPage() {
 
   const proposals =
     user.role === "owner" ? await safeListPendingMemoryProposals() : [];
+
+  const pendingCount = proposals.length;
 
   return (
     <main
@@ -37,6 +39,11 @@ export default async function MemoryReviewPage() {
         <section className="mt-6">
           <span className="text-[11px] uppercase tracking-editorial text-muted-gold">
             Memory · Proposals
+            {pendingCount > 0 ? (
+              <span className="ml-2 rounded-full bg-muted-gold/20 px-2 py-0.5 text-[10px] text-muted-gold">
+                {pendingCount} pending
+              </span>
+            ) : null}
           </span>
           <h1 className="mt-2 font-serif text-[52px] italic leading-[1.0] tracking-[-0.01em] text-warm-ivory">
             What Jarvis is learning.
@@ -55,42 +62,7 @@ export default async function MemoryReviewPage() {
             will surface here when patterns emerge.
           </p>
         ) : (
-          <ul className="flex flex-col gap-4">
-            {proposals.map((proposal) => (
-              <li
-                key={proposal.id}
-                className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5"
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[10px] uppercase tracking-editorial text-muted-gold">
-                    {proposal.type.replace(/_/g, " ")}
-                  </span>
-                  <span className="text-[11px] text-warm-ivory/45">
-                    {Math.round(proposal.confidence * 100)}% confidence
-                  </span>
-                </div>
-                <p className="mt-3 font-serif text-[20px] leading-[1.35] text-warm-ivory">
-                  {proposal.content}
-                </p>
-                <p className="mt-3 text-[13px] leading-[1.55] text-warm-ivory/55">
-                  {proposal.reason}
-                </p>
-                {proposal.evidence.length > 0 ? (
-                  <ul className="mt-3 flex flex-wrap gap-2">
-                    {proposal.evidence.map((ev) => (
-                      <li
-                        key={ev}
-                        className="rounded-md border border-white/[0.06] px-2 py-0.5 text-[11px] text-warm-ivory/55"
-                      >
-                        {ev}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <ProposalActions proposalId={proposal.id} />
-              </li>
-            ))}
-          </ul>
+          <ProposalReview proposals={proposals} />
         )}
       </MotionPage>
     </main>

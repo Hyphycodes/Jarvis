@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Json } from "@/lib/types/database";
+import { OCCASION_TYPES } from "@/lib/brain/occasionTypes";
 
 export const briefingActionSchema = z.enum([
   "save",
@@ -52,6 +53,7 @@ export const itemBriefingSchema = z.object({
   jarvis_take: z.string().min(1).max(360),
   why_it_matters: z.string().min(1).max(360),
   why_now: z.string().max(220).optional(),
+  occasion_type: z.enum(OCCASION_TYPES).optional(),
   best_next_action: briefingActionSchema,
   confidence: z.number().min(0).max(1),
   confidence_label: z.enum(["low", "medium", "high"]),

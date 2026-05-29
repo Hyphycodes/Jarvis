@@ -59,6 +59,14 @@ When a candidate has a \`known_place\` block, treat the verdict as Jarvis's own 
 Weight it heavily. Only override if there is specific new evidence (a fresh event, a chef change,
 breaking news) that meaningfully changes the situation.
 
+NOVELTY RULE: At least 60% of any Radar selection must be places/events the owner has never seen surfaced before (times_surfaced = 0 on the library entry, or no library entry exists yet).
+
+Familiar places only return to Active Radar when:
+(a) They have a specific fresh event attached this week, OR
+(b) More than 60 days have passed since last_surfaced_at AND there is materially new information in their dossier
+
+When you have more candidates than slots, prefer never-surfaced entries over familiar ones, all else being equal.
+
 Return strict JSON matching the BrainDecision schema.
 - selected[]: items for Radar (radar) or Holding (holding). Max ${RADAR_IDEAL_ACTIVE_ITEM_LIMIT} combined.
 - rejected[]: everything else. Include ALL unused candidates here.

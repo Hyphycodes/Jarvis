@@ -384,7 +384,7 @@ export const intelligenceResponseSchema = z
 export const memoryProposalActionSchema = z
   .object({
     id: z.string().uuid(),
-    action: z.enum(["accept", "reject", "archive"]),
+    action: z.enum(["accept", "reject", "archive", "snooze"]),
   })
   .strict();
 export type MemoryProposalActionInput = z.infer<

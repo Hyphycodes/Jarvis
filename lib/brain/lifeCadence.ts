@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BrainContextPacket } from "@/lib/brain/types";
 
 export type LifeCadenceKey =
@@ -148,6 +149,38 @@ function statusForSignal(
   if (signal.lastTouchedAt && signal.overdueScore <= 0.35) return "active";
   if (signal.overdueScore >= 0.65) return "cooling";
   return "warm";
+}
+
+export type RecentCadenceIntensity = "heavy" | "moderate" | "quiet";
+
+export async function inferRecentCadence(input: {
+  userId: string;
+  supabase: SupabaseClient;
+}): Promise<{ intensity: RecentCadenceIntensity }> {
+  const { userId, supabase } = input;
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const { data } = await supabase
+      .from("surfaced_items")
+      .select("status")
+      .eq("user_id", userId)
+      .gte("updated_at", sevenDaysAgo)
+      .in("status", ["saved", "passed", "completed", "planned"]);
+
+    const rows = (data ?? []) as Array<{ status: string }>;
+    const saves = rows.filter((r) => r.status === "saved").length;
+    const completions = rows.filter((r) => r.status === "completed" || r.status === "planned").length;
+    const passes = rows.filter((r) => r.status === "passed").length;
+
+    // Heavy: 3+ completions OR 5+ saves
+    if (completions >= 3 || saves >= 5) return { intensity: "heavy" };
+    // Quiet: 0 completions AND 2+ passes
+    if (completions === 0 && passes >= 2) return { intensity: "quiet" };
+    return { intensity: "moderate" };
+  } catch {
+    return { intensity: "moderate" };
+  }
 }
 
 function daysBetween(fromIso: string, toIso: string): number {

@@ -277,8 +277,10 @@ function RadarCard({
   onDismiss: () => void;
   onPersistedAction: () => void;
 }) {
+  const router = useRouter();
   const [passing, setPassing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const hasMedia = Boolean(card.imageUrl) || Boolean(card.placeholderKind);
@@ -318,6 +320,29 @@ function RadarCard({
     setSaved(true);
     persist("save");
     setTimeout(() => setSaved(false), 1100);
+  }
+
+  function handlePlan(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (planning || pending) return;
+    setPlanning(true);
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/items/${card.id}/generate-plan`, { method: "POST" });
+        const json = (await res.json().catch(() => ({}))) as { plan_slug?: string; error?: string };
+        if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+        if (json.plan_slug) {
+          router.push(`/plan/${json.plan_slug}`);
+        } else {
+          onPersistedAction();
+        }
+      } catch (err) {
+        setPlanning(false);
+        setError((err as Error).message);
+      }
+    });
   }
 
   return (
@@ -377,11 +402,7 @@ function RadarCard({
         </div>
       ) : null}
 
-      <div
-        className={`grid border-t border-white/[0.045] ${
-          card.planSlug ? "grid-cols-3" : "grid-cols-2"
-        }`}
-      >
+      <div className="grid grid-cols-3 border-t border-white/[0.045]">
         <button
           type="button"
           onClick={handleSave}
@@ -397,7 +418,16 @@ function RadarCard({
           >
             View plan
           </Link>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={handlePlan}
+            disabled={pending || planning}
+            className="border-r border-white/[0.045] py-4 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
+          >
+            {planning ? "…" : "Plan it"}
+          </button>
+        )}
         <button
           type="button"
           onClick={handlePass}
