@@ -60,9 +60,11 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as {
       text?: string;
       history?: ConversationMessage[];
+      sheet_context?: string;
     };
 
     const message = typeof body.text === "string" ? body.text.trim() : "";
+    const sheetContext = typeof body.sheet_context === "string" ? body.sheet_context.trim() : "";
     if (!message) {
       return new Response(
         `data: ${JSON.stringify({ type: "error", message: "text is required" })}\n\n`,
@@ -94,6 +96,11 @@ export async function POST(req: Request) {
 
     const client = getAnthropicClient();
 
+    // Prepend sheet context silently to system message if available
+    const systemPrompt = sheetContext
+      ? `[Context]\n${sheetContext}\n\n${CONVERSATION_SYSTEM_PROMPT}`
+      : CONVERSATION_SYSTEM_PROMPT;
+
     // ── Streaming SSE response ────────────────────────────────────────────────
     // Format:
     //   data: {"type":"intent", "intent":"...", "ask_about_plan":bool, "plan_context":...}
@@ -117,7 +124,7 @@ export async function POST(req: Request) {
           model: DEFAULT_MODEL,
           max_tokens: 400,
           temperature: 0.7,
-          system: CONVERSATION_SYSTEM_PROMPT,
+          system: systemPrompt,
           messages,
         });
 
