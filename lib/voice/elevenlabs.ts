@@ -20,8 +20,10 @@ export function hasElevenLabs(): boolean {
 // ── Transcription (Scribe) ────────────────────────────────────────────────────
 
 export async function transcribeAudio(audioBlob: Blob): Promise<string> {
+  const isMp4 = audioBlob.type.includes("mp4");
+  const filename = isMp4 ? "audio.mp4" : "audio.webm";
   const form = new FormData();
-  form.append("file", audioBlob, "audio.webm");
+  form.append("file", audioBlob, filename);
   form.append("model_id", "scribe_v1");
 
   const res = await fetch(`${BASE}/speech-to-text`, {

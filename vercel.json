@@ -10,11 +10,11 @@
     },
     {
       "path": "/api/library/scout",
-      "schedule": "0 8 * * *"
+      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/library/process-candidates",
-      "schedule": "0 9 * * *"
+      "schedule": "0 */3 * * *"
     },
     {
       "path": "/api/events/scout",

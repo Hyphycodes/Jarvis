@@ -7,7 +7,7 @@ import type { BrainContextPacket } from "@/lib/brain/types";
 import type { FounderProfileRow } from "@/lib/types/database";
 
 const REJECTION_CONFIDENCE_THRESHOLD = 0.3;
-const DEFAULT_LIMIT = 10;
+const DEFAULT_LIMIT = 25;
 
 // ── Minimal context builder ───────────────────────────────────────────────────
 // Cron has no session, so we build a minimal BrainContextPacket from the
@@ -60,7 +60,7 @@ export async function processCandidates(
     .eq("user_id", userId)
     .eq("status", "pending")
     .order("created_at", { ascending: true })
-    .limit(Math.min(limit, DEFAULT_LIMIT));
+    .limit(limit);
 
   if (fetchError) {
     const msg = `Failed to fetch place_candidates: ${fetchError.message}`;
