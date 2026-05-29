@@ -23,6 +23,12 @@ import { PressLink, PressFormButton } from "./client-bits";
 export const metadata = { title: "Account · Jarvis" };
 export const dynamic = "force-dynamic";
 
+type CronStatusEntry = {
+  runType: string;
+  label: string;
+  lastRunAt: string | null;
+};
+
 type AccountStatus = {
   hasFounderProfile: boolean;
   memoryCount: number;
@@ -31,6 +37,7 @@ type AccountStatus = {
   pendingCandidates: number;
   libraryNewThisWeek: number;
   tastemakerCount: number;
+  cronStatus: CronStatusEntry[];
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -216,6 +223,25 @@ export default async function AccountPage() {
         ) : null}
       </section>
 
+      {status.cronStatus.length > 0 ? (
+        <section className="mt-10">
+          <div className="lux-label">
+            Cron Status
+          </div>
+          <div className="lux-surface mt-4 rounded-[var(--radius-card)] px-5 py-2">
+            {status.cronStatus.map((entry, idx) => (
+              <StateRow
+                key={entry.runType}
+                icon={<Sparkle size={16} className="text-muted-gold" />}
+                label={entry.label}
+                value={entry.lastRunAt ? formatRelative(entry.lastRunAt) : "Not run yet"}
+                last={idx === status.cronStatus.length - 1}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <footer className="mt-12 flex items-center justify-center gap-2 text-[12px] text-warm-ivory/35">
         <Lock size={12} />
         <span>All data is private and encrypted.</span>
@@ -225,12 +251,23 @@ export default async function AccountPage() {
   );
 }
 
+const CRON_RUN_TYPES: Array<{ runType: string; label: string }> = [
+  { runType: "daily_maintenance", label: "Daily maintenance" },
+  { runType: "weekend_preview", label: "Weekend preview" },
+  { runType: "scout", label: "Library Scout" },
+  { runType: "process-candidates", label: "Library Researcher" },
+  { runType: "event-scout", label: "Event Scout" },
+  { runType: "event-process", label: "Event Processor" },
+  { runType: "tastemaker-sweep", label: "Tastemaker Sweep" },
+  { runType: "library-refresh", label: "Library Refresher" },
+];
+
 async function loadAccountStatus(userId: string): Promise<AccountStatus> {
   try {
     const supabase = await getServerSupabase();
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [founderRes, memoryRes, libraryRes, pendingRes, newThisWeekRes, tastemakersRes] =
+    const [founderRes, memoryRes, libraryRes, pendingRes, newThisWeekRes, tastemakersRes, cronRes] =
       await Promise.all([
         supabase
           .from("founder_profile")
@@ -260,6 +297,12 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
           .from("tastemakers")
           .select("id", { count: "exact", head: true })
           .eq("user_id", userId),
+        supabase
+          .from("brain_decision_runs")
+          .select("run_type, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(50),
       ]);
 
     if (founderRes.error) {
@@ -269,6 +312,20 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       console.error("[surface-loader] account.memoryCount", memoryRes.error);
     }
 
+    // Build cron status: pick the most recent run per run_type
+    const runRows = (cronRes.data ?? []) as Array<{ run_type: string; created_at: string }>;
+    const latestByType = new Map<string, string>();
+    for (const row of runRows) {
+      if (!latestByType.has(row.run_type)) {
+        latestByType.set(row.run_type, row.created_at);
+      }
+    }
+    const cronStatus: CronStatusEntry[] = CRON_RUN_TYPES.map(({ runType, label }) => ({
+      runType,
+      label,
+      lastRunAt: latestByType.get(runType) ?? null,
+    })).filter((e) => e.lastRunAt !== null);
+
     return {
       hasFounderProfile: !!founderRes.data,
       memoryCount: memoryRes.count ?? 0,
@@ -277,6 +334,7 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       pendingCandidates: pendingRes.count ?? 0,
       libraryNewThisWeek: newThisWeekRes.count ?? 0,
       tastemakerCount: tastemakersRes.count ?? 0,
+      cronStatus,
     };
   } catch (error) {
     console.error("[surface-loader] account.status", error);
@@ -288,7 +346,22 @@ async function loadAccountStatus(userId: string): Promise<AccountStatus> {
       pendingCandidates: 0,
       libraryNewThisWeek: 0,
       tastemakerCount: 0,
+      cronStatus: [],
     };
+  }
+}
+
+function formatRelative(iso: string): string {
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const minutes = Math.round(diff / 60_000);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+  } catch {
+    return "—";
   }
 }
 

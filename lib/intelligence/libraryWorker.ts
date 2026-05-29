@@ -69,7 +69,7 @@ export async function processCandidates(
   }
 
   const rows = candidates ?? [];
-  console.log(`[libraryWorker] Processing ${rows.length} candidates`);
+  console.warn(`[libraryWorker] Processing ${rows.length} candidates`);
 
   for (const candidate of rows) {
     const candidateName = candidate.name as string;
@@ -174,6 +174,6 @@ export async function processCandidates(
     }
   }
 
-  console.log("[libraryWorker] Done", { researched, rejected, errors: errors.length });
+  console.warn("[libraryWorker] Done", { researched, rejected, errors: errors.length });
   return { researched, rejected, errors };
 }

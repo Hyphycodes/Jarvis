@@ -1,150 +1,146 @@
 # Jarvis
 
-A private AI lifestyle operating system for one user.
+A private AI lifestyle operating system for one user. Not a chatbot, not a feed, not a productivity app. A curator, planner, memory, chief of staff, cultural radar, and long-arc advisor.
 
-> This repository is the **foundation pass**. Product surfaces (Today,
-> Radar, Circle, North, Index, Voice dock) are intentionally not built
-> yet. Design direction lands later. See `docs/tier-1-scope.md`.
+## What's built
+
+**Four rendering tabs:**
+- **Today** — live plan, timeline, grab list, tonight's events, signals, and Drop It In intake
+- **Radar** — curated weekly signal with Save / Plan it / Pass inline actions
+- **Circle** — inner circle people with updates and context
+- **North** — long-arc pillars, life cadence, and direction
+
+**Two-track discovery system:**
+- **Track 1 — Places Library:** Persistent library of Chicago places researched by Scout → Researcher → Verdict Writer agents. 50+ entries and growing autonomously.
+- **Track 2 — Event Pulse:** Rolling window of events this week and next. Scout → Verdict Writer → surfaced to Tonight and Radar.
+
+**Brain pipeline (5 agents + Decision Council):**
+1. Taste Strategist — derives interest lanes and source plan from the Interest Graph
+2. Curator — selects candidates from the shortlist; protects attention
+3. Critic — stress-tests the Curator's choices
+4. Briefing Editor — writes sharp private briefings for each selected item
+5. Plan Generator — generates full day plans for saved items
+
+Each agent uses `generateStructured<T>` with Zod-validated output and deterministic fallbacks. No crashes if the API key is missing.
+
+**Decision Council** — deterministic 5-role weighted scorer (Scout, Operator, Taste, Growth, Critic) with 0.72 confidence floor for Active Radar admission.
+
+**Phase 6 curation guardrails:**
+- Required `why_now` — generic patterns auto-demote to holding
+- Occasion type tagging (12 types) + saturation check
+- Cadence-aware aperture — heavy weeks get fewer items, not more
+- Novelty floor — ≥60% of Radar must be never-surfaced entries
+- Negative learning loop — pattern detector proposes memory updates from behavior signals
+- One-at-a-time memory proposal review with accept / snooze / reject
+
+**Supporting systems:**
+- Voice intake with ElevenLabs TTS and transcription
+- Drop It In — paste any text, URL, or screenshot for instant research + verdict
+- Tastemaker tracking — 30+ people monitored weekly for fresh signal
+- Memory + behavior signal infrastructure
+- Library Refresher — catches chef changes, closures, new menus
 
 ## Stack
 
-- Next.js (App Router) + TypeScript
+- Next.js 16 App Router + React 19 + TypeScript
 - Tailwind CSS
-- Supabase (Postgres + auth)
-- Anthropic API
-- Vercel (deploy target)
+- Supabase (Postgres + auth + RLS)
+- Anthropic API (`@anthropic-ai/sdk@0.32.1`)
+- ElevenLabs API (voice)
 - pnpm
+- Vercel (deploy target)
 
 ## Setup
 
 ```bash
 pnpm install
-cp .env.example .env.local   # fill placeholders, or use the values already in .env.local
+cp .env.example .env.local   # fill placeholders
 pnpm dev
 ```
 
-Open <http://localhost:3000>. Visit `/health` to confirm env vars load.
+Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 
 ## Scripts
 
-| script           | description                          |
-| ---------------- | ------------------------------------ |
-| `pnpm dev`       | Local dev server                     |
-| `pnpm build`     | Production build                     |
-| `pnpm start`     | Run the built app                    |
-| `pnpm typecheck` | `tsc --noEmit`                       |
-| `pnpm lint`      | Next.js lint                         |
+| script           | description                  |
+| ---------------- | -----------------------------|
+| `pnpm dev`       | Local dev server             |
+| `pnpm build`     | Production build             |
+| `pnpm start`     | Run the built app            |
+| `pnpm typecheck` | `tsc --noEmit`               |
+| `pnpm lint`      | Next.js lint                 |
 
 ## Environment variables
 
-Defined in `.env.example`. All required keys are validated at runtime by
-`lib/env.ts` (zod); the app fails loudly if any required value is missing.
+| variable                          | required | notes                                                |
+| --------------------------------- | -------- | -----------------------------------------------------|
+| `NEXT_PUBLIC_SUPABASE_URL`        | yes      | Supabase project URL                                 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`   | yes      | Supabase anon key (client-safe)                      |
+| `SUPABASE_SERVICE_ROLE_KEY`       | yes      | Server only. Bypasses RLS.                           |
+| `ANTHROPIC_API_KEY`               | yes      | Claude API key                                       |
+| `CRON_SECRET`                     | yes      | Shared secret for scheduled jobs                     |
+| `NEXT_PUBLIC_SITE_URL`            | yes (auth) | Public origin for magic-link redirect              |
+| `TAVILY_API_KEY`                  | yes      | Web search — Scout, Researcher, Refresher            |
+| `BRAVE_API_KEY`                   | optional | Secondary web search                                |
+| `SERPAPI_KEY`                     | optional | Google results fallback                              |
+| `TICKETMASTER_API_KEY`            | optional | Event discovery                                      |
+| `MAPBOX_TOKEN`                    | optional | Mapping and geocoding                                |
+| `ELEVENLABS_API_KEY`              | optional | Voice — TTS and transcription                        |
+| `ELEVENLABS_VOICE_ID`             | optional | ElevenLabs voice ID for Jarvis's voice               |
+| `OPENWEATHER_API_KEY`             | optional | Weather context for curation                         |
+| `MLB_API_KEY`                     | optional | White Sox schedule                                   |
 
-| variable                          | required | notes                               |
-| --------------------------------- | -------- | ----------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`        | yes      | Supabase project URL                |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`   | yes      | Supabase anon key (client-safe)     |
-| `SUPABASE_SERVICE_ROLE_KEY`       | yes      | Server only. Bypasses RLS.          |
-| `ANTHROPIC_API_KEY`               | yes      | Anthropic / Claude API key          |
-| `CRON_SECRET`                     | yes      | Shared secret for scheduled jobs    |
-| `NEXT_PUBLIC_SITE_URL`            | **yes for auth** | Public origin, used in magic-link `emailRedirectTo` |
+## Auth setup
 
-Real values live in Vercel and are committed nowhere. `.env.local` ships
-with non-secret placeholders so the app boots locally without network.
+1. Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`
+2. Supabase Auth → URL Configuration: set Site URL and add `${SITE_URL}/auth/callback` to Redirect URLs
+3. Apply migrations in `supabase/migrations/` (0001–0008) in the SQL Editor
+4. Visit `/login`, sign in with magic link
+5. Run in Supabase SQL Editor: `select public.seed_founder('your-email@example.com');`
+6. Refresh `/settings` — role should read `owner`
 
-### Auth setup (Supabase)
+## Cron schedule
 
-1. **Vercel env vars** — set these for both Preview and Production:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `NEXT_PUBLIC_SITE_URL` — your production origin, e.g.
-     `https://jarvis-five-gamma.vercel.app` (no trailing slash). Without
-     this, magic-link emails point to `localhost:3000` and lead nowhere.
-2. **Supabase Auth settings** (Dashboard → Authentication → URL
-   Configuration):
-   - **Site URL** — same value as `NEXT_PUBLIC_SITE_URL`.
-   - **Redirect URLs** — add an entry for `${SITE_URL}/auth/callback`
-     (and any preview origins you use, plus
-     `http://localhost:3000/auth/callback` for local dev).
-3. **Apply the schema** — run `supabase/migrations/0001_init.sql` in the
-   SQL Editor, then `supabase/seed.sql` to load the seed helper.
-4. **Sign up the founder** — visit `/login`, enter your email, click the
-   magic link. You should land on `/profile`.
-5. **Promote to owner + populate identity** — in Supabase SQL Editor:
+All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `Authorization: Bearer` header.
 
-   ```sql
-   select public.seed_founder('your-email@example.com');
-   ```
-
-   (The function looks up `auth.users` by email and is idempotent — safe
-   to re-run.) Visit `/settings` to confirm role, profile rows, and
-   memory/signal counts.
-
-If sign-in stalls, `/settings` is your diagnostic surface — it shows
-whether the session is active, whether profile/founder rows exist, and
-whether the required env vars are present (including the final
-**Callback URL** the app is computing for magic links).
-
-### Testing login end-to-end
-
-There are two sign-in modes on `/login`:
-
-- **Magic Link** — enter your email, click the link in the email.
-- **Password** — sign in to an existing account, or create a new one.
-  Supabase may require email confirmation for new accounts (a
-  confirmation link is sent automatically).
-
-To verify:
-
-1. Visit `/login`. Choose Magic Link or Password.
-2. Complete sign-in. You should land on `/settings`.
-3. `/settings` should show:
-   - your email + user id
-   - role (`viewer` initially; `owner` after seeding)
-   - session **Active**
-   - Auth & Environment values matching what you set in Vercel
-4. If you're the founder, run the seed command in Supabase SQL Editor:
-   ```sql
-   select public.seed_founder('your-email@example.com');
-   ```
-5. Refresh `/settings`. Role should now read `owner`, founder_profile
-   should be **Yes**, and memory/signal counts should be populated.
-6. Sign out from `/settings`. You're redirected back to `/login`.
-
-The seed helper accepts the **email**, not a UUID — internally it
-looks up `auth.users` and is idempotent, so it's safe to re-run.
-
-Settings live inside the **North** tab as an "Account & Settings"
-row near the bottom. There is no floating settings icon on Today.
+| Schedule            | Route                            | What it does                                    |
+| ------------------- | -------------------------------- | ------------------------------------------------|
+| Daily 12:00 UTC     | `/api/intelligence/run?run_type=daily_maintenance` | Cleanup, pattern detection, day-of promotion |
+| Fridays 21:00 UTC   | `/api/intelligence/run?run_type=weekend_preview`   | Weekend curation pass                        |
+| Daily 8:00 UTC      | `/api/library/scout`             | Discovers new Chicago place candidates          |
+| Daily 9:00 UTC      | `/api/library/process-candidates`| Researches and verdicts pending candidates      |
+| Every 2 days 10:00 UTC | `/api/events/scout`           | Discovers upcoming events                       |
+| Every 2 days 11:00 UTC | `/api/events/process`         | Verdicts and surfaces events                    |
+| Wednesdays 12:00 UTC | `/api/tastemakers/sweep`        | Checks tastemaker sources for fresh signal      |
+| Tuesdays 10:00 UTC  | `/api/library/refresh`           | Refreshes stale library entries for changes     |
 
 ## Folder layout
 
 ```
-/app           Next.js routes
-/components    UI primitives (built later)
-/theme         design tokens (built later)
-/lib/ai        provider-agnostic AI wrappers
-/lib/directory taste graph, places, people, standards
-/lib/memory    long-term memory layer
-/lib/research  external API adapters + research cache
-/lib/tools     tool implementations for the AI layer
-/lib/cache     caching primitives
-/lib/scoring   relevance and surfacing logic
-/jobs          background curation jobs
-/docs          vision, principles, architecture
+/app                   Next.js routes (tabs, API, account)
+/components            UI primitives
+/lib/ai                Anthropic wrapper + structured generation
+/lib/brain             Agent prompts, curator, critic, briefing editor, plan generator
+/lib/intelligence      Ambient runs, library worker, event worker, pattern detector
+/lib/memory            Long-term memory layer
+/lib/sources           External API adapters (Tavily, Brave, Ticketmaster, Mapbox...)
+/lib/brain/refresher   Library refresher agent
+/supabase/migrations   Schema migrations (0001–0008)
 ```
 
-## Docs
+## How the brain works
 
-Start with [docs/vision.md](docs/vision.md), then read in this order:
+1. **Curation run** triggered by cron or explicit owner action
+2. **Taste Strategist** reads the Interest Graph and North pillars → outputs interest lanes and source plan
+3. **Scout** (`lib/brain/scout.ts`) queries sources per lane → inserts candidates into `surfaced_items`
+4. **Curator** (`lib/brain/curator.ts`) shortlists candidates → selects up to N items for Radar or Holding
+5. **Critic** (`lib/brain/critic.ts`) stress-tests the selection → may demote or reject items
+6. **Briefing Editor** (`lib/brain/prompts/briefingEditorPrompt.ts`) writes final copy for each item
+7. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring + Phase 6 guardrails
+8. Selected items surface to Active Radar; rejected items go to Holding or Discovered
 
-1. `docs/product-principles.md`
-2. `docs/design-language.md`
-3. `docs/architecture.md`
-4. `docs/ai-orchestration.md`
-5. `docs/schema-plan.md`
-6. `docs/tier-1-scope.md`
+All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 
 ## Deploy
 
-Push to `main`. Vercel is configured with the env vars above.
+Push to `main`. Vercel deploys automatically with the env vars set in the dashboard.

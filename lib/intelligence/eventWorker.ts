@@ -83,7 +83,7 @@ export async function processEventCandidates(
   }
 
   const rows = (candidates ?? []) as CurrentEventRow[];
-  console.log(`[eventWorker] Processing ${rows.length} event candidates`);
+  console.warn(`[eventWorker] Processing ${rows.length} event candidates`);
 
   for (const event of rows) {
     try {
@@ -179,6 +179,6 @@ export async function processEventCandidates(
     }
   }
 
-  console.log("[eventWorker] Done", { surfaced, held, rejected, errors: errors.length });
+  console.warn("[eventWorker] Done", { surfaced, held, rejected, errors: errors.length });
   return { surfaced, held, rejected, errors };
 }

@@ -180,7 +180,7 @@ export async function runScout(
 
   if (!hasAnthropic()) {
     console.warn("[scout] No Anthropic key — skipping extraction, articles logged only");
-    console.log("[scout] Articles found:", articles.map((a) => a.url));
+    console.warn("[scout] Articles found:", articles.map((a) => a.url));
     return { articles_processed, candidates_added, duplicates_skipped };
   }
 
@@ -266,7 +266,7 @@ export async function runScout(
     }
   }
 
-  console.log("[scout] Run complete", {
+  console.warn("[scout] Run complete", {
     articles_processed,
     candidates_added,
     duplicates_skipped,

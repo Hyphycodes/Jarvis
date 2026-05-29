@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useMemo, useState, useTransition } from "react";
 import {
   AppFrame,
   Checkbox,
@@ -72,9 +73,10 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
         </section>
       ) : null}
 
+      <TonightSection items={tonightEvents} />
+
       {grabItems.length > 0 ? <GrabList items={grabItems} /> : null}
 
-      <TonightSection items={tonightEvents} />
       <SignalsSection items={signals} />
 
       <DropItIn />
@@ -200,7 +202,23 @@ function GrabList({ items }: { items: GrabListEntry[] }) {
 // ── Tonight ──────────────────────────────────────────────────────────────────
 
 function TonightSection({ items }: { items: TodayCommandItem[] }) {
-  if (items.length === 0) return null;
+  const [expanded, setExpanded] = useState(false);
+  const now = Date.now();
+
+  // Filter out events that have already started
+  const upcoming = items
+    .filter((item) => {
+      if (!item.startsAt) return true;
+      const t = new Date(item.startsAt).getTime();
+      return Number.isNaN(t) || t > now;
+    })
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+  if (upcoming.length === 0) return null;
+
+  const top = upcoming[0];
+  const rest = upcoming.slice(1);
+
   return (
     <section className="mt-10">
       <SectionLabel
@@ -212,34 +230,101 @@ function TonightSection({ items }: { items: TodayCommandItem[] }) {
       >
         Events
       </SectionLabel>
-      <ul className="mt-4 flex flex-col gap-3">
-        {items.map((item) => (
-          <li key={item.id}>
-            <TonightEventRow item={item} />
-          </li>
-        ))}
-      </ul>
+      <div className="mt-4">
+        <TonightEventCard item={top} full />
+        {rest.length > 0 ? (
+          expanded ? (
+            <ul className="mt-3 flex flex-col gap-3">
+              {rest.map((item) => (
+                <li key={item.id}>
+                  <TonightEventCard item={item} full={false} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="mt-3 w-full border-l border-muted-gold/25 py-2 pl-4 text-left text-[12px] text-warm-ivory/45 transition-colors hover:text-warm-ivory/70"
+            >
+              and {rest.length} more tonight →
+            </button>
+          )
+        ) : null}
+      </div>
     </section>
   );
 }
 
-function TonightEventRow({ item }: { item: TodayCommandItem }) {
+function TonightEventCard({ item, full }: { item: TodayCommandItem; full: boolean }) {
+  const router = useRouter();
+  const [planning, setPlanning] = useState(false);
+  const [, startTransition] = useTransition();
   const time = item.startsAt ? formatEventTime(item.startsAt) : null;
+
+  function handlePlan(e: React.MouseEvent) {
+    e.preventDefault();
+    if (planning) return;
+    setPlanning(true);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/items/${item.id}/generate-plan`, { method: "POST" });
+        const json = (await res.json().catch(() => ({}))) as { plan_slug?: string };
+        if (json.plan_slug) {
+          router.push(`/plan/${json.plan_slug}`);
+        } else {
+          window.location.href = `/item/${item.id}`;
+        }
+      } catch {
+        setPlanning(false);
+      }
+    });
+  }
+
   return (
-    <div className="flex items-start gap-3 border-l border-muted-gold/55 bg-soft-black/40 px-4 py-3">
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] leading-[1.4] text-warm-ivory/88">{item.title}</div>
-        {item.subtitle ? (
-          <div className="mt-0.5 text-[12px] text-warm-ivory/45">{item.subtitle}</div>
-        ) : null}
-        {item.reason ? (
-          <div className="mt-1 line-clamp-2 text-[12px] leading-[1.45] text-warm-ivory/52">
-            {item.reason}
-          </div>
+    <div className="border-l border-muted-gold/55 bg-soft-black/40 px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] leading-[1.4] text-warm-ivory/88">{item.title}</div>
+          {item.subtitle ? (
+            <div className="mt-0.5 text-[12px] text-warm-ivory/45">{item.subtitle}</div>
+          ) : null}
+          {full && item.reason ? (
+            <div className="mt-1.5 line-clamp-2 text-[12px] leading-[1.5] text-warm-ivory/58">
+              {item.reason}
+            </div>
+          ) : null}
+        </div>
+        {time ? (
+          <div className="shrink-0 pt-0.5 text-[11px] text-muted-gold/70">{time}</div>
         ) : null}
       </div>
-      {time ? (
-        <div className="shrink-0 pt-0.5 text-[11px] text-muted-gold/70">{time}</div>
+      {full ? (
+        <div className="mt-3 flex items-center gap-3">
+          {item.planSlug ? (
+            <Link
+              href={`/plan/${item.planSlug}`}
+              className="inline-flex items-center rounded-full border border-muted-gold/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-gold transition-colors hover:bg-muted-gold/10"
+            >
+              View plan
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={handlePlan}
+              disabled={planning}
+              className="inline-flex items-center rounded-full border border-muted-gold/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-gold transition-colors hover:bg-muted-gold/10 disabled:opacity-50"
+            >
+              {planning ? "…" : "Plan it"}
+            </button>
+          )}
+          <Link
+            href={`/item/${item.id}`}
+            className="text-[11px] text-warm-ivory/40 hover:text-warm-ivory/70"
+          >
+            Details →
+          </Link>
+        </div>
       ) : null}
     </div>
   );

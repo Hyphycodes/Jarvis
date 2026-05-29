@@ -186,6 +186,6 @@ export async function sweepTastemakers(
     checked++;
   }
 
-  console.log("[tastemakerSweep] Done", { checked, new_signals });
+  console.warn("[tastemakerSweep] Done", { checked, new_signals });
   return { checked, new_signals };
 }

@@ -164,7 +164,7 @@ export async function runEventScout(
   }
 
   const articles = Array.from(articleMap.values());
-  console.log(`[eventScout] ${articles.length} articles to process`);
+  console.warn(`[eventScout] ${articles.length} articles to process`);
 
   if (!hasAnthropic()) {
     console.warn("[eventScout] No Anthropic key — skipping extraction");
@@ -276,6 +276,6 @@ export async function runEventScout(
     }
   }
 
-  console.log("[eventScout] Run complete", { candidates_added });
+  console.warn("[eventScout] Run complete", { candidates_added });
   return { candidates_added };
 }
