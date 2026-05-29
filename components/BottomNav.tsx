@@ -32,10 +32,17 @@ type TabLabel = (typeof TABS)[number]["label"];
 export function BottomNav({
   active,
   onMic,
+  onMicDown,
+  onMicUp,
   onTabSelect,
 }: {
   active?: TabLabel;
+  /** Simple tap — opens sheet without recording. */
   onMic?: () => void;
+  /** Pointer down — opens sheet + starts recording immediately. */
+  onMicDown?: () => void;
+  /** Pointer up — stops recording. */
+  onMicUp?: () => void;
   /** Optional intercept (used by TabShell to scroll Embla in place). */
   onTabSelect?: (index: number, href: string) => void;
 }) {
@@ -122,6 +129,9 @@ export function BottomNav({
           type="button"
           aria-label="Voice"
           onClick={onMic}
+          onPointerDown={(e) => { e.preventDefault(); onMicDown?.(); }}
+          onPointerUp={onMicUp}
+          onPointerLeave={onMicUp}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-atmospheric active:scale-95"
           style={{
             border: "1px solid rgba(208,173,104,0.72)",

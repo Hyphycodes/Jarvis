@@ -1,10 +1,11 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import type { UseEmblaCarouselType } from "embla-carousel-react";
 import { BottomNav, type Tab } from "./BottomNav";
+import { MicSheet } from "./voice/MicSheet";
 
 type EmblaApi = NonNullable<UseEmblaCarouselType[1]>;
 
@@ -55,6 +56,8 @@ export function TabShell({
   const router = useRouter();
   const pathname = usePathname();
   const targetIndex = indexFromPath(pathname);
+
+  const [micOpen, setMicOpen] = useState(false);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,
@@ -115,7 +118,17 @@ export function TabShell({
         </div>
       </div>
 
-      <BottomNav active={TABS[targetIndex]?.label} onTabSelect={onNavTap} />
+      <BottomNav
+        active={TABS[targetIndex]?.label}
+        onTabSelect={onNavTap}
+        onMic={() => setMicOpen(true)}
+        onMicDown={() => setMicOpen(true)}
+      />
+
+      <MicSheet
+        open={micOpen}
+        onClose={() => setMicOpen(false)}
+      />
     </div>
   );
 }

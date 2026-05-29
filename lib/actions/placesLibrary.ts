@@ -82,7 +82,8 @@ export async function researchAndStore(
     user_id: owner.id,
     name: dossier.canonical_name,
     slug: dossier.slug,
-    place_type: dossier.place_type,
+    // place_type: guard against Claude omitting the field — default to "restaurant"
+    place_type: dossier.place_type ?? "restaurant",
     neighborhood: dossier.neighborhood,
     address: null as string | null,
     lat: null as number | null,

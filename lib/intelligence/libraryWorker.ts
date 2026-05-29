@@ -106,7 +106,7 @@ export async function processCandidates(
         user_id: userId,
         name: dossier.canonical_name,
         slug: dossier.slug,
-        place_type: dossier.place_type,
+        place_type: dossier.place_type ?? "restaurant",
         neighborhood: dossier.neighborhood,
         address: null as string | null,
         lat: null as number | null,
