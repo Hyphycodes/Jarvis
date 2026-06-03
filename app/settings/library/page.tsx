@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { readLibraryHealth } from "@/lib/library";
+import { readLibraryHealth, readLibraryOperationalStatus } from "@/lib/library";
+import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
 import { BackButton, MotionPage } from "@/components";
 
 export const metadata = { title: "Library · Jarvis" };
@@ -11,7 +12,17 @@ export default async function SettingsLibraryPage() {
   if (!user) redirect("/login?next=/settings/library");
   if (user.role !== "owner") redirect("/settings");
 
-  const health = await readLibraryHealth({ userId: user.id });
+  const [health, operations] = await Promise.all([
+    readLibraryHealth({ userId: user.id }),
+    readLibraryOperationalStatus({ userId: user.id }),
+  ]);
+  const tierAPlusB = health.tierA + health.tierB;
+  const bootstrapNeeded =
+    health.places < BOOTSTRAP_TARGETS.places ||
+    health.events < BOOTSTRAP_TARGETS.activeEvents ||
+    health.sources < BOOTSTRAP_TARGETS.sources ||
+    health.pendingCandidates < BOOTSTRAP_TARGETS.candidateInbox ||
+    tierAPlusB < BOOTSTRAP_TARGETS.tierAPlusB;
   const rows = [
     ["Places", String(health.places)],
     ["Events", `${health.events} active`],
@@ -49,6 +60,22 @@ export default async function SettingsLibraryPage() {
         </header>
 
         <section className="motion-card mt-10 grid gap-3">
+          <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
+            <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+              Bootstrap
+            </div>
+            <div className="mt-2 font-serif text-[20px] italic text-warm-ivory">
+              {bootstrapNeeded ? "Foundation build needed" : "Foundation healthy"}
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-warm-ivory/55">
+              {bootstrapNeeded
+                ? "Jarvis has the structure, but the intelligence bank is still thin. Refresh Radar to trigger bootstrap, or wait for the background Autopilot."
+                : "The permanent intelligence bank has enough base inventory for normal Autopilot maintenance."}
+            </p>
+            <p className="mt-3 text-[11px] leading-relaxed text-warm-ivory/42">
+              Places {health.places}/{BOOTSTRAP_TARGETS.places} · Events {health.events}/{BOOTSTRAP_TARGETS.activeEvents} · Sources {health.sources}/{BOOTSTRAP_TARGETS.sources} · Candidates {health.pendingCandidates}/{BOOTSTRAP_TARGETS.candidateInbox} · Tier A/B {tierAPlusB}/{BOOTSTRAP_TARGETS.tierAPlusB}
+            </p>
+          </div>
           {rows.map(([label, value]) => (
             <div
               key={label}
@@ -69,6 +96,29 @@ export default async function SettingsLibraryPage() {
           <Metric label="Tier B" value={health.tierB} />
           <Metric label="Tier C" value={health.tierC} />
         </section>
+
+        <section className="motion-card mt-8 grid gap-3">
+          <StatusRow label="Sources watching" value={operations.sourceStatuses.watching} />
+          <StatusRow label="Sources testing" value={operations.sourceStatuses.testing} />
+          <StatusRow label="Sources cooldown" value={operations.sourceStatuses.cooldown} />
+          <StatusRow
+            label="Last operation"
+            value={operations.lastAutopilotRun
+              ? `${operations.lastAutopilotRun.operation} · ${relativeTime(operations.lastAutopilotRun.createdAt)}`
+              : "None yet"}
+          />
+          <StatusRow
+            label="Last bootstrap"
+            value={operations.lastBootstrapRun
+              ? relativeTime(operations.lastBootstrapRun.createdAt)
+              : "None yet"}
+          />
+          {operations.lastAutopilotRun?.summary ? (
+            <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
+              {operations.lastAutopilotRun.summary}
+            </p>
+          ) : null}
+        </section>
       </MotionPage>
     </main>
   );
@@ -85,4 +135,27 @@ function Metric({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+function StatusRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="lux-surface-quiet flex min-h-12 items-center justify-between rounded-[var(--radius-card)] px-4">
+      <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+        {label}
+      </span>
+      <span className="max-w-[58%] text-right text-[12px] leading-snug text-warm-ivory/76">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function relativeTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }

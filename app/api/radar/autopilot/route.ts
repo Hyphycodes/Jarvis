@@ -26,13 +26,16 @@ export async function GET(req: Request) {
   if (!validateCronSecret(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
+  const url = new URL(req.url);
+  const mode = url.searchParams.get("mode") === "bootstrap" ? "bootstrap" : "cron";
   const ownerUserId = await findOwnerUserId();
   if (!ownerUserId) {
     return NextResponse.json({ ok: false, error: "Owner not found." }, { status: 500 });
   }
   const result = await runRadarAutopilot({
     userId: ownerUserId,
-    mode: "cron",
+    mode,
+    force: mode === "bootstrap",
   });
   return NextResponse.json({ ok: true, ...result });
 }
@@ -46,10 +49,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Owner not found." }, { status: 500 });
   }
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const mode = body.mode === "bootstrap"
+    ? "bootstrap"
+    : body.force
+      ? "manual_force"
+      : "owner_requested";
   const result = await runRadarAutopilot({
     userId: ownerUserId,
-    mode: body.force ? "manual_force" : "owner_requested",
-    force: Boolean(body.force),
+    mode,
+    force: Boolean(body.force) || mode === "bootstrap",
   });
   return NextResponse.json({ ok: true, ...result });
 }

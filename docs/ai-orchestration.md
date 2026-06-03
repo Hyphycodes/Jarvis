@@ -68,6 +68,33 @@ run often because the orchestrator decides whether to do real work.
 Manual `/api/radar/refresh` now runs an autopilot review/override path and then
 keeps the old refill response shape for existing UI consumers.
 
+## Bootstrap Mode
+
+Bootstrap Mode is the first-run/foundation-builder path for an empty or thin
+Library. It triggers from `/api/radar/autopilot?mode=bootstrap`, manual
+owner-requested refresh when foundation targets are low, or normal cron when
+health checks show the bank is thin.
+
+Foundation targets:
+
+- Places: 100
+- Active events: 40
+- Sources: 50
+- Candidate Inbox: 150
+- Tier A + B Library items: 25
+
+One bootstrap pass is bounded to six operations and practical source/candidate
+budgets. It can run source building, place Library build, Event Pulse build,
+Candidate Inbox build, source recheck/expansion, Holding build, and a final
+promotion review. Promotion remains conservative; raw Candidate Inbox and
+Library rows do not become Active Radar automatically.
+
+Bootstrap is provider-aware. It uses whichever real providers are configured:
+Google Places for places, Ticketmaster for events, Tavily/Brave/SerpAPI for
+web/source/opportunity discovery. If providers are missing or return nothing,
+the summary says so. It must not create fake rows to make the control room look
+alive.
+
 ## Library Layers
 
 - **Candidate Inbox** (`radar_candidate_inbox`) is raw/evaluation inventory. It
@@ -85,6 +112,11 @@ trust, taste fit, novelty, and freshness upgrade sources; passes, duplicates,
 and weak quality cool them down. Strong sources recheck in 6-24 hours, normal
 sources in 24-72 hours, weak sources in 7+ days, and muted/retired sources stay
 quiet.
+
+Bootstrap source seeding also captures real provider result domains/articles as
+`intelligence_sources` and `radar_candidate_inbox` source candidates. This lets
+Jarvis learn where quality comes from even before an article yields a durable
+place or event.
 
 ## Reasoning and traces
 

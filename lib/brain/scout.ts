@@ -15,6 +15,8 @@ import {
   sourceStrengthFromConfidence,
 } from "@/lib/brain/intelligenceReason";
 import { hasTavily, searchWeb, extractUrls } from "@/lib/sources/tavily";
+import { upsertCandidateInboxItem } from "@/lib/radar/candidateInbox";
+import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -165,23 +167,25 @@ export async function runScout(
   articles_processed: number;
   candidates_added: number;
   duplicates_skipped: number;
+  sources_added: number;
 }> {
   const supabase = getSupabaseServiceClient();
 
   let articles_processed = 0;
   let candidates_added = 0;
   let duplicates_skipped = 0;
+  let sources_added = 0;
 
   if (!hasTavily()) {
     console.warn("[scout] TAVILY_API_KEY not set — skipping Scout run");
-    return { articles_processed, candidates_added, duplicates_skipped };
+    return { articles_processed, candidates_added, duplicates_skipped, sources_added };
   }
 
   const brainContext = await buildBrainContext({ userId, includeWeather: false, supabase });
   const city = brainContext.homeCity?.trim();
   if (!city) {
     console.warn("[scout] No profile home city — skipping Scout run");
-    return { articles_processed, candidates_added, duplicates_skipped };
+    return { articles_processed, candidates_added, duplicates_skipped, sources_added };
   }
   const year = new Date(brainContext.now).getFullYear();
   const graph = buildInterestGraph({ context: brainContext });
@@ -216,7 +220,7 @@ export async function runScout(
       candidatesConsidered: [],
       outcome: "skipped_no_missions",
     });
-    return { articles_processed, candidates_added, duplicates_skipped };
+    return { articles_processed, candidates_added, duplicates_skipped, sources_added };
   }
 
   // Curated URLs are Chicago-only seed material and remain subordinate to
@@ -272,6 +276,13 @@ export async function runScout(
 
   const articles = Array.from(articleMap.values());
   articles_processed = articles.length;
+  sources_added = await seedSourcesFromArticles({
+    userId,
+    city,
+    articles,
+    supabase,
+    missionIds: missions.map((mission) => mission.id),
+  });
 
   if (!hasAnthropic()) {
     console.warn("[scout] No Anthropic key — skipping extraction, articles logged only");
@@ -286,7 +297,7 @@ export async function runScout(
       outcome: "articles_found_extraction_skipped",
       strategistFallbackUsed: strategist.fallbackUsed,
     });
-    return { articles_processed, candidates_added, duplicates_skipped };
+    return { articles_processed, candidates_added, duplicates_skipped, sources_added };
   }
 
   // Prefetch existing slugs for dedup (both tables)
@@ -387,7 +398,50 @@ export async function runScout(
     strategistFallbackUsed: strategist.fallbackUsed,
   });
 
-  return { articles_processed, candidates_added, duplicates_skipped };
+  return { articles_processed, candidates_added, duplicates_skipped, sources_added };
+}
+
+async function seedSourcesFromArticles(input: {
+  userId: string;
+  city: string;
+  articles: Array<{ title: string; content: string; url: string }>;
+  missionIds: string[];
+  supabase: SupabaseClient;
+}): Promise<number> {
+  let sourcesAdded = 0;
+  for (const article of input.articles.slice(0, 40)) {
+    const sourceId = await upsertSourceFromLibraryEntity({
+      userId: input.userId,
+      title: article.title,
+      url: article.url,
+      entityType: "source",
+      qualityScore: 0.52,
+      topics: ["scout", "bootstrap", input.city],
+      supabase: input.supabase,
+    });
+    if (sourceId) {
+      sourcesAdded++;
+      await upsertCandidateInboxItem({
+        userId: input.userId,
+        title: article.title,
+        description: article.content.slice(0, 500),
+        url: article.url,
+        entityType: "source",
+        sourceId,
+        rawPayload: {
+          source: "scout_article",
+          mission_ids: input.missionIds,
+          city: input.city,
+        },
+        score: 0.52,
+        reason: {
+          summary: "Real provider result captured as a source candidate for bootstrap evaluation.",
+        },
+        supabase: input.supabase,
+      });
+    }
+  }
+  return sourcesAdded;
 }
 
 async function readScoutInventory(

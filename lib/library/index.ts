@@ -8,6 +8,25 @@ import type { Json } from "@/lib/types/database";
 
 export type { LibraryEntity, LibraryHealth, LibraryQualityTier };
 
+export type LibraryOperationalStatus = {
+  lastAutopilotRun: {
+    createdAt: string;
+    operation: string;
+    summary: string | null;
+  } | null;
+  lastBootstrapRun: {
+    createdAt: string;
+    summary: string | null;
+  } | null;
+  sourceStatuses: {
+    testing: number;
+    watching: number;
+    cooldown: number;
+    muted: number;
+    retired: number;
+  };
+};
+
 export async function readLibraryHealth(input: {
   userId: string;
   supabase?: SupabaseClient;
@@ -76,6 +95,66 @@ export async function listLibraryEntities(input: {
     ...((sourcesRes.data ?? []) as Array<Record<string, unknown>>).map(sourceEntity),
     ...((tastemakersRes.data ?? []) as Array<Record<string, unknown>>).map(tastemakerEntity),
   ];
+}
+
+export async function readLibraryOperationalStatus(input: {
+  userId: string;
+  supabase?: SupabaseClient;
+}): Promise<LibraryOperationalStatus> {
+  const supabase = input.supabase ?? await getServerSupabase();
+  const [lastAutopilotRes, lastBootstrapRes, sourceStatusRes] = await Promise.all([
+    supabase
+      .from("intelligence_traces")
+      .select("created_at,decision_type,outcome")
+      .eq("user_id", input.userId)
+      .eq("route", "lib/radar/autopilot.runRadarAutopilot")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("intelligence_traces")
+      .select("created_at,outcome")
+      .eq("user_id", input.userId)
+      .eq("route", "lib/radar/autopilot.runRadarAutopilot")
+      .eq("decision_type", "foundation_build_mode")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("intelligence_sources")
+      .select("status")
+      .eq("user_id", input.userId),
+  ]);
+  const sourceStatuses = {
+    testing: 0,
+    watching: 0,
+    cooldown: 0,
+    muted: 0,
+    retired: 0,
+  };
+  for (const row of (sourceStatusRes.data ?? []) as Array<{ status?: string | null }>) {
+    if (row.status && row.status in sourceStatuses) {
+      sourceStatuses[row.status as keyof typeof sourceStatuses]++;
+    }
+  }
+  const lastAutopilot = lastAutopilotRes.data as { created_at?: string; decision_type?: string; outcome?: string | null } | null;
+  const lastBootstrap = lastBootstrapRes.data as { created_at?: string; outcome?: string | null } | null;
+  return {
+    lastAutopilotRun: lastAutopilot?.created_at && lastAutopilot.decision_type
+      ? {
+          createdAt: lastAutopilot.created_at,
+          operation: lastAutopilot.decision_type,
+          summary: lastAutopilot.outcome ?? null,
+        }
+      : null,
+    lastBootstrapRun: lastBootstrap?.created_at
+      ? {
+          createdAt: lastBootstrap.created_at,
+          summary: lastBootstrap.outcome ?? null,
+        }
+      : null,
+    sourceStatuses,
+  };
 }
 
 function placeEntity(row: Record<string, unknown>): LibraryEntity {

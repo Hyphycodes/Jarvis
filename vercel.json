@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/radar/autopilot",
-      "schedule": "17 */2 * * *"
+      "schedule": "0 */2 * * *"
     },
     {
       "path": "/api/library/scout",

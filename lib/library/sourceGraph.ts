@@ -6,6 +6,7 @@ import {
   scheduleNextSourceCheck,
   scoreSourceQuality,
 } from "@/lib/library/sourceScoring";
+import { sourceKeyFromUrl } from "@/lib/library/sourceIdentity";
 import type { SourceGraphRow, SourceStatus, SourceType } from "@/lib/library/sourceGraphTypes";
 import type { CreateIndexedItemInput, IndexedItem } from "@/lib/index/types";
 
@@ -22,7 +23,7 @@ export async function upsertSourceFromCandidate(input: {
   if (!key) return null;
   const supabase = input.supabase ?? await getServerSupabase();
   const url = input.candidate.url;
-  const domain = domainFromUrl(url) ?? domainFromSourceKey(key);
+  const domain = sourceKeyFromUrl(url) ?? domainFromSourceKey(key);
   const now = new Date().toISOString();
   const { data: existing } = await supabase
     .from("intelligence_sources")
@@ -92,7 +93,7 @@ export async function upsertSourceFromLibraryEntity(input: {
   topics?: string[];
   supabase?: SupabaseClient;
 }): Promise<string | null> {
-  const key = input.sourceKey ?? domainFromUrl(input.url) ?? slug(input.title);
+  const key = input.sourceKey ?? sourceKeyFromUrl(input.url) ?? slug(input.title);
   if (!key) return null;
   const supabase = input.supabase ?? await getServerSupabase();
   const now = new Date().toISOString();
@@ -125,7 +126,7 @@ export async function upsertSourceFromLibraryEntity(input: {
       source_key: key,
       source_type: input.entityType === "event" ? "calendar" : "domain",
       url: input.url ?? row?.url ?? null,
-      domain: domainFromUrl(input.url) ?? row?.domain ?? null,
+      domain: sourceKeyFromUrl(input.url) ?? row?.domain ?? null,
       name: row?.name ?? input.title,
       topics: mergeTopics(row?.topics ?? [], input.topics ?? [], input.entityType),
       trust_score: quality.score,
@@ -194,7 +195,7 @@ export async function updateSourceStatsFromAction(input: {
       source_key: key,
       source_type: sourceTypeForItem(input.item),
       url: input.item.url ?? row?.url ?? null,
-      domain: domainFromUrl(input.item.url) ?? row?.domain ?? null,
+      domain: sourceKeyFromUrl(input.item.url) ?? row?.domain ?? null,
       name: row?.name ?? input.item.source,
       topics: mergeTopics(row?.topics ?? [], input.item.tags ?? [], input.item.category),
       ...totals,
@@ -228,17 +229,17 @@ export async function selectSourcesDueForCheck(input: {
 }
 
 export function sourceKeyForItem(item: IndexedItem): string | null {
-  return domainFromUrl(item.url) ?? (item.sourceId ? `${item.source}:${item.sourceId}` : item.source ?? null);
+  return sourceKeyFromUrl(item.url) ?? (item.sourceId ? `${item.source}:${item.sourceId}` : item.source ?? null);
 }
 
 function sourceKeyForCandidate(sourceName: string, candidate: CreateIndexedItemInput): string | null {
-  return domainFromUrl(candidate.url) ?? (candidate.sourceId ? `${sourceName}:${candidate.sourceId}` : sourceName);
+  return sourceKeyFromUrl(candidate.url) ?? (candidate.sourceId ? `${sourceName}:${candidate.sourceId}` : sourceName);
 }
 
 function sourceTypeForItem(item: IndexedItem): SourceType {
   if (item.source === "calendar") return "calendar";
   if (item.source === "places") return "venue";
-  if (domainFromUrl(item.url)) return "domain";
+  if (sourceKeyFromUrl(item.url)) return "domain";
   return "search_pattern";
 }
 
@@ -255,15 +256,6 @@ function sourceNameFromKey(key: string, fallback: string): string {
 
 function domainFromSourceKey(key: string): string | null {
   return key.includes(".") && !key.includes(" ") ? key : null;
-}
-
-function domainFromUrl(url?: string | null): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return null;
-  }
 }
 
 function mergeTopics(existing: string[], tags: string[], category?: string | null): string[] {

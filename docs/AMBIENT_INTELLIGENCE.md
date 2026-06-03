@@ -35,12 +35,26 @@ budget into `brain_decision_runs.raw_output.budget`.
 
 - `POST /api/intelligence/run`
 - `GET /api/radar/autopilot`
+- `GET /api/radar/autopilot?mode=bootstrap`
 - `POST /api/radar/refresh` (manual debug path, runs bounded Radar refill)
 - `POST /api/radar/cleanup`
 
 Radar Autopilot is wired to Vercel Cron every two hours. It decides no-op vs
 real work from inventory health, Source Graph cadence, Library depth, and
 context windows before calling expensive discovery.
+
+Bootstrap Mode is Autopilot's foundation builder. When Places, active events,
+Source Graph, Candidate Inbox, or Tier A/B Library inventory is thin, Autopilot
+can run a bounded stack in one pass: source building, Library build, Event Pulse
+build, Candidate Inbox build, source recheck/expansion, Holding build, and a
+final conservative promotion review. Manual Radar refresh uses this path when
+the bank is empty, so the control room should report "building" or "blocked by
+missing providers" instead of appearing dead.
+
+Provider keys matter. Google Places builds places, Ticketmaster builds events,
+and Tavily/Brave/SerpAPI build source and opportunity inventory. If no external
+discovery provider is configured, bootstrap records a clear missing-provider
+summary and creates no fake candidates.
 
 ## Radar Refill Contract
 

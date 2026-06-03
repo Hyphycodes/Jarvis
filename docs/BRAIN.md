@@ -45,14 +45,24 @@ trigger discovery or external source calls.
 - event freshness
 - Today, Circle, North, and day context from FounderContextPacket
 
-It then chooses one operation: refill, Holding build, Candidate Inbox build,
-Library build/refresh, event pulse, Source Graph recheck/expansion, weekend /
-after-work / Circle / North campaign, stale cleanup, promotion review, or
-no-op. `/api/radar/autopilot` is cron-protected and scheduled every two hours.
-The cron can run often because the orchestrator can no-op.
+It then chooses maintenance or Bootstrap Mode. Maintenance runs one operation:
+refill, Holding build, Candidate Inbox build, Library build/refresh, event
+pulse, Source Graph recheck/expansion, weekend / after-work / Circle / North
+campaign, stale cleanup, promotion review, or no-op. Bootstrap Mode runs when
+the intelligence bank is thin and can execute a bounded stack in one pass:
+source building, Library build, Event Pulse build, Candidate Inbox build,
+source recheck/expansion, Holding build, and final conservative promotion
+review.
+
+`/api/radar/autopilot` is cron-protected and scheduled every two hours.
+`/api/radar/autopilot?mode=bootstrap` forces the foundation-builder path for
+owner/cron operations. The cron can run often because the orchestrator can
+no-op once foundation targets are healthy.
 
 Manual `/api/radar/refresh` now runs an autopilot review/override first, then
-keeps the existing refill response shape for UI compatibility.
+keeps the existing refill response shape for UI compatibility. If the Library,
+Candidate Inbox, Source Graph, or Tier A/B inventory is thin, manual refresh
+enters Bootstrap Mode rather than silently returning an empty-looking refresh.
 
 ## Intelligence Core (Sprint 7)
 
@@ -271,7 +281,7 @@ Plan sections adapt by item type:
 Two paths:
 
 1. **Lane-driven** (`gatherFromCuriosityPlan`) — primary. Each plan entry triggers the right adapter with the right queries.
-2. **Static fallback** (`gatherRadarCandidates`) — only used when both the strategist returned zero lanes AND the curiosity engine produced no plan entries.
+2. **Static fallback / bootstrap seed** (`gatherRadarCandidates`) — only used when both the strategist returned zero lanes AND the curiosity engine produced no plan entries, or by Bootstrap Mode as a bounded provider-backed seed path for an empty intelligence bank.
 
 `gatherLocalRadarLanes()` in `localRadar.ts` handles the dynamic web-research lanes — same Tavily-first/Brave-fallback logic as the static groups, with per-query domain hints.
 It rejects obvious Instagram/social noise, hashtag/profile titles, directory
@@ -279,6 +289,14 @@ spam, coupon/near-me pages, stale results, generic listicles, and titles that
 are mostly literal query echo.
 
 All Sprint 2.1 caps remain in effect.
+
+Bootstrap provider behavior is honest: Google Places can build place candidates,
+Ticketmaster can build events, Tavily/Brave can seed web/source candidates, and
+SerpAPI is reserved for explicit product/shopping lanes. If providers are not
+configured, traces and route summaries report that instead of creating fake
+rows. Tavily article results can still seed `intelligence_sources` and
+`radar_candidate_inbox` source candidates even before extraction creates a
+durable place.
 
 ## Behavior feedback (`lib/brain/interestFeedback.ts`)
 

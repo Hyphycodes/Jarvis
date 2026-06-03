@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   computeNorthAlignment,
   deriveDayContext,
@@ -19,9 +20,16 @@ import {
   chooseRadarAutopilotOperation,
   type RadarAutopilotHealth,
 } from "../lib/radar/autopilotPolicy";
+import {
+  assessBootstrapNeed,
+  bootstrapProviderSummary,
+  BOOTSTRAP_TARGETS,
+  foundationOperationStack,
+} from "../lib/radar/bootstrapPolicy";
 import { planRadarCampaigns } from "../lib/radar/campaigns";
 import { qualityTierFromScore } from "../lib/library/quality";
 import type { LibraryHealth } from "../lib/library/types";
+import { sourceKeyFromUrl } from "../lib/library/sourceIdentity";
 import { scoreSourceQuality } from "../lib/library/sourceScoring";
 import type { ExplorationLane } from "../lib/brain/tasteStrategist";
 import type { IndexedItem } from "../lib/index/types";
@@ -335,13 +343,13 @@ function testRadarRejectionHasStructuredReason() {
 
 function healthyLibrary(overrides: Partial<LibraryHealth> = {}): LibraryHealth {
   return {
-    places: 90,
-    events: 35,
-    sources: 30,
+    places: BOOTSTRAP_TARGETS.places,
+    events: BOOTSTRAP_TARGETS.activeEvents,
+    sources: BOOTSTRAP_TARGETS.sources,
     organizations: 4,
     people: 24,
     recurringSignals: 4,
-    pendingCandidates: 80,
+    pendingCandidates: BOOTSTRAP_TARGETS.candidateInbox,
     rejectedMuted: 20,
     needsRefresh: 0,
     tierA: 16,
@@ -356,8 +364,8 @@ function autopilotHealth(overrides: Partial<RadarAutopilotHealth> = {}): RadarAu
   return {
     activeCount: 7,
     holdingCount: 24,
-    candidateInboxCount: 60,
-    sourceCount: 18,
+    candidateInboxCount: BOOTSTRAP_TARGETS.candidateInbox,
+    sourceCount: BOOTSTRAP_TARGETS.sources,
     sourcesDue: 0,
     library: healthyLibrary(),
     eventFreshnessDays: 1,
@@ -387,18 +395,92 @@ function testAutopilotOperationSelection() {
       health: autopilotHealth({ candidateInboxCount: 8 }),
       campaigns: [],
     }),
-    "candidate_inbox_build",
+    "foundation_build_mode",
   );
   assert.equal(
     chooseRadarAutopilotOperation({
       health: autopilotHealth({ library: healthyLibrary({ places: 4, depthScore: 0.1 }) }),
       campaigns: [],
     }),
-    "library_build",
+    "foundation_build_mode",
   );
   assert.equal(
     chooseRadarAutopilotOperation({ health: autopilotHealth({ sourceCount: 2 }), campaigns: [] }),
-    "source_building_campaign",
+    "foundation_build_mode",
+  );
+}
+
+function testBootstrapPolicy() {
+  const empty = autopilotHealth({
+    activeCount: 7,
+    holdingCount: 24,
+    candidateInboxCount: 0,
+    sourceCount: 0,
+    library: healthyLibrary({
+      places: 0,
+      events: 0,
+      sources: 0,
+      pendingCandidates: 0,
+      tierA: 0,
+      tierB: 0,
+      depthScore: 0,
+    }),
+  });
+  const assessment = assessBootstrapNeed(empty);
+  assert.equal(assessment.needed, true);
+  assert.ok(assessment.gaps.includes("places"));
+  assert.ok(assessment.gaps.includes("sources"));
+  assert.equal(
+    chooseRadarAutopilotOperation({ health: empty, campaigns: [], mode: "owner_requested" }),
+    "foundation_build_mode",
+  );
+  assert.equal(
+    chooseRadarAutopilotOperation({ health: autopilotHealth(), campaigns: [], mode: "owner_requested" }),
+    "no_op",
+  );
+}
+
+function testFoundationOperationStackIsBoundedAndConservative() {
+  const stack = foundationOperationStack({
+    health: autopilotHealth({
+      holdingCount: 0,
+      candidateInboxCount: 0,
+      sourceCount: 0,
+      library: healthyLibrary({
+        places: 0,
+        events: 0,
+        sources: 0,
+        pendingCandidates: 0,
+        tierA: 0,
+        tierB: 0,
+        depthScore: 0,
+      }),
+    }),
+  });
+  assert.ok(stack.length > 1);
+  assert.ok(stack.includes("source_building_campaign"));
+  assert.ok(stack.includes("library_build"));
+  assert.ok(stack.includes("candidate_inbox_build"));
+  assert.ok(stack.includes("promotion_review"));
+  assert.equal(stack.includes("front_room_refill"), false);
+}
+
+function testProviderMissingSummaryAndSourceIdentity() {
+  assert.equal(sourceKeyFromUrl("https://www.example.com/events/a"), "example.com");
+  assert.match(
+    bootstrapProviderSummary({
+      tavily: "not_configured",
+      brave: "not_configured",
+      serpapi: "not_configured",
+    }) ?? "",
+    /No external discovery providers/,
+  );
+  assert.match(
+    bootstrapProviderSummary({
+      tavily: "available",
+      brave: "not_configured",
+    }) ?? "",
+    /Bootstrap will use tavily/,
   );
 }
 
@@ -467,14 +549,26 @@ function testCandidateAndLibraryBoundaries() {
       health: autopilotHealth({
         activeCount: 7,
         holdingCount: 24,
-        candidateInboxCount: 100,
+        candidateInboxCount: BOOTSTRAP_TARGETS.candidateInbox,
         library: healthyLibrary({ depthScore: 0.9 }),
-        sourceCount: 20,
+        sourceCount: BOOTSTRAP_TARGETS.sources,
       }),
       campaigns: [],
     }),
     "no_op",
   );
+}
+
+function testAutopilotCronWiring() {
+  const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {
+    crons?: Array<{ path?: string; schedule?: string }>;
+  };
+  assert.ok(vercel.crons?.some((cron) =>
+    cron.path === "/api/radar/autopilot" && cron.schedule === "0 */2 * * *"
+  ));
+  const route = readFileSync("app/api/radar/autopilot/route.ts", "utf8");
+  assert.match(route, /CRON_SECRET/);
+  assert.match(route, /mode=bootstrap|searchParams\.get\("mode"\)/);
 }
 
 async function main() {
@@ -493,9 +587,13 @@ async function main() {
   testCircleMomentReason();
   testRadarRejectionHasStructuredReason();
   testAutopilotOperationSelection();
+  testBootstrapPolicy();
+  testFoundationOperationStackIsBoundedAndConservative();
+  testProviderMissingSummaryAndSourceIdentity();
   testSourceGraphScoringAndCadence();
   testCampaignPlannerUsesContext();
   testCandidateAndLibraryBoundaries();
+  testAutopilotCronWiring();
 
   console.log("brain coherence tests passed");
 }

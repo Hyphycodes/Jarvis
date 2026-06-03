@@ -51,6 +51,10 @@
   Living Library. Quality tiers are metadata for curation, not a browsing UI.
 - Use `intelligence_sources` for source learning and adaptive cadence. It is
   not an API uptime table.
+- Bootstrap Mode uses these same tables. It does not add a separate bootstrap
+  schema: real provider results enter `radar_candidate_inbox`, real durable
+  places/events enter `places_library` / `current_events`, and real domains,
+  calendars, venues, or search patterns enter `intelligence_sources`.
 - Do not add fake production rows to fill empty states. Synthetic rows belong
   only in tests or QA-only helpers.
 

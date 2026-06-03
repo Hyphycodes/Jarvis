@@ -19,15 +19,31 @@ import { enrichRadarItem } from "@/lib/intelligence/core";
 import { isPromotableWhenUnderfilled } from "@/lib/intelligence/radarCurator";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import { readLibraryHealth, type LibraryHealth } from "@/lib/library";
-import { selectSourcesDueForCheck, scoreSourceQuality } from "@/lib/library/sourceGraph";
+import {
+  selectSourcesDueForCheck,
+  scoreSourceQuality,
+  upsertSourceFromCandidate,
+} from "@/lib/library/sourceGraph";
 import { planRadarCampaigns, type RadarCampaign } from "@/lib/radar/campaigns";
+import {
+  assessBootstrapNeed,
+  bootstrapProviderSummary,
+  BOOTSTRAP_RUN_BUDGET,
+  BOOTSTRAP_TARGETS,
+  foundationOperationStack,
+  type BootstrapAssessment,
+} from "@/lib/radar/bootstrapPolicy";
 import {
   chooseRadarAutopilotOperation,
   type RadarAutopilotHealth,
   type RadarAutopilotMode,
   type RadarAutopilotOperation,
 } from "@/lib/radar/autopilotPolicy";
-import { syncCandidateInboxFromExistingPipelines } from "@/lib/radar/candidateInbox";
+import {
+  syncCandidateInboxFromExistingPipelines,
+  upsertCandidateInboxFromIndexedCandidate,
+} from "@/lib/radar/candidateInbox";
+import { describeSourceHealth, gatherRadarCandidates } from "@/lib/sources/gather";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   RADAR_ACTIVE_ITEM_LIMIT,
@@ -35,6 +51,7 @@ import {
 } from "@/lib/brain/constants";
 import type { FounderContextPacket } from "@/lib/context/types";
 import type { Json, SurfacedItemRow } from "@/lib/types/database";
+import type { SourceHealth } from "@/lib/sources/types";
 
 export type RadarAutopilotResult = {
   operation: RadarAutopilotOperation;
@@ -56,11 +73,24 @@ export type RadarAutopilotResult = {
   candidatesPromoted: number;
   libraryItemsCreated: number;
   libraryItemsRefreshed: number;
+  sourcesCreated: number;
   sourcesUpgraded: number;
   sourcesCooledDown: number;
   summary: string;
   campaign?: RadarCampaign;
   skipped?: boolean;
+  mode?: RadarAutopilotMode;
+  bootstrapNeeded?: boolean;
+  bootstrap?: BootstrapAssessment;
+  operationsRun?: RadarAutopilotOperation[];
+  providerStatus?: SourceHealth;
+  missingProviders?: string[];
+  libraryBefore?: RadarAutopilotResult["libraryCounts"];
+  libraryAfter?: RadarAutopilotResult["libraryCounts"];
+  candidateInboxAfter?: number;
+  activeAfter?: number;
+  holdingAfter?: number;
+  errors?: string[];
 };
 
 export async function runRadarAutopilot(input: {
@@ -96,16 +126,36 @@ export async function runRadarAutopilot(input: {
     campaigns,
     mode: input.mode,
   });
+  const bootstrap = assessBootstrapNeed(health);
+  const providerStatus = describeSourceHealth();
   const base = baseResult(operation, health, campaigns[0]);
+  base.mode = input.mode;
+  base.bootstrapNeeded = input.mode === "bootstrap" || bootstrap.needed;
+  base.bootstrap = bootstrap;
+  base.providerStatus = providerStatus;
+  base.missingProviders = missingProviders(providerStatus);
   const result = await executeOperation({
     userId: input.userId,
     operation,
     base,
+    health,
     campaigns,
     context,
     supabase,
     force: input.force || input.mode === "manual_force",
+    providerStatus,
   });
+  if (operation === "foundation_build_mode") {
+    const after = await readAutopilotHealth({
+      userId: input.userId,
+      context,
+      supabase,
+    });
+    result.libraryAfter = libraryCountsFromHealth(after);
+    result.candidateInboxAfter = after.candidateInboxCount;
+    result.activeAfter = after.activeCount;
+    result.holdingAfter = after.holdingCount;
+  }
   await safeWriteIntelligenceTrace(
     {
       userId: input.userId,
@@ -130,6 +180,13 @@ export async function runRadarAutopilot(input: {
         source_count: health.sourceCount,
         sources_due: health.sourcesDue,
         source_graph_depth: health.sourceCount,
+        mode: input.mode ?? "auto",
+        operations_run: result.operationsRun ?? [operation],
+        provider_status: providerStatus,
+        bootstrap_needed: result.bootstrapNeeded ?? false,
+        library_before: result.libraryBefore ?? libraryCountsFromHealth(health),
+        library_after: result.libraryAfter ?? null,
+        sources_created: result.sourcesCreated,
       },
       outcome: result.summary,
     },
@@ -185,14 +242,41 @@ async function executeOperation(input: {
   userId: string;
   operation: RadarAutopilotOperation;
   base: RadarAutopilotResult;
+  health: RadarAutopilotHealth;
   campaigns: RadarCampaign[];
   context: FounderContextPacket;
   supabase: SupabaseClient;
   force?: boolean;
+  providerStatus: SourceHealth;
 }): Promise<RadarAutopilotResult> {
   const result = { ...input.base };
   try {
     switch (input.operation) {
+      case "foundation_build_mode": {
+        const stack = foundationOperationStack({
+          health: input.health,
+          maxOperations: BOOTSTRAP_RUN_BUDGET.maxCampaigns,
+        });
+        const errors: string[] = [];
+        for (const operation of stack) {
+          const partial = await executeOperation({
+            ...input,
+            operation,
+            base: baseResult(operation, input.health, input.campaigns[0]),
+          });
+          mergeResult(result, partial);
+          if (partial.errors?.length) errors.push(...partial.errors);
+        }
+        result.operationsRun = stack;
+        result.errors = errors;
+        result.skipped = stack.length === 0;
+        result.summary = foundationSummary({
+          stack,
+          result,
+          missingProviders: input.base.missingProviders ?? missingProviders(input.providerStatus),
+        });
+        break;
+      }
       case "front_room_refill": {
         const promoted = await promoteHoldingWithService({
           userId: input.userId,
@@ -233,7 +317,18 @@ async function executeOperation(input: {
           userId: input.userId,
           supabase: input.supabase,
         });
+        const providerGather = input.operation === "candidate_inbox_build"
+          ? await runBootstrapProviderGather({
+              userId: input.userId,
+              context: input.context,
+              supabase: input.supabase,
+              maxCandidates: BOOTSTRAP_RUN_BUDGET.maxCandidatesCreated,
+            })
+          : { candidates: 0, sources: 0, errors: [] };
         result.candidatesDiscovered += inbox.created + inbox.updated;
+        result.candidatesDiscovered += providerGather.candidates;
+        result.sourcesCreated += providerGather.sources;
+        if (providerGather.errors.length) result.errors = providerGather.errors;
         if (!("error" in ambient)) {
           result.candidatesDiscovered += ambient.candidates_found;
           result.candidatesRejected += ambient.rejected;
@@ -247,9 +342,11 @@ async function executeOperation(input: {
         const processed = await processCandidates(input.userId);
         const inbox = await syncCandidateInboxFromExistingPipelines({ userId: input.userId, supabase: input.supabase });
         result.candidatesDiscovered += scout.candidates_added + inbox.created + inbox.updated;
+        result.sourcesCreated += scout.sources_added ?? 0;
         result.libraryItemsCreated += processed.researched;
         result.candidatesRejected += processed.rejected;
         result.summary = `Library build ran Scout and processed ${processed.researched} place candidate(s).`;
+        if (processed.errors.length) result.errors = processed.errors;
         break;
       }
       case "library_refresh": {
@@ -266,6 +363,7 @@ async function executeOperation(input: {
         result.candidatesHeld += processed.held;
         result.candidatesRejected += processed.rejected;
         result.summary = `Event Pulse found ${scout.candidates_added} candidate(s) and surfaced ${processed.surfaced}.`;
+        if (processed.errors.length) result.errors = processed.errors;
         break;
       }
       case "source_building_campaign":
@@ -391,6 +489,59 @@ async function promoteHoldingWithService(input: {
   };
 }
 
+async function runBootstrapProviderGather(input: {
+  userId: string;
+  context: FounderContextPacket;
+  supabase: SupabaseClient;
+  maxCandidates: number;
+}): Promise<{ candidates: number; sources: number; errors: string[] }> {
+  const lat = input.context.location.homeLat;
+  const lng = input.context.location.homeLng;
+  if (typeof lat !== "number" || typeof lng !== "number") {
+    return {
+      candidates: 0,
+      sources: 0,
+      errors: ["Bootstrap provider gather skipped because home latitude/longitude are missing."],
+    };
+  }
+  const errors: string[] = [];
+  let candidates = 0;
+  let sources = 0;
+  try {
+    const lanes = await gatherRadarCandidates({
+      userId: input.userId,
+      homeLat: lat,
+      homeLng: lng,
+      city: input.context.location.homeCity ?? undefined,
+      state: input.context.location.homeState ?? undefined,
+    });
+    for (const lane of lanes) {
+      for (const candidate of lane.candidates.slice(0, input.maxCandidates)) {
+        const sourceId = await upsertSourceFromCandidate({
+          userId: input.userId,
+          sourceName: lane.source,
+          candidate,
+          supabase: input.supabase,
+        });
+        const status = await upsertCandidateInboxFromIndexedCandidate({
+          userId: input.userId,
+          source: lane.source,
+          candidate,
+          campaignId: "bootstrap:provider_gather",
+          supabase: input.supabase,
+        });
+        if (sourceId) sources++;
+        if (status === "created" || status === "updated") candidates++;
+        if (candidates >= input.maxCandidates) break;
+      }
+      if (candidates >= input.maxCandidates) break;
+    }
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  return { candidates, sources, errors };
+}
+
 function baseResult(
   operation: RadarAutopilotOperation,
   health: RadarAutopilotHealth,
@@ -416,11 +567,68 @@ function baseResult(
     candidatesPromoted: 0,
     libraryItemsCreated: 0,
     libraryItemsRefreshed: 0,
+    sourcesCreated: 0,
     sourcesUpgraded: 0,
     sourcesCooledDown: 0,
     summary: `Selected ${operation}.`,
     campaign,
+    libraryBefore: libraryCountsFromHealth(health),
   };
+}
+
+function mergeResult(target: RadarAutopilotResult, partial: RadarAutopilotResult) {
+  target.sourcesChecked += partial.sourcesChecked;
+  target.candidatesDiscovered += partial.candidatesDiscovered;
+  target.candidatesRejected += partial.candidatesRejected;
+  target.candidatesHeld += partial.candidatesHeld;
+  target.candidatesPromoted += partial.candidatesPromoted;
+  target.libraryItemsCreated += partial.libraryItemsCreated;
+  target.libraryItemsRefreshed += partial.libraryItemsRefreshed;
+  target.sourcesCreated += partial.sourcesCreated;
+  target.sourcesUpgraded += partial.sourcesUpgraded;
+  target.sourcesCooledDown += partial.sourcesCooledDown;
+}
+
+function foundationSummary(input: {
+  stack: RadarAutopilotOperation[];
+  result: RadarAutopilotResult;
+  missingProviders: string[];
+}): string {
+  if (input.stack.length === 0) {
+    return "Foundation build had no safe operation to run.";
+  }
+  const workDone =
+    input.result.sourcesChecked +
+    input.result.candidatesDiscovered +
+    input.result.libraryItemsCreated +
+    input.result.libraryItemsRefreshed +
+    input.result.sourcesCreated +
+    input.result.candidatesHeld +
+    input.result.candidatesPromoted;
+  if (workDone === 0 && input.missingProviders.length > 0) {
+    const providerSummary = input.result.providerStatus
+      ? bootstrapProviderSummary(input.result.providerStatus)
+      : null;
+    return `Foundation build needed, but external discovery is blocked or limited. ${providerSummary ?? `Configure ${input.missingProviders.join(", ")} to build the intelligence bank from real sources.`}`;
+  }
+  return `Foundation build ran ${input.stack.length} operation(s): ${input.stack.join(", ")}. Discovered ${input.result.candidatesDiscovered}, created ${input.result.libraryItemsCreated} library item(s), added ${input.result.sourcesCreated} source(s), checked ${input.result.sourcesChecked} source(s), promoted ${input.result.candidatesPromoted}.`;
+}
+
+function libraryCountsFromHealth(health: RadarAutopilotHealth): NonNullable<RadarAutopilotResult["libraryCounts"]> {
+  return {
+    places: health.library.places,
+    events: health.library.events,
+    sources: health.sourceCount,
+    organizations: health.library.organizations,
+    people: health.library.people,
+    recurringSignals: health.library.recurringSignals,
+  };
+}
+
+function missingProviders(status: SourceHealth): string[] {
+  return Object.entries(status)
+    .filter(([, value]) => value !== "available")
+    .map(([key]) => key);
 }
 
 function isWeekendWindow(now: Date): boolean {

@@ -60,8 +60,17 @@ export async function POST(req: Request) {
       candidates_discovered: autopilot.candidatesDiscovered,
       promoted: autopilot.candidatesPromoted,
       sources_checked: autopilot.sourcesChecked,
+      sources_created: autopilot.sourcesCreated,
       sources_upgraded: autopilot.sourcesUpgraded,
       sources_cooled_down: autopilot.sourcesCooledDown,
+      bootstrap_needed: autopilot.bootstrapNeeded,
+      bootstrap_progress: autopilot.bootstrap?.progress,
+      operations_run: autopilot.operationsRun ?? [autopilot.operation],
+      provider_status: autopilot.providerStatus,
+      missing_providers: autopilot.missingProviders,
+      refresh_summary: autopilot.bootstrapNeeded
+        ? `Library is thin; ${autopilot.summary}`
+        : autopilot.summary,
       no_op_reason: autopilot.skipped ? autopilot.summary : undefined,
     });
   } catch (error) {

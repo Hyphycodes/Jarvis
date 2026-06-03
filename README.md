@@ -15,6 +15,7 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Scout / Research / Curator:** Scout executes those missions against real sources, Curator and Decision Council decide what is worth attention, and weak output stays quiet.
 - **Seed sources:** static curated URLs and query pools are gated seeds/fallbacks, not the core intelligence. Location-specific seeds only run when profile/location context supports them.
 - **Radar Autopilot:** background health checks choose no-op, refill, Holding build, Candidate Inbox build, Library build/refresh, event pulse, or Source Graph work.
+- **Library Bootstrap Mode:** when Candidate Inbox, Living Library, Source Graph, or Tier A/B inventory is thin, Autopilot runs a bounded foundation-building stack instead of one tiny maintenance pass.
 - **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
 
 **Brain pipeline (5 agents + Decision Council):**
@@ -89,10 +90,11 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 | `ANTHROPIC_API_KEY`               | yes      | Claude API key                                       |
 | `CRON_SECRET`                     | yes      | Shared secret for scheduled jobs                     |
 | `NEXT_PUBLIC_SITE_URL`            | yes (auth) | Public origin for magic-link redirect              |
-| `TAVILY_API_KEY`                  | yes      | Web search — Scout, Researcher, Refresher            |
+| `TAVILY_API_KEY`                  | recommended | Web search — Scout, Researcher, Refresher, source seeding |
+| `GOOGLE_PLACES_API_KEY`           | recommended | Places bootstrap and place details                  |
 | `BRAVE_API_KEY`                   | optional | Secondary web search                                |
 | `SERPAPI_KEY`                     | optional | Google results fallback                              |
-| `TICKETMASTER_API_KEY`            | optional | Event discovery                                      |
+| `TICKETMASTER_API_KEY`            | recommended | Event discovery and Event Pulse                     |
 | `MAPBOX_TOKEN`                    | optional | Mapping and geocoding                                |
 | `ELEVENLABS_API_KEY`              | optional | Voice — TTS and transcription                        |
 | `ELEVENLABS_VOICE_ID`             | optional | ElevenLabs voice ID for Jarvis's voice               |
@@ -117,7 +119,7 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 | ------------------- | -------------------------------- | ------------------------------------------------|
 | Daily 12:00 UTC     | `/api/intelligence/run?run_type=daily_maintenance` | Cleanup, pattern detection, day-of promotion |
 | Fridays 21:00 UTC   | `/api/intelligence/run?run_type=weekend_preview`   | Weekend curation pass                        |
-| Every 2 hours        | `/api/radar/autopilot`          | Chooses the next Radar/Library operation       |
+| Every 2 hours        | `/api/radar/autopilot`          | Chooses maintenance or Bootstrap Mode          |
 | Daily 8:00 UTC      | `/api/library/scout`             | Runs mission-based Scout discovery              |
 | Daily 9:00 UTC      | `/api/library/process-candidates`| Researches and verdicts pending candidates      |
 | Every 2 days 10:00 UTC | `/api/events/scout`           | Discovers upcoming events                       |
@@ -145,14 +147,17 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 
 1. **Context packet** (`lib/context/founderContextPacket.ts`) gathers real user context only: North, Radar actions, Today plans/events, Circle moments, memory, behavior, time, and available weather/location.
 2. **Autopilot health check** reads Active Radar, Holding, Candidate Inbox, Living Library, Source Graph, event freshness, Today/Circle/North readiness, and recent behavior.
-3. **Campaign planner** chooses the next useful operation: no-op, refill, Holding/Candidate Inbox/Library build, event pulse, source recheck, weekend/after-work/Circle/North campaign, or cleanup.
-4. **Scout / source graph / Library workers** execute bounded discovery. Raw discoveries go to Candidate Inbox first; researched durable entities go to Library.
-5. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
-6. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring, North alignment, and curation guardrails.
-7. **Holding and Active Radar** stay conservative: Library items and Candidate Inbox rows do not automatically become Active Radar.
-8. **IntelligenceReason + IntelligenceTrace** record why Jarvis chose or rejected something in compact structured form.
-9. **Routed actions** from Radar, Today, plans, chat/voice, and item actions write behavior signals, source stats, and memory proposals.
-10. **Future context packets** read those real behavior/memory/source signals, so recommendations improve without fake filler.
+3. **Bootstrap Mode** triggers when foundation targets are thin: places < 100, active events < 40, sources < 50, Candidate Inbox < 150, or Tier A/B < 25. It runs up to six safe operations in one pass.
+4. **Campaign planner** chooses the next useful operation: no-op, refill, Holding/Candidate Inbox/Library build, event pulse, source recheck, weekend/after-work/Circle/North campaign, cleanup, or foundation build.
+5. **Scout / source graph / Library workers** execute bounded discovery. Raw discoveries go to Candidate Inbox first; researched durable entities go to Library.
+6. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
+7. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring, North alignment, and curation guardrails.
+8. **Holding and Active Radar** stay conservative: Library items and Candidate Inbox rows do not automatically become Active Radar.
+9. **IntelligenceReason + IntelligenceTrace** record why Jarvis chose or rejected something in compact structured form.
+10. **Routed actions** from Radar, Today, plans, chat/voice, and item actions write behavior signals, source stats, and memory proposals.
+11. **Future context packets** read those real behavior/memory/source signals, so recommendations improve without fake filler.
+
+If external discovery keys are missing, Bootstrap Mode reports the missing providers instead of inventing rows. With Tavily configured but Anthropic missing, Scout can still seed Source Graph and Candidate Inbox from real article results, but it will not fabricate extracted places.
 
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 

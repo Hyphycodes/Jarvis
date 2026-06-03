@@ -4,6 +4,7 @@ import {
 } from "@/lib/brain/constants";
 import type { LibraryHealth } from "@/lib/library/types";
 import type { RadarCampaign } from "@/lib/radar/campaigns";
+import { assessBootstrapNeed } from "@/lib/radar/bootstrapPolicy";
 
 export type RadarAutopilotOperation =
   | "front_room_refill"
@@ -21,9 +22,10 @@ export type RadarAutopilotOperation =
   | "source_building_campaign"
   | "stale_cleanup"
   | "promotion_review"
+  | "foundation_build_mode"
   | "no_op";
 
-export type RadarAutopilotMode = "cron" | "manual_force" | "owner_requested";
+export type RadarAutopilotMode = "cron" | "manual_force" | "owner_requested" | "bootstrap";
 
 export type RadarAutopilotHealth = {
   activeCount: number;
@@ -45,6 +47,10 @@ export function chooseRadarAutopilotOperation(input: {
   mode?: RadarAutopilotMode;
 }): RadarAutopilotOperation {
   const { health, campaigns } = input;
+  const bootstrap = assessBootstrapNeed(health);
+  if (input.mode === "bootstrap" || bootstrap.needed) {
+    return "foundation_build_mode";
+  }
   if (input.mode === "manual_force" && health.activeCount < RADAR_ACTIVE_ITEM_LIMIT) {
     return "promotion_review";
   }
