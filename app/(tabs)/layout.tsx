@@ -64,8 +64,14 @@ export default async function TabsLayout({
         )
       }
       north={
-        signedIn ? (
-          <NorthSigned payload={northPayload ?? undefined} />
+        signedIn && user ? (
+          <NorthSigned
+            payload={northPayload ?? undefined}
+            email={user.email}
+            displayName={user.display_name}
+            homeCity={user.home_city}
+            canEdit={user.role === "owner"}
+          />
         ) : (
           <NorthEmpty />
         )
