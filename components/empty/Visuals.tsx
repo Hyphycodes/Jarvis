@@ -134,65 +134,6 @@ export function RadarVisual() {
   );
 }
 
-export function OrbitVisual() {
-  const w = 280;
-  const h = 160;
-  const cx = w / 2;
-  const cy = h / 2;
-  return (
-    <div className="mx-auto" aria-hidden>
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-        {/* outer ellipse */}
-        <ellipse
-          cx={cx}
-          cy={cy}
-          rx={w / 2 - 14}
-          ry={h / 2 - 18}
-          fill="none"
-          stroke={goldSoft}
-          strokeWidth="1"
-          opacity="0.6"
-        />
-        {/* inner faint ellipse */}
-        <ellipse
-          cx={cx}
-          cy={cy}
-          rx={w / 2 - 30}
-          ry={h / 2 - 32}
-          fill="none"
-          stroke={ivorySoft}
-          strokeWidth="1"
-          opacity="0.35"
-          strokeDasharray="1 4"
-        />
-        {/* two silhouette avatars */}
-        <Silhouette cx={cx - 36} cy={cy - 6} />
-        <Silhouette cx={cx + 36} cy={cy - 6} />
-        {/* nodes on the orbit */}
-        <circle cx={cx - (w / 2 - 14)} cy={cy} r="2" fill={goldSoft} />
-        <circle cx={cx + (w / 2 - 14)} cy={cy} r="2" fill={goldSoft} />
-        <circle cx={cx} cy={cy + (h / 2 - 18)} r="2" fill={goldSoft} />
-      </svg>
-    </div>
-  );
-}
-
-function Silhouette({ cx, cy }: { cx: number; cy: number }) {
-  return (
-    <g opacity="0.85">
-      {/* head */}
-      <circle cx={cx} cy={cy - 12} r="9" fill="rgba(232,228,168,0.10)" stroke={goldSoft} strokeWidth="0.75" />
-      {/* shoulders */}
-      <path
-        d={`M ${cx - 18} ${cy + 16} Q ${cx} ${cy - 6} ${cx + 18} ${cy + 16} Z`}
-        fill="rgba(232,228,168,0.08)"
-        stroke={goldSoft}
-        strokeWidth="0.75"
-      />
-    </g>
-  );
-}
-
 export function CompassVisual() {
   const size = 240;
   const cx = size / 2;

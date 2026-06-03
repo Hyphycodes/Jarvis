@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode, type SVGProps } from "react";
 import { AppFrame } from "@/components";
 import type { NorthPayload } from "@/lib/ai/types";
@@ -177,31 +178,45 @@ function Header() {
   return (
     <header className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-4">
-        <h1
-          className="font-serif tracking-[-0.02em]"
-          style={{
-            color: "var(--text-primary)",
-            fontSize: "52px",
-            lineHeight: 1,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          NORTH
+        <h1 className="font-serif text-[52px] italic leading-[1.02] tracking-[-0.005em] text-warm-ivory">
+          North
         </h1>
-        <span
-          className="font-mono uppercase tracking-[0.12em] pt-2"
-          style={{ color: "var(--gold)", fontSize: "11px" }}
-        >
-          {formatNorthDate()}
-        </span>
+        <div className="flex items-center gap-3 pt-[8px]">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
+            {formatNorthDate()}
+          </span>
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            className="inline-flex items-center justify-center transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+          >
+            <GearIcon />
+          </Link>
+        </div>
       </div>
-      <p
-        className="text-[14px]"
-        style={{ color: "var(--text-muted)" }}
-      >
+      <p className="text-[14px] font-light" style={{ color: "#6b6458" }}>
         Long-term direction.
       </p>
     </header>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#9a9080"
+      strokeWidth={1}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   );
 }
 
@@ -222,12 +237,10 @@ function NorthStarCard() {
     <section
       className="relative mt-6 overflow-hidden"
       style={{
-        border: "1px solid var(--border)",
+        border: "1px solid rgba(201,169,110,0.15)",
         borderRadius: "16px",
-        background: [
-          "radial-gradient(ellipse at 80% 60%, rgba(30,25,15,0.9) 0%, transparent 60%)",
-          "linear-gradient(160deg, #1a1a14 0%, #0f0f0a 40%, #1c1a12 100%)",
-        ].join(", "),
+        background:
+          "radial-gradient(ellipse at 20% 30%, rgba(201,169,110,0.06) 0%, #1a1a14 60%)",
         minHeight: "260px",
       }}
     >
@@ -241,14 +254,14 @@ function NorthStarCard() {
         style={{
           width: "50%",
           maxWidth: "260px",
-          opacity: 0.8,
+          opacity: 0.07,
         }}
       />
       <div className="relative z-10 flex flex-col gap-3 p-6">
         <div className="flex items-center gap-2">
           <GoldStar />
           <span
-            className="font-mono uppercase"
+            className="font-sans uppercase"
             style={{
               color: "var(--gold)",
               fontSize: "10px",
@@ -277,7 +290,7 @@ function NorthStarCard() {
         </p>
         <button
           type="button"
-          className="mt-2 inline-flex items-center gap-1.5 self-start font-mono uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+          className="mt-2 inline-flex items-center gap-1.5 self-start font-sans uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
           style={{
             color: "var(--gold)",
             fontSize: "11px",
@@ -326,7 +339,7 @@ function BuildSection() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3
-            className="font-mono uppercase"
+            className="font-sans uppercase"
             style={{
               color: "var(--text-primary)",
               fontSize: "11px",
@@ -344,7 +357,7 @@ function BuildSection() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 font-mono uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
+          className="inline-flex items-center gap-1.5 font-sans uppercase transition-opacity duration-300 ease-atmospheric hover:opacity-80"
           style={{
             color: "var(--gold)",
             fontSize: "11px",
@@ -401,11 +414,11 @@ function CategoryAccordion({
         <span
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
           style={{
-            border: "1px solid var(--gold-dim)",
-            background: "rgba(184,137,55,0.035)",
+            border: "1px solid rgba(201,169,110,0.5)",
+            background: "rgba(201,169,110,0.05)",
           }}
         >
-          <Icon width={22} height={22} stroke="var(--gold)" strokeWidth={1.5} fill="none" />
+          <Icon width={18} height={18} stroke="var(--gold)" strokeWidth={1} fill="none" />
         </span>
         <span
           className="flex-1 font-serif"
@@ -419,11 +432,12 @@ function CategoryAccordion({
         </span>
         <span className="flex items-center gap-2 shrink-0">
           <span
-            className="font-mono uppercase"
+            className="font-sans uppercase"
             style={{
               color: category.tone === "green" ? "var(--status-green)" : "var(--status-amber)",
               fontSize: "10px",
-              letterSpacing: "0.08em",
+              letterSpacing: "0.18em",
+              fontWeight: 400,
             }}
           >
             {category.status}
@@ -509,7 +523,7 @@ function CategoryAccordion({
           </div>
           <button
             type="button"
-            className="lux-action mt-5 flex min-h-12 w-full items-center justify-between px-5 font-mono uppercase"
+            className="lux-action mt-5 flex min-h-12 w-full items-center justify-between px-5 font-sans uppercase"
             style={{
               fontSize: "11px",
               letterSpacing: "0.16em",
@@ -520,7 +534,7 @@ function CategoryAccordion({
           </button>
           <button
             type="button"
-            className="lux-action mt-3 flex min-h-12 w-full items-center justify-between px-5 font-mono uppercase"
+            className="lux-action mt-3 flex min-h-12 w-full items-center justify-between px-5 font-sans uppercase"
             style={{
               fontSize: "11px",
               letterSpacing: "0.16em",
@@ -555,7 +569,7 @@ function NextRepsSection() {
   return (
     <section className="mt-10">
       <h3
-        className="font-mono uppercase"
+        className="font-sans uppercase"
         style={{
           color: "var(--text-primary)",
           fontSize: "11px",
@@ -611,7 +625,7 @@ function NextRepsSection() {
                 </div>
               </div>
               <span
-                className="font-mono uppercase shrink-0"
+                className="font-sans uppercase shrink-0"
                 style={{
                   color: "var(--gold)",
                   fontSize: "10px",
@@ -664,7 +678,7 @@ function NorthReminderCard() {
       <div className="flex items-center gap-2">
         <GoldStar />
         <span
-          className="font-mono uppercase"
+          className="font-sans uppercase"
           style={{
             color: "var(--gold)",
             fontSize: "10px",
