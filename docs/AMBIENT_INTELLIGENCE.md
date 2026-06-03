@@ -101,6 +101,16 @@ upserts events into `current_events` only when a real exact start time exists,
 and marks weak, duplicate, or ambiguous rows with structured reasons. It never
 writes directly to Active Radar.
 
+Discovery quality filters run before and during conversion. Generic Yelp-style
+"best 10" pages, MapQuest/directory pages, Men's Wearhouse-style retail chains,
+Trivago/hotel aggregators, generic Eventbrite category/search pages, broad SEO
+"things to do" lists, and other mission-mismatched source leads are rejected or
+heavily penalized with stored reasons such as `generic directory`,
+`chain retail mismatch`, `hotel aggregator mismatch`, `generic event page`,
+`broad SEO list`, and `mission mismatch`. The filter is contextual: a specific
+Eventbrite event or specific OpenTable restaurant page can still be useful,
+while generic category/list pages are weak source leads at best.
+
 The Library conversion batch is intentionally small during Foundation Sprint.
 It stops when the time budget is near, marks each candidate as it goes, and lets
 the next run continue with the remaining inbox rows.
@@ -127,6 +137,26 @@ available later.
 Run errors should be visible but safe. Control Room summaries show the actual
 run `error_message` with token-like bearer values redacted, plus partial row
 counts so "partial success" is understandable without opening Vercel logs.
+
+## Intent-Aware Actions
+
+Radar remains visually quiet. The primary actions stay Save, Plan, and Pass.
+Secondary intent chips let the owner mark a candidate as Later, Watch, Better
+Version, or Save Taste. These states are stored on the item payload/planning
+state, write `item.intent` behavior signals, update Source Graph feedback, and
+can create memory proposals. They do not keep the same item pinned in Active
+Radar.
+
+- `interested_later`: positive interest, wrong timing. Move/deprioritize from
+  Active Radar and allow resurfacing only when timing/context changes.
+- `watching`: keep the source/category/lane alive, but do not repeat the same
+  unchanged item.
+- `better_version`: positive category signal plus negative exact-item signal;
+  future missions should search adjacent/better alternatives.
+- `saved_reference`: save the taste/library signal without forcing active
+  attention.
+- `muted` or `passed`: penalize exact item/source/category according to
+  severity.
 
 ## Promotion Diagnostics
 

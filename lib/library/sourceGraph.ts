@@ -151,7 +151,17 @@ export async function upsertSourceFromLibraryEntity(input: {
 export async function updateSourceStatsFromAction(input: {
   userId: string;
   item: IndexedItem;
-  action: "saved" | "passed" | "planned" | "dismissed" | "completed" | "archived";
+  action:
+    | "saved"
+    | "passed"
+    | "planned"
+    | "dismissed"
+    | "completed"
+    | "archived"
+    | "interested_later"
+    | "watching"
+    | "better_version"
+    | "muted";
   supabase?: SupabaseClient;
 }): Promise<void> {
   const key = sourceKeyForItem(input.item);
@@ -165,8 +175,8 @@ export async function updateSourceStatsFromAction(input: {
     .maybeSingle();
   const row = data as SourceGraphRow | null;
   const totals = {
-    total_saved: (row?.total_saved ?? 0) + (input.action === "saved" ? 1 : 0),
-    total_passed: (row?.total_passed ?? 0) + (input.action === "passed" ? 1 : 0),
+    total_saved: (row?.total_saved ?? 0) + (["saved", "interested_later", "watching"].includes(input.action) ? 1 : 0),
+    total_passed: (row?.total_passed ?? 0) + (["passed", "better_version", "muted"].includes(input.action) ? 1 : 0),
     total_planned: (row?.total_planned ?? 0) + (input.action === "planned" ? 1 : 0),
     total_promoted: (row?.total_promoted ?? 0) + (input.item.destination === "radar" ? 1 : 0),
     total_candidates: Math.max(row?.total_candidates ?? 0, 1),
@@ -207,6 +217,14 @@ export async function updateSourceStatsFromAction(input: {
       cadence_hours: quality.cadenceHours,
       status: quality.status,
       next_check_at: scheduleNextSourceCheck({ ...quality, from: new Date().toISOString() }),
+      metadata: {
+        ...(row?.metadata ?? {}),
+        intent_feedback: {
+          ...readRecord(row?.metadata, "intent_feedback"),
+          [input.action]: Number(readRecord(row?.metadata, "intent_feedback")[input.action] ?? 0) + 1,
+        },
+        last_intent_item: input.item.title,
+      },
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,source_key" });
 }
@@ -260,6 +278,14 @@ function domainFromSourceKey(key: string): string | null {
 
 function mergeTopics(existing: string[], tags: string[], category?: string | null): string[] {
   return Array.from(new Set([...existing, ...tags, category].filter((value): value is string => Boolean(value)))).slice(0, 16);
+}
+
+function readRecord(value: unknown, key: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const nested = (value as Record<string, unknown>)[key];
+  return typeof nested === "object" && nested !== null && !Array.isArray(nested)
+    ? nested as Record<string, unknown>
+    : {};
 }
 
 function slug(value: string): string {

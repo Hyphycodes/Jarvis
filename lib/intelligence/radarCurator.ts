@@ -13,6 +13,7 @@ import {
 } from "@/lib/intelligence/radarDiversity";
 import { RADAR_BOARD_QUALITY_FLOOR } from "@/lib/intelligence/radarScoring";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
+import { readItemIntent } from "@/lib/items/intents";
 import { listIndexItems, rowToIndexedItem } from "@/lib/index/repo";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import type { Json, SurfacedItemRow } from "@/lib/types/database";
@@ -119,6 +120,7 @@ export function isPromotableWhenUnderfilled(item: RadarItem): boolean {
     item.category.trim().length > 0 &&
     item.reasonSurfaced.trim().length > 0 &&
     item.strongestAngle.trim().length > 0 &&
+    !hasDeprioritizingIntent(item) &&
     !hasHardActiveBlock(item)
   );
 }
@@ -344,11 +346,24 @@ function hasHardActiveBlock(item: RadarItem): boolean {
   return item.decision.negative_flags.some((flag) => HARD_ACTIVE_BLOCK_FLAGS.has(flag));
 }
 
+function hasDeprioritizingIntent(item: RadarItem): boolean {
+  const intent = readItemIntent(item.item.rawPayload);
+  return intent?.state === "interested_later" ||
+    intent?.state === "watching" ||
+    intent?.state === "better_version" ||
+    intent?.state === "muted";
+}
+
 function promotionBlockReason(item: RadarItem): string {
   if (item.radarDisposition !== "active") return `radar disposition ${item.radarDisposition}`;
   if (item.score < RADAR_UNDERFILLED_PROMOTION_FLOOR) return `score ${item.score.toFixed(2)} below underfilled floor`;
   if (item.confidence < RADAR_UNDERFILLED_PROMOTION_FLOOR) return `confidence ${item.confidence.toFixed(2)} below medium floor`;
   if (item.evidence.quality < 0.45) return "evidence is too light";
+  const intent = readItemIntent(item.item.rawPayload);
+  if (intent?.state === "interested_later" || intent?.state === "watching" || intent?.state === "better_version") {
+    return `owner intent is ${intent.state.replace(/_/g, " ")}`;
+  }
+  if (intent?.state === "muted") return "muted by owner intent";
   if (hasHardActiveBlock(item)) return `blocking flags: ${item.decision.negative_flags.filter((flag) => HARD_ACTIVE_BLOCK_FLAGS.has(flag)).join(", ")}`;
   if (!item.title.trim()) return "missing clear title";
   if (!item.reasonSurfaced.trim()) return "missing surfaced reason";

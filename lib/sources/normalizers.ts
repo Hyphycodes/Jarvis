@@ -9,6 +9,7 @@ import type { TavilySearchResult } from "@/lib/sources/tavily";
 import type { BraveResult } from "@/lib/sources/brave";
 import type { SerpShoppingResult } from "@/lib/sources/serpapi";
 import type { MlbGame } from "@/lib/sources/mlb";
+import { assessResultQuality } from "@/lib/sources/resultQuality";
 
 /**
  * Every source result lands here. Adapters never write raw shapes into
@@ -183,6 +184,14 @@ export function normalizeTavilyResult(
   hints: { category?: string; type?: IndexItemType } = {},
 ): CreateIndexedItemInput | null {
   if (!result.url || !result.title) return null;
+  const quality = assessResultQuality({
+    title: result.title,
+    snippet: result.content,
+    url: result.url,
+    category: hints.category,
+    type: hints.type,
+  });
+  if (quality.hardReject) return null;
   return {
     type: hints.type ?? "recommendation",
     destination: "radar",
@@ -194,8 +203,11 @@ export function normalizeTavilyResult(
     url: result.url,
     rawPayload: result as unknown as CreateIndexedItemInput["rawPayload"],
     status: "discovered",
-    reasons: result.score != null ? [`Tavily relevance ${result.score.toFixed(2)}`] : [],
-    tags: ["web", hints.category ?? "research"],
+    reasons: [
+      ...(result.score != null ? [`Tavily relevance ${result.score.toFixed(2)}`] : []),
+      ...quality.reasons,
+    ],
+    tags: ["web", hints.category ?? "research", ...quality.flags],
   };
 }
 
@@ -204,6 +216,14 @@ export function normalizeBraveResult(
   hints: { category?: string; type?: IndexItemType } = {},
 ): CreateIndexedItemInput | null {
   if (!result.url || !result.title) return null;
+  const quality = assessResultQuality({
+    title: result.title,
+    snippet: result.description,
+    url: result.url,
+    category: hints.category,
+    type: hints.type,
+  });
+  if (quality.hardReject) return null;
   return {
     type: hints.type ?? "recommendation",
     destination: "radar",
@@ -215,8 +235,8 @@ export function normalizeBraveResult(
     url: result.url,
     rawPayload: result as unknown as CreateIndexedItemInput["rawPayload"],
     status: "discovered",
-    reasons: [],
-    tags: ["web", "brave", hints.category ?? "research"],
+    reasons: quality.reasons,
+    tags: ["web", "brave", hints.category ?? "research", ...quality.flags],
   };
 }
 
@@ -225,6 +245,13 @@ export function normalizeShoppingResult(
 ): CreateIndexedItemInput | null {
   if (!result.title) return null;
   const url = result.product_link ?? result.link;
+  const quality = assessResultQuality({
+    title: result.title,
+    url,
+    category: "shopping",
+    type: "product",
+  });
+  if (quality.hardReject && !quality.flags.includes("chain_retail_mismatch")) return null;
   return {
     type: "product",
     destination: "radar",
@@ -237,8 +264,11 @@ export function normalizeShoppingResult(
     imageUrl: result.thumbnail,
     rawPayload: result as unknown as CreateIndexedItemInput["rawPayload"],
     status: "discovered",
-    reasons: result.rating != null ? [`Rated ${result.rating}`] : [],
-    tags: ["product", "shopping"],
+    reasons: [
+      ...(result.rating != null ? [`Rated ${result.rating}`] : []),
+      ...quality.reasons,
+    ],
+    tags: ["product", "shopping", ...quality.flags],
   };
 }
 

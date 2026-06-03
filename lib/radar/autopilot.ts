@@ -783,6 +783,10 @@ async function executeOperation(input: {
           supabase: input.supabase,
           limit: 16,
         });
+        const eligibleDiagnostics = diagnostics.items.filter((item) => item.radarEligible);
+        const slots = input.base.activeCount < RADAR_MIN_ACTIVE_ITEM_TARGET
+          ? Math.min(3, RADAR_MIN_ACTIVE_ITEM_TARGET - input.base.activeCount)
+          : 0;
         await logAutopilotActivity({
           userId: input.userId,
           runId: input.runId,
@@ -791,7 +795,8 @@ async function executeOperation(input: {
           metadata: {
             activeCount: diagnostics.activeCount,
             target: diagnostics.target,
-            eligible: diagnostics.items.filter((item) => item.radarEligible).length,
+            eligible: eligibleDiagnostics.length,
+            slots,
             blockers: diagnostics.items
               .filter((item) => !item.radarEligible)
               .slice(0, 8)
@@ -807,10 +812,30 @@ async function executeOperation(input: {
         const promoted = await promoteHoldingWithService({
           userId: input.userId,
           supabase: input.supabase,
-          slots: Math.max(0, RADAR_ACTIVE_ITEM_LIMIT - input.base.activeCount),
+          slots,
         });
         result.candidatesPromoted += promoted.promoted;
         result.candidatesHeld += promoted.reviewed - promoted.promoted;
+        if (eligibleDiagnostics.length > 0 && promoted.promoted === 0) {
+          const blocker = slots <= 0
+            ? `Active Radar is at or above target (${input.base.activeCount}/${RADAR_MIN_ACTIVE_ITEM_TARGET}).`
+            : promoted.reasons[0] ?? "Eligible item was not selected by the final Holding promotion pass.";
+          await logAutopilotActivity({
+            userId: input.userId,
+            runId: input.runId,
+            level: "warning",
+            message: `Promotion review found ${eligibleDiagnostics.length} eligible item(s) but promoted 0. Final blocker: ${blocker}`,
+            metadata: {
+              eligible: eligibleDiagnostics.map((item) => ({
+                title: item.title,
+                source_layer: item.sourceLayer,
+                score: item.score,
+              })),
+              final_blocker: blocker,
+            },
+            supabase: input.supabase,
+          });
+        }
         result.summary = promoted.promoted > 0
           ? `Promotion review promoted ${promoted.promoted} qualified Holding item(s).`
           : `Promotion review promoted 0 items. ${diagnostics.summary}`;
@@ -835,8 +860,8 @@ async function promoteHoldingWithService(input: {
   userId: string;
   supabase: SupabaseClient;
   slots: number;
-}): Promise<{ reviewed: number; promoted: number }> {
-  if (input.slots <= 0) return { reviewed: 0, promoted: 0 };
+}): Promise<{ reviewed: number; promoted: number; reasons: string[] }> {
+  if (input.slots <= 0) return { reviewed: 0, promoted: 0, reasons: ["No available Active Radar slots under target."] };
   const { data: activeRows } = await input.supabase
     .from("surfaced_items")
     .select("*")
@@ -859,10 +884,14 @@ async function promoteHoldingWithService(input: {
     currentRadarItems: activeItems,
   });
   const selected: Array<{ id: string; score: number; payload: Json }> = [];
+  const reasons: string[] = [];
   for (const row of (holdingRows ?? []) as SurfacedItemRow[]) {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
-    if (!isPromotableWhenUnderfilled(radar)) continue;
+    if (!isPromotableWhenUnderfilled(radar)) {
+      reasons.push(`${item.title}: ${radar.radarDisposition} · score ${radar.score.toFixed(2)} · confidence ${radar.confidence.toFixed(2)}.`);
+      continue;
+    }
     selected.push({
       id: row.id,
       score: radar.score,
@@ -893,6 +922,7 @@ async function promoteHoldingWithService(input: {
   return {
     reviewed: (holdingRows ?? []).length,
     promoted: selected.length,
+    reasons,
   };
 }
 

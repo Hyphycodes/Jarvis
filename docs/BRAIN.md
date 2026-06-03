@@ -149,6 +149,44 @@ ready for Holding/Radar review when timing, source, and quality clear the
 threshold. Holding is the only direct promotion path, and it still uses
 `isPromotableWhenUnderfilled()` and the front-room gate constants.
 
+Promotion review must follow through deterministically. If diagnostics mark a
+Holding item as eligible with `nextStep: "promote_candidate"` and Active Radar
+has open target slots, the review should promote it through the normal Holding
+path or log the final blocker that prevented promotion: cap reached, no slots,
+not better than current Active rows, stale/duplicate, owner intent, source
+confidence, or another quality gate. There should be no silent
+eligible-but-not-promoted state.
+
+Owner intent can also block resurfacing. Items marked `interested_later`,
+`watching`, `better_version`, or `muted` are deprioritized for Active Radar and
+show that owner-intent blocker in diagnostics. They remain useful for Library,
+Source Graph, watch conditions, and future search lanes.
+
+## Intent-Aware Item State
+
+Radar cards keep the main surface simple: Save, Plan, and Pass. A secondary
+intent chooser records whether the user means save as taste, interested later,
+watch this lane, or find a better version. The canonical states are:
+
+```ts
+type UserItemIntent =
+  | "active_now"
+  | "saved_reference"
+  | "interested_later"
+  | "watching"
+  | "planning_soon"
+  | "better_version"
+  | "passed"
+  | "muted"
+  | "completed";
+```
+
+The implementation writes the state onto the existing `surfaced_items` payload
+and planning state, records `item.intent` behavior signals, updates Source
+Graph stats, and adds watch conditions when useful. Later/Watch/Better Version
+are positive lane/category signals but negative active-attention signals for the
+exact unchanged item.
+
 ## Taste Seed Importer
 
 `lib/tasteSeed/parser.ts` parses owner-provided markdown with these sections:

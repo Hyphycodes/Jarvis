@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { readLibraryHealth } from "@/lib/library";
-import { readLibraryPreview, type LibraryPreviewCandidate, type LibraryPreviewEntity, type LibraryPreviewRejected, type LibraryPreviewSource } from "@/lib/library/previews";
+import { readLibraryPreview, type LibraryPreviewCandidate, type LibraryPreviewEntity, type LibraryPreviewIntentItem, type LibraryPreviewRejected, type LibraryPreviewSource } from "@/lib/library/previews";
 import { readLibraryControlRoomStatus } from "@/lib/radar/autopilotRuns";
 import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
 import { FOUNDATION_SPRINT_TARGETS } from "@/lib/radar/foundationSprint";
@@ -314,6 +314,13 @@ export default async function SettingsLibraryPage() {
               <EmptyPreview text="No rejected or muted rows yet." />
             )}
           </PreviewDetails>
+          <PreviewDetails title="Later / Watch / Better Version" count={preview.intentItems.length}>
+            {preview.intentItems.length > 0 ? preview.intentItems.map((item) => (
+              <IntentRow key={item.id} item={item} />
+            )) : (
+              <EmptyPreview text="No intent queue rows yet." />
+            )}
+          </PreviewDetails>
           <PreviewDetails title="Tier A" count={preview.tiers.A.length}>
             {preview.tiers.A.length > 0 ? preview.tiers.A.map((entity) => (
               <EntityRow key={entity.id} entity={entity} />
@@ -444,6 +451,17 @@ function RejectedRow({ item }: { item: LibraryPreviewRejected }) {
       meta={`${item.type} · ${item.status} · ${formatTimestamp(item.rejectedAt)}`}
       body={item.reason ?? "Filtered out during evaluation."}
       footer={item.source ? `Source: ${item.source}` : null}
+    />
+  );
+}
+
+function IntentRow({ item }: { item: LibraryPreviewIntentItem }) {
+  return (
+    <PreviewRow
+      title={item.title}
+      meta={`${item.intent} · ${item.destination}/${item.status} · ${formatTimestamp(item.updatedAt)}`}
+      body={item.reason ?? "Owner intent is stored on the item and used to tune resurfacing."}
+      footer="These rows can guide future discovery without repeating the same item in Active Radar."
     />
   );
 }

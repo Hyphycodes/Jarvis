@@ -12,6 +12,11 @@ import {
 } from "@/lib/brain/intelligenceTrace";
 import { updateSourceStatsFromAction } from "@/lib/library/sourceGraph";
 import {
+  buildItemIntentPayload,
+  intentJson,
+  type UserItemIntent,
+} from "@/lib/items/intents";
+import {
   getIndexItem,
   updateIndexItemStatus,
 } from "@/lib/index/repo";
@@ -38,6 +43,7 @@ async function transition(
   options: {
     revalidate?: string[];
     patchPayload?: Record<string, unknown>;
+    planningState?: string;
     nextDestination?: IndexDestination;
   } = {},
 ): Promise<ItemActionResult> {
@@ -54,6 +60,10 @@ async function transition(
 
   // Update status (and optional payload)
   await updateIndexItemStatus(itemId, nextStatus, patch);
+
+  if (options.planningState) {
+    await updateItemPlanningState(itemId, options.planningState);
+  }
 
   // Optional destination move (separate update — repo doesn't take destination)
   if (options.nextDestination && options.nextDestination !== existing.destination) {
@@ -88,6 +98,7 @@ async function transition(
       summary: `User action ${signal.type} changed ${existing.title}.`,
       contextFactors: [
         existing.category ? `Category: ${existing.category}` : null,
+        options.planningState ? `Intent state: ${options.planningState}` : null,
         options.nextDestination && options.nextDestination !== existing.destination
           ? `Moved from ${existing.destination} to ${options.nextDestination}`
           : `Stayed in ${existing.destination}`,
@@ -96,6 +107,7 @@ async function transition(
         signal.type === "item.pass" ? "Pass should reduce similar future confidence." : null,
         signal.type === "item.save" ? "Save should increase similar future confidence." : null,
         signal.type === "item.plan" ? "Plan should increase similar future confidence." : null,
+        signal.type === "item.intent" ? "Intent should tune future timing/source/category behavior." : null,
       ],
     }),
     selectedCandidate: {
@@ -142,6 +154,29 @@ function sourceActionForSignal(signalType: UserBehaviorSignal["type"]) {
   }
 }
 
+function sourceActionForIntent(intent: UserItemIntent) {
+  switch (intent) {
+    case "saved_reference":
+      return "saved";
+    case "interested_later":
+      return "interested_later";
+    case "watching":
+      return "watching";
+    case "planning_soon":
+      return "planned";
+    case "better_version":
+      return "better_version";
+    case "muted":
+      return "muted";
+    case "passed":
+      return "passed";
+    case "completed":
+      return "completed";
+    default:
+      return null;
+  }
+}
+
 function traceSurfaceForDestination(destination: IndexDestination): IntelligenceTraceSurface {
   switch (destination) {
     case "today":
@@ -166,6 +201,20 @@ async function updateItemDestination(
   const { error } = await supabase
     .from("surfaced_items")
     .update({ destination })
+    .eq("id", itemId)
+    .eq("user_id", owner.id);
+  if (error) throw new Error(error.message);
+}
+
+async function updateItemPlanningState(
+  itemId: string,
+  planningState: string,
+): Promise<void> {
+  const owner = await requireOwner();
+  const supabase = await getServerSupabase();
+  const { error } = await supabase
+    .from("surfaced_items")
+    .update({ planning_state: planningState })
     .eq("id", itemId)
     .eq("user_id", owner.id);
   if (error) throw new Error(error.message);
@@ -244,8 +293,13 @@ export async function planItem(input: {
     },
     {
       patchPayload: input.planId
-        ? { plan_id: input.planId, plan_status: "active" }
+        ? {
+            plan_id: input.planId,
+            plan_status: "active",
+            ...(item ? { intent: intentJson(buildItemIntentPayload({ item, intent: "planning_soon" })) } : {}),
+          }
         : { plan_status: "draft" },
+      planningState: "planning_soon",
       nextDestination,
     },
   );
@@ -371,6 +425,52 @@ export async function moveItemToHolding(input: { itemId: string }): Promise<Item
   );
 }
 
+export async function markItemIntent(input: {
+  itemId: string;
+  intent: UserItemIntent;
+  reason?: string | null;
+}): Promise<ItemActionResult> {
+  const item = await getIndexItem(input.itemId);
+  if (!item) throw new Error("Index item not found.");
+  const payload = buildItemIntentPayload({
+    item,
+    intent: input.intent,
+    reason: input.reason,
+  });
+  const nextStatus = statusForIntent(input.intent, item.status);
+  const nextDestination = destinationForIntent(input.intent, item);
+  const result = await transition(
+    input.itemId,
+    nextStatus,
+    {
+      type: "item.intent",
+      itemId: input.itemId,
+      intent: input.intent,
+      category: item.category,
+      learning: {
+        ...behaviorMetadataForItem(item, input.intent === "muted" || input.intent === "passed" ? "pass" : "save"),
+        intent: input.intent,
+        watchConditions: payload.watch_conditions,
+      },
+    },
+    {
+      patchPayload: { intent: intentJson(payload) },
+      planningState: input.intent,
+      nextDestination,
+    },
+  );
+  const owner = await requireOwner();
+  const sourceAction = sourceActionForIntent(input.intent);
+  if (sourceAction) {
+    await updateSourceStatsFromAction({
+      userId: owner.id,
+      item,
+      action: sourceAction,
+    });
+  }
+  return result;
+}
+
 /**
  * Explicit expire. Used when an event's date has passed.
  */
@@ -396,7 +496,12 @@ export type ItemAction =
   | "move-holding"
   | "add-upcoming"
   | "remove-upcoming"
-  | "expire";
+  | "expire"
+  | "save-taste"
+  | "interested-later"
+  | "watch"
+  | "better-version"
+  | "mute";
 
 export async function dispatchItemAction(
   action: ItemAction,
@@ -429,6 +534,16 @@ export async function dispatchItemAction(
       return removeFromUpcoming({ itemId: input.itemId });
     case "expire":
       return expireItem({ itemId: input.itemId });
+    case "save-taste":
+      return markItemIntent({ itemId: input.itemId, intent: "saved_reference" });
+    case "interested-later":
+      return markItemIntent({ itemId: input.itemId, intent: "interested_later" });
+    case "watch":
+      return markItemIntent({ itemId: input.itemId, intent: "watching" });
+    case "better-version":
+      return markItemIntent({ itemId: input.itemId, intent: "better_version" });
+    case "mute":
+      return markItemIntent({ itemId: input.itemId, intent: "muted" });
   }
 }
 
@@ -462,6 +577,44 @@ function isFutureDated(item: IndexedItem): boolean {
     return new Date(item.startsAt).getTime() >= Date.now();
   } catch {
     return false;
+  }
+}
+
+function statusForIntent(intent: UserItemIntent, current: IndexItemStatus): IndexItemStatus {
+  switch (intent) {
+    case "planning_soon":
+      return "planned";
+    case "passed":
+    case "muted":
+      return "passed";
+    case "completed":
+      return "completed";
+    case "active_now":
+      return "shown";
+    case "saved_reference":
+      return "saved";
+    case "interested_later":
+    case "watching":
+    case "better_version":
+      return current === "saved" || current === "planned" ? current : "discovered";
+  }
+}
+
+function destinationForIntent(intent: UserItemIntent, item: IndexedItem): IndexDestination {
+  switch (intent) {
+    case "active_now":
+      return "radar";
+    case "planning_soon":
+      return inferSaveDestination(item);
+    case "passed":
+    case "muted":
+      return item.destination;
+    case "interested_later":
+    case "watching":
+    case "better_version":
+    case "saved_reference":
+    case "completed":
+      return "holding";
   }
 }
 

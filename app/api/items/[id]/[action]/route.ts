@@ -23,6 +23,11 @@ const ACTIONS = [
   "add-upcoming",
   "remove-upcoming",
   "expire",
+  "save-taste",
+  "interested-later",
+  "watch",
+  "better-version",
+  "mute",
 ] as const satisfies readonly ItemAction[];
 
 const DESTINATIONS = [

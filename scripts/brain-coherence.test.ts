@@ -9,6 +9,8 @@ import {
   type FounderContextPacket,
 } from "../lib/context/types";
 import { scoreIndexedItem } from "../lib/scoring/scoreIndexedItem";
+import { buildItemIntentPayload, intentJson, readItemIntent } from "../lib/items/intents";
+import { assessResultQuality } from "../lib/sources/resultQuality";
 import { buildCommandActionChips } from "../lib/chat/routeChatIntent";
 import { buildIntelligenceReason, reasonForCircleMoment } from "../lib/brain/intelligenceReason";
 import {
@@ -864,6 +866,131 @@ function testNegativeTasteFiltersAffectScoring() {
   assert.ok(penalized.reasons.some((reason) => /Taste filter penalty/i.test(reason)));
 }
 
+function testIntentStatesAffectRadarScoringAndResurfacing() {
+  const base = scoreIndexedItem(item()).total;
+  const laterPayload = buildItemIntentPayload({
+    item: item({ title: "Private horseback riding near forest preserve", category: "activity" }),
+    intent: "interested_later",
+    now,
+  });
+  const later = scoreIndexedItem(item({
+    title: "Private horseback riding near forest preserve",
+    category: "activity",
+    rawPayload: { intent: intentJson(laterPayload) },
+  }));
+  assert.ok(later.total < base);
+  assert.ok(later.reasons.some((reason) => /owner intent/i.test(reason)));
+  assert.ok(readItemIntent({ intent: intentJson(laterPayload) })?.watch_conditions?.timing?.includes("weekend"));
+
+  const betterVersion = scoreIndexedItem(item({
+    rawPayload: {
+      intent: intentJson(buildItemIntentPayload({
+        item: item({ title: "Generic jazz night list", category: "music" }),
+        intent: "better_version",
+        now,
+      })),
+    },
+  }));
+  assert.ok(betterVersion.total < later.total);
+  assert.ok(betterVersion.reasons.some((reason) => /better version/i.test(reason)));
+}
+
+function testIntentActionRouteAndBehaviorWiring() {
+  const route = readFileSync("app/api/items/[id]/[action]/route.ts", "utf8");
+  assert.match(route, /interested-later/);
+  assert.match(route, /better-version/);
+  assert.match(route, /save-taste/);
+
+  const actions = readFileSync("lib/actions/items.ts", "utf8");
+  assert.match(actions, /markItemIntent/);
+  assert.match(actions, /type: "item\.intent"/);
+  assert.match(actions, /planningState: input\.intent/);
+  assert.match(actions, /updateSourceStatsFromAction/);
+  assert.match(actions, /sourceActionForIntent/);
+
+  const memoryRules = readFileSync("lib/memory/memoryRules.ts", "utf8");
+  assert.match(memoryRules, /item\.intent/);
+  assert.match(memoryRules, /better_version/);
+  assert.match(memoryRules, /interested_later/);
+
+  const sourceGraph = readFileSync("lib/library/sourceGraph.ts", "utf8");
+  assert.match(sourceGraph, /interested_later/);
+  assert.match(sourceGraph, /better_version/);
+  assert.match(sourceGraph, /intent_feedback/);
+}
+
+function testDiscoveryQualityRejectsGenericJunk() {
+  const yelp = assessResultQuality({
+    title: "Best 10 Restaurants Near Me",
+    url: "https://www.yelp.com/search?find_desc=restaurants",
+    snippet: "Yelp best 10 list.",
+    category: "dining",
+  });
+  assert.equal(yelp.hardReject, true);
+  assert.ok(yelp.flags.includes("generic_directory"));
+  assert.ok(yelp.reasons.some((reason) => /generic directory/i.test(reason)));
+
+  const mensWearhouse = assessResultQuality({
+    title: "Men's Wearhouse Store Locator",
+    url: "https://www.menswearhouse.com/store-locator",
+    snippet: "Retail chain suits.",
+    category: "culture",
+  });
+  assert.equal(mensWearhouse.hardReject, true);
+  assert.ok(mensWearhouse.flags.includes("chain_retail_mismatch"));
+
+  const trivago = assessResultQuality({
+    title: "Chicago hotel deals",
+    url: "https://www.trivago.com/en-US/lm/hotels-chicago",
+    category: "events",
+  });
+  assert.equal(trivago.hardReject, true);
+  assert.ok(trivago.flags.includes("hotel_aggregator_mismatch"));
+
+  const genericEventbrite = assessResultQuality({
+    title: "Chicago events this weekend",
+    url: "https://www.eventbrite.com/d/il--chicago/events/",
+    category: "events",
+  });
+  assert.equal(genericEventbrite.hardReject, true);
+  assert.ok(genericEventbrite.flags.includes("generic_event_page"));
+
+  const specificEventbrite = assessResultQuality({
+    title: "Chef tasting night at a specific venue",
+    url: "https://www.eventbrite.com/e/chef-tasting-night-tickets-123456789",
+    category: "events",
+  });
+  assert.equal(specificEventbrite.hardReject, false);
+  assert.ok(!specificEventbrite.flags.includes("generic_event_page"));
+}
+
+function testQualityFiltersReachCandidateConversionAndPreviews() {
+  const conversion = readFileSync("lib/radar/candidateConversion.ts", "utf8");
+  assert.match(conversion, /assessResultQuality/);
+  assert.match(conversion, /Rejected by discovery quality filter/);
+  assert.match(conversion, /quality_flags/);
+  assert.match(conversion, /foundation_sprint_quality_filter/);
+
+  const preview = readFileSync("app/settings/library/page.tsx", "utf8");
+  assert.match(preview, /Later \/ Watch \/ Better Version/);
+  assert.match(preview, /intentItems/);
+  assert.match(preview, /Owner intent is stored/);
+}
+
+function testPromotionFollowThroughContract() {
+  const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
+  assert.match(autopilot, /eligibleDiagnostics/);
+  assert.match(autopilot, /RADAR_MIN_ACTIVE_ITEM_TARGET - input\.base\.activeCount/);
+  assert.match(autopilot, /Promotion review found \$\{eligibleDiagnostics\.length\} eligible item\(s\) but promoted 0/);
+  assert.match(autopilot, /No available Active Radar slots under target/);
+  assert.match(autopilot, /reasons:/);
+
+  const diagnostics = readFileSync("lib/radar/promotionDiagnostics.ts", "utf8");
+  assert.match(diagnostics, /Raw Candidate Inbox rows never promote directly/);
+  assert.match(diagnostics, /Owner requested a better version/);
+  assert.match(diagnostics, /Muted by owner intent/);
+}
+
 function testTasteSeedRouteAndDocsWiring() {
   const route = readFileSync("app/api/library/import-taste-seed/route.ts", "utf8");
   assert.match(route, /dryRun/);
@@ -1140,6 +1267,11 @@ async function main() {
   testTasteSeedDryRunAndBoundaries();
   testTasteSeedIdempotentKeys();
   testNegativeTasteFiltersAffectScoring();
+  testIntentStatesAffectRadarScoringAndResurfacing();
+  testIntentActionRouteAndBehaviorWiring();
+  testDiscoveryQualityRejectsGenericJunk();
+  testQualityFiltersReachCandidateConversionAndPreviews();
+  testPromotionFollowThroughContract();
   testTasteSeedRouteAndDocsWiring();
   await testTasteSeedCommitWritesCirclePeople();
   testCandidateInboxConversionContract();

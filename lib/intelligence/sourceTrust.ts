@@ -1,5 +1,7 @@
 import "server-only";
 
+import { assessResultQuality } from "@/lib/sources/resultQuality";
+
 export type SourceTrustResult = {
   domain?: string;
   trustScore: number;
@@ -67,6 +69,16 @@ export function scoreSourceTrust(input: {
   let classificationHint: string | undefined;
 
   const trusted = root ? HIGH_TRUST[root] ?? HIGH_TRUST[domain ?? ""] : undefined;
+  const resultQuality = assessResultQuality({
+    url: input.url,
+    title: input.title,
+    snippet: input.snippet,
+  });
+  for (const flag of resultQuality.flags) flags.add(flag);
+  if (resultQuality.hardReject) {
+    trustScore -= 0.34;
+    sourceType = "directory";
+  }
   if (trusted) {
     trustScore += 0.28;
     sourceType = "trusted";

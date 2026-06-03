@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
+import { assessResultQuality } from "@/lib/sources/resultQuality";
 import type { RunBudget } from "@/lib/radar/foundationSprint";
 import type { Json, RadarCandidateInboxRow } from "@/lib/types/database";
 
@@ -76,6 +77,27 @@ export async function convertCandidateInboxToLibrary(input: {
           status: "rejected",
           rejection_reason: penalty,
           reason: { summary: penalty, source: "foundation_sprint" },
+        });
+        result.rejected++;
+        continue;
+      }
+      const quality = assessResultQuality({
+        title: row.title,
+        snippet: row.description,
+        url: row.url,
+        category: row.entity_type,
+        type: row.entity_type,
+      });
+      if (quality.hardReject) {
+        const reason = `Rejected by discovery quality filter: ${quality.reasons.join(" ") || quality.flags.join(", ")}.`;
+        await markCandidate(input.supabase, input.userId, row.id, {
+          status: "rejected",
+          rejection_reason: reason,
+          reason: {
+            summary: reason,
+            quality_flags: quality.flags,
+            source: "foundation_sprint_quality_filter",
+          },
         });
         result.rejected++;
         continue;

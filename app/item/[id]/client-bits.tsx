@@ -13,7 +13,12 @@ type ItemActionName =
   | "move-radar"
   | "move-holding"
   | "add-upcoming"
-  | "remove-upcoming";
+  | "remove-upcoming"
+  | "save-taste"
+  | "interested-later"
+  | "watch"
+  | "better-version"
+  | "mute";
 
 export function GeneratePlanButton({
   itemId,

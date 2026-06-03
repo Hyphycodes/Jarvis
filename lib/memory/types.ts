@@ -1,3 +1,5 @@
+import type { WatchConditions } from "@/lib/items/intents";
+
 export type MemoryType =
   | "taste"
   | "avoidance"
@@ -64,6 +66,7 @@ export type UserBehaviorSignal =
   | { type: "item.save"; itemId: string; category?: string; learning?: BehaviorLearningPayload }
   | { type: "item.pass"; itemId: string; category?: string; learning?: BehaviorLearningPayload }
   | { type: "item.plan"; itemId: string; planId?: string; learning?: BehaviorLearningPayload }
+  | { type: "item.intent"; itemId: string; intent: string; category?: string; learning?: BehaviorLearningPayload }
   | { type: "item.complete"; itemId: string }
   | { type: "item.archive"; itemId: string; learning?: BehaviorLearningPayload }
   | { type: "item.restore"; itemId: string }
@@ -96,4 +99,6 @@ export type BehaviorLearningPayload = {
   reasonSurfaced?: string;
   actionTitle?: string;
   passReason?: string;
+  intent?: string;
+  watchConditions?: WatchConditions;
 };

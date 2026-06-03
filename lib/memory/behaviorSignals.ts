@@ -70,6 +70,7 @@ function canonicalBehavior(
     entity_type: entityType,
   };
   if ("category" in signal && signal.category) metadata.category = signal.category;
+  if ("intent" in signal && signal.intent) metadata.intent = signal.intent;
   if ("planId" in signal && signal.planId) metadata.plan_id = signal.planId;
   if ("itemId" in signal && signal.itemId) metadata.item_id = signal.itemId;
   if ("scheduledDate" in signal) metadata.scheduled_date = signal.scheduledDate;
@@ -107,6 +108,8 @@ function proposalContent(signal: UserBehaviorSignal, subjectId: string) {
       return `Passed item: ${subjectId}`;
     case "item.plan":
       return `Planned item: ${subjectId}`;
+    case "item.intent":
+      return `Marked item intent: ${subjectId}`;
     case "item.complete":
       return `Completed item: ${subjectId}`;
     case "item.open":

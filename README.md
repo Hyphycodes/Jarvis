@@ -19,7 +19,9 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
 - **Library Control Room:** `/settings/library` shows run state, provider blockers, activity, Foundation Sprint progress, current/next mission, and owner controls for run/pause/resume/stop-after-current-step.
 - **Foundation visibility:** the control room also previews Candidate Inbox, Source Graph, Places, Events, rejected/muted rows, and Tier A/B/C inventory so the owner can inspect what Jarvis is finding before Radar.
-- **Radar promotion diagnostics:** `/settings/library` explains why Radar is quiet by reviewing Candidate Inbox, Holding, Tier A/B Library rows, and Event Pulse rows. Raw candidates never promote directly; eligible front-room moves still go through Holding/curation gates.
+- **Intent-aware Radar actions:** Radar keeps the primary Save / Plan / Pass actions, with secondary Later / Watch / Better Version / Save Taste intent states that tune timing, Source Graph learning, and future discovery without repeating unchanged items.
+- **Radar promotion diagnostics:** `/settings/library` explains why Radar is quiet by reviewing Candidate Inbox, Holding, Tier A/B Library rows, and Event Pulse rows. Raw candidates never promote directly; eligible front-room moves still go through Holding/curation gates, and eligible-but-not-promoted reviews must log a final blocker.
+- **Discovery quality filters:** provider results are screened for generic directories, broad SEO lists, chain retail mismatch, hotel/travel aggregator mismatch, and generic event pages before they can pollute Candidate Inbox or Library conversion. Specific event/place pages can still pass when mission-aligned.
 - **Taste Seed Importer:** owner-provided markdown taste context can be dry-run or committed into Circle, Library, Source Graph, memory, taste signals, and negative scoring filters without becoming static Radar content.
 
 **Brain pipeline (5 agents + Decision Council):**

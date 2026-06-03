@@ -37,6 +37,14 @@ export function evaluateBehaviorForMemory(
       return itemProposal("avoidance", 0.48, "weak", signal.itemId, signal.type);
     case "item.plan":
       return itemProposal("taste", 0.7, "strong", signal.itemId, signal.type);
+    case "item.intent":
+      if (signal.intent === "better_version" || signal.intent === "muted") {
+        return itemProposal("avoidance", 0.56, "medium", signal.itemId, signal.type);
+      }
+      if (signal.intent === "interested_later" || signal.intent === "watching" || signal.intent === "saved_reference") {
+        return itemProposal("taste", 0.58, "medium", signal.itemId, signal.type);
+      }
+      return noProposal("Intent was recorded as behavior but is not durable enough for memory.");
     case "item.complete":
       return itemProposal("confirmed_behavior", 0.82, "strongest", signal.itemId, signal.type);
     case "item.open":

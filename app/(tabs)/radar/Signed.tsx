@@ -281,6 +281,7 @@ function RadarCard({
   const [passing, setPassing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [intentOpen, setIntentOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const hasMedia = Boolean(card.imageUrl) || Boolean(card.placeholderKind);
@@ -301,6 +302,24 @@ function RadarCard({
         setSaved(false);
         setError((err as Error).message);
         console.error("radar action failed", err);
+      }
+    });
+  }
+
+  function persistIntent(action: "interested-later" | "watch" | "better-version" | "save-taste") {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok || json.error) {
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        setTimeout(onDismiss, action === "save-taste" ? 180 : 260);
+        onPersistedAction();
+      } catch (err) {
+        setError((err as Error).message);
+        console.error("radar intent action failed", err);
       }
     });
   }
@@ -437,7 +456,51 @@ function RadarCard({
           Pass
         </button>
       </div>
+      <div className="border-t border-white/[0.035] px-4 py-2">
+        {intentOpen ? (
+          <div className="grid grid-cols-4 gap-1.5">
+            <IntentChip label="Later" disabled={pending} onClick={() => persistIntent("interested-later")} />
+            <IntentChip label="Watch" disabled={pending} onClick={() => persistIntent("watch")} />
+            <IntentChip label="Better" disabled={pending} onClick={() => persistIntent("better-version")} />
+            <IntentChip label="Taste" disabled={pending} onClick={() => persistIntent("save-taste")} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setIntentOpen(true)}
+            className="w-full py-1.5 text-[10px] uppercase tracking-[0.2em] text-warm-ivory/34 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/58 disabled:opacity-40"
+          >
+            More intent
+          </button>
+        )}
+      </div>
     </article>
+  );
+}
+
+function IntentChip({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      }}
+      className="min-h-8 rounded-full border border-white/[0.055] px-2 text-[9px] uppercase tracking-[0.16em] text-warm-ivory/44 transition-colors duration-300 ease-atmospheric hover:border-muted-gold/30 hover:text-muted-gold disabled:opacity-35"
+    >
+      {label}
+    </button>
   );
 }
 

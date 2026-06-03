@@ -161,6 +161,33 @@ export function ConsiderationBrief({
               variant="secondary"
             />
 
+            <div className="grid grid-cols-2 gap-3">
+              <ItemActionButton
+                itemId={itemId}
+                action="interested-later"
+                label="Later"
+                variant="ghost"
+              />
+              <ItemActionButton
+                itemId={itemId}
+                action="watch"
+                label="Watch"
+                variant="ghost"
+              />
+              <ItemActionButton
+                itemId={itemId}
+                action="better-version"
+                label="Better Version"
+                variant="ghost"
+              />
+              <ItemActionButton
+                itemId={itemId}
+                action="save-taste"
+                label="Save Taste"
+                variant="ghost"
+              />
+            </div>
+
             <div className="h-px bg-white/[0.07]" />
 
             <div className="grid grid-cols-2 gap-3">
@@ -172,8 +199,8 @@ export function ConsiderationBrief({
               />
               <ItemActionButton
                 itemId={itemId}
-                action="archive"
-                label="Archive"
+                action="mute"
+                label="Mute"
                 variant="ghost"
               />
             </div>

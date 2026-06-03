@@ -159,6 +159,13 @@ and weak quality cool them down. Strong sources recheck in 6-24 hours, normal
 sources in 24-72 hours, weak sources in 7+ days, and muted/retired sources stay
 quiet.
 
+Intent feedback adds nuance to Source Graph without overfitting one action.
+Save and Plan are strong positive signals. Interested Later and Watching are
+positive lane/source signals but should lower active resurfacing priority for
+the exact item. Better Version penalizes the exact item while keeping the
+category alive for adjacent search. Pass and Mute cool the item/source/category,
+with Mute treated as the stronger negative signal.
+
 Bootstrap source seeding also captures real provider result domains/articles as
 `intelligence_sources` and `radar_candidate_inbox` source candidates. This lets
 Jarvis learn where quality comes from even before an article yields a durable
@@ -171,6 +178,13 @@ durable places to `places_library`, writes events to `current_events` only when
 exact provider dates exist, upserts sources to Source Graph, and marks weak or
 ambiguous rows with reasons. It stops when the time budget is near and does not
 write directly to Active Radar.
+
+Result quality filters are applied to provider output and conversion. Generic
+directories, broad SEO/list pages, chain retail mismatch, hotel/travel
+aggregators, generic Eventbrite category pages, and mission-mismatched source
+leads should be rejected or heavily downranked with visible reasons. Specific
+event pages, specific venue/restaurant pages, and mission-aligned local sources
+can still pass; the goal is to reject junk without banning useful domains.
 
 The owner can inspect the hidden layers from `/settings/library`. The page
 shows latest Candidate Inbox rows, Source Graph rows, Places, Events,

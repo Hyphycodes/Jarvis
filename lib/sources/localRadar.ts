@@ -670,7 +670,18 @@ function shouldRejectSearchResult(input: {
   });
   if (
     trust.qualityFlags.some((flag) =>
-      ["raw_comment", "directory_spam", "closed_event", "expired_event"].includes(flag),
+      [
+        "raw_comment",
+        "directory_spam",
+        "closed_event",
+        "expired_event",
+        "generic_directory",
+        "hotel_aggregator_mismatch",
+        "chain_retail_mismatch",
+        "generic_event_page",
+        "broad_seo_list",
+        "mission_mismatch",
+      ].includes(flag),
     )
   ) {
     return true;
@@ -678,7 +689,7 @@ function shouldRejectSearchResult(input: {
   if (/#\w+/.test(title) || /comments?\s+and\s+posts|profile\s+photos/i.test(title)) {
     return true;
   }
-  if (/near me|coupon|groupon|tripadvisor|yelp|directory|yellow pages|mapquest/i.test(haystack)) {
+  if (/near me|coupon|groupon|tripadvisor|yelp|directory|yellow pages|mapquest|trivago|hotel deals|men'?s wearhouse/i.test(haystack)) {
     return true;
   }
   if (/^(best|top)\s+\d+\b/i.test(title) && !extractLeadName(title, snippet)) {

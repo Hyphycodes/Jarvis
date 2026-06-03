@@ -8,7 +8,9 @@ import type {
   Json,
   PlacesLibraryRow,
   RadarCandidateInboxRow,
+  SurfacedItemRow,
 } from "@/lib/types/database";
+import { readItemIntent } from "@/lib/items/intents";
 
 export type LibraryPreviewCandidate = {
   id: string;
@@ -70,6 +72,16 @@ export type LibraryPreviewRejected = {
   rejectedAt: string;
 };
 
+export type LibraryPreviewIntentItem = {
+  id: string;
+  title: string;
+  status: string;
+  destination: string;
+  intent: string;
+  reason: string | null;
+  updatedAt: string;
+};
+
 export type LibraryPreview = {
   candidates: LibraryPreviewCandidate[];
   sources: LibraryPreviewSource[];
@@ -81,6 +93,7 @@ export type LibraryPreview = {
     B: LibraryPreviewEntity[];
     C: LibraryPreviewEntity[];
   };
+  intentItems: LibraryPreviewIntentItem[];
 };
 
 export async function readLibraryPreview(input: {
@@ -98,6 +111,7 @@ export async function readLibraryPreview(input: {
     eventRes,
     rejectedCandidateRes,
     mutedSourceRes,
+    intentRes,
   ] = await Promise.all([
     supabase
       .from("radar_candidate_inbox")
@@ -138,6 +152,13 @@ export async function readLibraryPreview(input: {
       .in("status", ["cooldown", "muted", "retired"])
       .order("updated_at", { ascending: false })
       .limit(limit),
+    supabase
+      .from("surfaced_items")
+      .select("*")
+      .eq("user_id", input.userId)
+      .in("planning_state", ["saved_reference", "interested_later", "watching", "better_version", "muted"])
+      .order("updated_at", { ascending: false })
+      .limit(limit),
   ]);
 
   const places = ((placeRes.data ?? []) as PlacesLibraryRow[]).map(placePreviewEntity);
@@ -157,6 +178,7 @@ export async function readLibraryPreview(input: {
       B: allEntities.filter((entity) => entity.tier === "B").slice(0, limit),
       C: allEntities.filter((entity) => entity.tier === "C").slice(0, limit),
     },
+    intentItems: ((intentRes.data ?? []) as SurfacedItemRow[]).map(intentPreview),
   };
 }
 
@@ -254,6 +276,19 @@ function rejectedSourcePreview(row: IntelligenceSourceRow): LibraryPreviewReject
     status: row.status,
     reason: reasonSummary(row.metadata) ?? `Source status is ${row.status}.`,
     rejectedAt: row.updated_at,
+  };
+}
+
+function intentPreview(row: SurfacedItemRow): LibraryPreviewIntentItem {
+  const intent = readItemIntent(row.payload);
+  return {
+    id: row.id,
+    title: row.title ?? "Untitled item",
+    status: row.status,
+    destination: row.destination,
+    intent: intent?.state ?? row.planning_state,
+    reason: intent?.reason ?? null,
+    updatedAt: row.updated_at,
   };
 }
 

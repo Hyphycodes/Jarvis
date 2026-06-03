@@ -1,5 +1,6 @@
 import { scoreCandidate } from "@/lib/scoring/scoreCandidate";
 import { computeNorthAlignment, type NorthAlignment } from "@/lib/context/types";
+import { readItemIntent } from "@/lib/items/intents";
 import type { ScoreBreakdown, ScoringContext } from "@/lib/scoring/types";
 import type { IndexedItem } from "@/lib/index/types";
 import type { NormalizedCandidate } from "@/lib/ai/types";
@@ -174,6 +175,19 @@ export function scoreIndexedItem(
   }
 
   // Existing user-action lifecycle hints.
+  const intent = readItemIntent(item.rawPayload);
+  if (intent?.state === "interested_later" || intent?.state === "watching") {
+    modifier -= 0.18;
+    reasons.push(`Held by owner intent: ${intent.state.replace(/_/g, " ")}`);
+  }
+  if (intent?.state === "better_version") {
+    modifier -= 0.22;
+    reasons.push("Owner asked Jarvis to find a better version");
+  }
+  if (intent?.state === "muted") {
+    modifier -= 0.5;
+    reasons.push("Muted by owner intent");
+  }
   if (item.status === "saved") {
     modifier += 0.1;
     reasons.push("Previously saved");

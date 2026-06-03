@@ -9,6 +9,7 @@ import {
 import { buildJarvisContext } from "@/lib/intelligence/context";
 import { enrichRadarItem } from "@/lib/intelligence/core";
 import { isPromotableWhenUnderfilled } from "@/lib/intelligence/radarCurator";
+import { readItemIntent } from "@/lib/items/intents";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import type {
@@ -259,6 +260,10 @@ function eventDiagnostic(row: CurrentEventRow): RadarPromotionDiagnostic {
 
 function promotionBlockers(item: RadarItem): string[] {
   return [
+    readItemIntent(item.item.rawPayload)?.state === "interested_later" ? "Owner marked this as interested later." : null,
+    readItemIntent(item.item.rawPayload)?.state === "watching" ? "Owner is watching this lane; do not repeat unchanged item." : null,
+    readItemIntent(item.item.rawPayload)?.state === "better_version" ? "Owner requested a better version of this lane." : null,
+    readItemIntent(item.item.rawPayload)?.state === "muted" ? "Muted by owner intent." : null,
     item.radarDisposition !== "active" ? `Radar disposition is ${item.radarDisposition}.` : null,
     item.score < RADAR_UNDERFILLED_PROMOTION_FLOOR ? `Score ${item.score.toFixed(2)} is below underfilled floor ${RADAR_UNDERFILLED_PROMOTION_FLOOR}.` : null,
     item.confidence < RADAR_UNDERFILLED_PROMOTION_FLOOR ? `Confidence ${item.confidence.toFixed(2)} is below medium floor.` : null,
