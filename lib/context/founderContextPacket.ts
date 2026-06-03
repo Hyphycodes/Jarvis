@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireOwner } from "@/lib/auth";
 import { normalizeWeeklyRhythm } from "@/lib/schedule/weeklyRhythm";
 import { getCurrentWeather } from "@/lib/sources/openMeteo";
@@ -38,13 +39,14 @@ export async function buildFounderContextPacket(options: {
   userId?: string;
   includeWeather?: boolean;
   now?: Date;
+  supabase?: SupabaseClient;
 } = {}): Promise<FounderContextPacket> {
   const owner = options.userId ? null : await requireOwner();
   const userId = options.userId ?? owner?.id;
   if (!userId) throw new Error("Missing user id");
 
   const now = options.now ?? new Date();
-  const supabase = await getServerSupabase();
+  const supabase = options.supabase ?? await getServerSupabase();
 
   const [
     profileRes,

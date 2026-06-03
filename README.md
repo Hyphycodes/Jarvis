@@ -14,6 +14,8 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Taste Strategist missions:** FounderContextPacket + Interest Graph + North + behavior produce exploration lanes before any source is called.
 - **Scout / Research / Curator:** Scout executes those missions against real sources, Curator and Decision Council decide what is worth attention, and weak output stays quiet.
 - **Seed sources:** static curated URLs and query pools are gated seeds/fallbacks, not the core intelligence. Location-specific seeds only run when profile/location context supports them.
+- **Radar Autopilot:** background health checks choose no-op, refill, Holding build, Candidate Inbox build, Library build/refresh, event pulse, or Source Graph work.
+- **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
 
 **Brain pipeline (5 agents + Decision Council):**
 1. Taste Strategist — derives interest lanes and source plan from the Interest Graph
@@ -43,6 +45,7 @@ Each agent uses `generateStructured<T>` with Zod-validated output and determinis
 - Memory + behavior signal infrastructure
 - Canonical FounderContextPacket shared by Radar, Today, Circle, North, plans, chat/voice, cron, and Scout
 - Reusable IntelligenceReason payload for "Why this?" explanations
+- Candidate Inbox for raw discoveries before they reach Library, Holding, or Radar
 - Library Refresher — catches chef changes, closures, new menus
 
 ## Stack
@@ -101,7 +104,7 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 
 1. Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`
 2. Supabase Auth → URL Configuration: set Site URL and add `${SITE_URL}/auth/callback` to Redirect URLs
-3. Apply migrations in `supabase/migrations/` (0001–0011) in the SQL Editor
+3. Apply migrations in `supabase/migrations/` (0001–0012) in the SQL Editor
 4. Visit `/login`, sign in with magic link
 5. Run in Supabase SQL Editor: `select public.seed_founder('your-email@example.com');`
 6. Refresh `/settings` — role should read `owner`
@@ -114,6 +117,7 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 | ------------------- | -------------------------------- | ------------------------------------------------|
 | Daily 12:00 UTC     | `/api/intelligence/run?run_type=daily_maintenance` | Cleanup, pattern detection, day-of promotion |
 | Fridays 21:00 UTC   | `/api/intelligence/run?run_type=weekend_preview`   | Weekend curation pass                        |
+| Every 2 hours        | `/api/radar/autopilot`          | Chooses the next Radar/Library operation       |
 | Daily 8:00 UTC      | `/api/library/scout`             | Runs mission-based Scout discovery              |
 | Daily 9:00 UTC      | `/api/library/process-candidates`| Researches and verdicts pending candidates      |
 | Every 2 days 10:00 UTC | `/api/events/scout`           | Discovers upcoming events                       |
@@ -131,20 +135,24 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 /lib/intelligence      Ambient runs, library worker, event worker, pattern detector
 /lib/memory            Long-term memory layer
 /lib/sources           External API adapters (Tavily, Brave, Ticketmaster, Mapbox...)
+/lib/library           Living Library and Source Graph helpers
+/lib/radar             Autopilot, campaigns, Candidate Inbox
 /lib/brain/refresher   Library refresher agent
-/supabase/migrations   Schema migrations (0001–0011)
+/supabase/migrations   Schema migrations (0001–0012)
 ```
 
 ## How the brain works
 
 1. **Context packet** (`lib/context/founderContextPacket.ts`) gathers real user context only: North, Radar actions, Today plans/events, Circle moments, memory, behavior, time, and available weather/location.
-2. **Taste Strategist** reads the BrainContext + Interest Graph → outputs exploration missions before any external source call.
-3. **Scout** (`lib/brain/scout.ts`) executes strategist missions first. Static curated queries/URLs are gated seeds/fallbacks only.
-4. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
-5. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring, North alignment, and curation guardrails.
-6. **IntelligenceReason + IntelligenceTrace** record why Jarvis chose or rejected something in compact structured form.
-7. **Routed actions** from Radar, Today, plans, chat/voice, and item actions write behavior signals and memory proposals.
-8. **Future context packets** read those real behavior/memory signals, so recommendations improve without fake filler.
+2. **Autopilot health check** reads Active Radar, Holding, Candidate Inbox, Living Library, Source Graph, event freshness, Today/Circle/North readiness, and recent behavior.
+3. **Campaign planner** chooses the next useful operation: no-op, refill, Holding/Candidate Inbox/Library build, event pulse, source recheck, weekend/after-work/Circle/North campaign, or cleanup.
+4. **Scout / source graph / Library workers** execute bounded discovery. Raw discoveries go to Candidate Inbox first; researched durable entities go to Library.
+5. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
+6. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring, North alignment, and curation guardrails.
+7. **Holding and Active Radar** stay conservative: Library items and Candidate Inbox rows do not automatically become Active Radar.
+8. **IntelligenceReason + IntelligenceTrace** record why Jarvis chose or rejected something in compact structured form.
+9. **Routed actions** from Radar, Today, plans, chat/voice, and item actions write behavior signals, source stats, and memory proposals.
+10. **Future context packets** read those real behavior/memory/source signals, so recommendations improve without fake filler.
 
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 

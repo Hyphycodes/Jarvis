@@ -1,6 +1,8 @@
 import "server-only";
 
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { qualityTierFromScore } from "@/lib/library/quality";
+import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { researchPlace } from "@/lib/brain/researcher";
 import { writeVerdict } from "@/lib/brain/verdictWriter";
 import type { BrainContextPacket } from "@/lib/brain/types";
@@ -38,7 +40,7 @@ export async function processCandidates(
   userId: string,
   limit: number = DEFAULT_LIMIT,
 ): Promise<{ researched: number; rejected: number; errors: string[] }> {
-  const supabase = await getServerSupabase();
+  const supabase = getSupabaseServiceClient();
 
   let researched = 0;
   let rejected = 0;
@@ -118,6 +120,8 @@ export async function processCandidates(
         sources_cited: dossier.sources_cited as unknown,
         verdict: verdict.verdict,
         verdict_strength: verdict.verdict_strength,
+        quality_score: verdict.verdict_strength,
+        quality_tier: qualityTierFromScore(verdict.verdict_strength),
         best_for: verdict.best_for,
         not_for: verdict.not_for,
         compared_to: verdict.compared_to,
@@ -140,6 +144,22 @@ export async function processCandidates(
 
       // Mark candidate as researched and link to library entry
       const libraryId = (upserted as { id: string }).id;
+      const sourceId = await upsertSourceFromLibraryEntity({
+        userId,
+        title: dossier.canonical_name,
+        url: discoveredVia,
+        entityType: "place",
+        qualityScore: verdict.verdict_strength,
+        topics: dossier.vibe_keywords,
+        supabase,
+      });
+      if (sourceId) {
+        await supabase
+          .from("places_library")
+          .update({ source_id: sourceId, updated_at: now })
+          .eq("id", libraryId)
+          .eq("user_id", userId);
+      }
       await supabase
         .from("place_candidates")
         .update({

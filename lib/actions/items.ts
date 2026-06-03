@@ -10,6 +10,7 @@ import {
   safeWriteIntelligenceTrace,
   type IntelligenceTraceSurface,
 } from "@/lib/brain/intelligenceTrace";
+import { updateSourceStatsFromAction } from "@/lib/library/sourceGraph";
 import {
   getIndexItem,
   updateIndexItemStatus,
@@ -60,6 +61,14 @@ async function transition(
   }
 
   await recordBehaviorSignal(signal);
+  const sourceAction = sourceActionForSignal(signal.type);
+  if (sourceAction) {
+    await updateSourceStatsFromAction({
+      userId: owner.id,
+      item: existing,
+      action: sourceAction,
+    });
+  }
   await safeWriteIntelligenceTrace({
     userId: owner.id,
     route: "lib/actions/items.transition",
@@ -114,6 +123,23 @@ async function transition(
     status: nextStatus,
     destination: options.nextDestination ?? existing.destination,
   };
+}
+
+function sourceActionForSignal(signalType: UserBehaviorSignal["type"]) {
+  switch (signalType) {
+    case "item.save":
+      return "saved";
+    case "item.pass":
+      return "passed";
+    case "item.plan":
+      return "planned";
+    case "item.complete":
+      return "completed";
+    case "item.archive":
+      return "archived";
+    default:
+      return null;
+  }
 }
 
 function traceSurfaceForDestination(destination: IndexDestination): IntelligenceTraceSurface {

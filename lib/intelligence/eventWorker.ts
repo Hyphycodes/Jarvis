@@ -1,30 +1,13 @@
 import "server-only";
 
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { buildBrainContext } from "@/lib/brain/context";
 import { writeEventVerdict } from "@/lib/brain/eventVerdict";
-import type { BrainContextPacket } from "@/lib/brain/types";
-import type { CurrentEventRow, FounderProfileRow, PlacesLibraryRow } from "@/lib/types/database";
+import { qualityTierFromScore } from "@/lib/library/quality";
+import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
+import type { CurrentEventRow, PlacesLibraryRow } from "@/lib/types/database";
 
 const DEFAULT_LIMIT = 20;
-
-// ── Minimal context builder (no session required — for cron use) ───────────────
-
-function buildMinimalContext(founder: FounderProfileRow | null): BrainContextPacket {
-  return {
-    now: new Date().toISOString(),
-    founder: {
-      vibeKeywords: founder?.vibe_keywords ?? [],
-      avoidKeywords: founder?.avoid_keywords ?? [],
-      dealbreakers: founder?.dealbreakers ?? [],
-      pinnedPrinciples: founder?.pinned_principles ?? [],
-    },
-    memory: [],
-    recentSignals: [],
-    recentActions: [],
-    northTags: [],
-    people: [],
-  };
-}
 
 // ── Why-now string for surfaced_items ─────────────────────────────────────────
 
@@ -50,21 +33,14 @@ export async function processEventCandidates(
   userId: string,
   limit: number = DEFAULT_LIMIT,
 ): Promise<{ surfaced: number; held: number; rejected: number; errors: string[] }> {
-  const supabase = await getServerSupabase();
+  const supabase = getSupabaseServiceClient();
 
   let surfaced = 0;
   let held = 0;
   let rejected = 0;
   const errors: string[] = [];
 
-  // Fetch founder profile for taste context
-  const { data: founder } = await supabase
-    .from("founder_profile")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  const context = buildMinimalContext(founder as FounderProfileRow | null);
+  const context = await buildBrainContext({ userId, includeWeather: false, supabase });
 
   // Fetch pending events, soonest first, hard-capped
   const { data: candidates, error: fetchError } = await supabase
@@ -108,6 +84,8 @@ export async function processEventCandidates(
             status: "rejected",
             verdict: verdict.verdict,
             verdict_strength: verdict.verdict_strength,
+            quality_score: verdict.verdict_strength,
+            quality_tier: "rejected",
             updated_at: now,
           })
           .eq("id", event.id);
@@ -116,6 +94,16 @@ export async function processEventCandidates(
       }
 
       const newStatus = verdict.recommended_action === "surface_radar" ? "surfaced" : "verified";
+      const sourceId = await upsertSourceFromLibraryEntity({
+        userId,
+        title: event.venue_name,
+        url: event.ticket_url ?? event.discovered_via,
+        sourceKey: event.discovered_via,
+        entityType: "event",
+        qualityScore: verdict.verdict_strength,
+        topics: event.vibe_keywords,
+        supabase,
+      });
 
       // Update the event row
       await supabase
@@ -124,6 +112,9 @@ export async function processEventCandidates(
           status: newStatus,
           verdict: verdict.verdict,
           verdict_strength: verdict.verdict_strength,
+          quality_score: verdict.verdict_strength,
+          quality_tier: qualityTierFromScore(verdict.verdict_strength),
+          source_id: sourceId,
           updated_at: now,
         })
         .eq("id", event.id);

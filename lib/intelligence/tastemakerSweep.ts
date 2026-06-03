@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { hasTavily, extractUrls } from "@/lib/sources/tavily";
 import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import type { TastemakerRow } from "@/lib/types/database";
@@ -93,7 +93,7 @@ function dedupeKey(venue: string, startsAt: string): string {
 export async function sweepTastemakers(
   userId: string,
 ): Promise<{ checked: number; new_signals: number }> {
-  const supabase = await getServerSupabase();
+  const supabase = getSupabaseServiceClient();
   let checked = 0;
   let new_signals = 0;
 

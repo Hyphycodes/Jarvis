@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import type { IntelligenceReason } from "@/lib/brain/intelligenceReason";
 import type { FounderContextPacket, NorthAlignment } from "@/lib/context/types";
@@ -93,6 +94,13 @@ export async function writeIntelligenceTrace(
 ): Promise<string | null> {
   const { getServerSupabase } = await import("@/lib/supabase/ssr-server");
   const supabase = await getServerSupabase();
+  return writeIntelligenceTraceWithClient(input, supabase);
+}
+
+export async function writeIntelligenceTraceWithClient(
+  input: IntelligenceTraceInput,
+  supabase: SupabaseClient,
+): Promise<string | null> {
   const { data, error } = await supabase
     .from("intelligence_traces")
     .insert({

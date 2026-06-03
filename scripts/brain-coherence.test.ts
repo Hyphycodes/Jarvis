@@ -15,6 +15,14 @@ import {
   safeWriteIntelligenceTrace,
 } from "../lib/brain/intelligenceTrace";
 import { buildScoutMissions, isChicagoLike } from "../lib/brain/scoutMissions";
+import {
+  chooseRadarAutopilotOperation,
+  type RadarAutopilotHealth,
+} from "../lib/radar/autopilotPolicy";
+import { planRadarCampaigns } from "../lib/radar/campaigns";
+import { qualityTierFromScore } from "../lib/library/quality";
+import type { LibraryHealth } from "../lib/library/types";
+import { scoreSourceQuality } from "../lib/library/sourceScoring";
 import type { ExplorationLane } from "../lib/brain/tasteStrategist";
 import type { IndexedItem } from "../lib/index/types";
 
@@ -325,6 +333,150 @@ function testRadarRejectionHasStructuredReason() {
   assert.equal(reason.sourceStrength, "weak");
 }
 
+function healthyLibrary(overrides: Partial<LibraryHealth> = {}): LibraryHealth {
+  return {
+    places: 90,
+    events: 35,
+    sources: 30,
+    organizations: 4,
+    people: 24,
+    recurringSignals: 4,
+    pendingCandidates: 80,
+    rejectedMuted: 20,
+    needsRefresh: 0,
+    tierA: 16,
+    tierB: 28,
+    tierC: 40,
+    depthScore: 0.82,
+    ...overrides,
+  };
+}
+
+function autopilotHealth(overrides: Partial<RadarAutopilotHealth> = {}): RadarAutopilotHealth {
+  return {
+    activeCount: 7,
+    holdingCount: 24,
+    candidateInboxCount: 60,
+    sourceCount: 18,
+    sourcesDue: 0,
+    library: healthyLibrary(),
+    eventFreshnessDays: 1,
+    weekendReady: false,
+    afterWorkReady: false,
+    circleReady: false,
+    northReady: true,
+    ...overrides,
+  };
+}
+
+function testAutopilotOperationSelection() {
+  assert.equal(
+    chooseRadarAutopilotOperation({ health: autopilotHealth(), campaigns: [] }),
+    "no_op",
+  );
+  assert.equal(
+    chooseRadarAutopilotOperation({ health: autopilotHealth({ activeCount: 3 }), campaigns: [] }),
+    "front_room_refill",
+  );
+  assert.equal(
+    chooseRadarAutopilotOperation({ health: autopilotHealth({ holdingCount: 4 }), campaigns: [] }),
+    "holding_build",
+  );
+  assert.equal(
+    chooseRadarAutopilotOperation({
+      health: autopilotHealth({ candidateInboxCount: 8 }),
+      campaigns: [],
+    }),
+    "candidate_inbox_build",
+  );
+  assert.equal(
+    chooseRadarAutopilotOperation({
+      health: autopilotHealth({ library: healthyLibrary({ places: 4, depthScore: 0.1 }) }),
+      campaigns: [],
+    }),
+    "library_build",
+  );
+  assert.equal(
+    chooseRadarAutopilotOperation({ health: autopilotHealth({ sourceCount: 2 }), campaigns: [] }),
+    "source_building_campaign",
+  );
+}
+
+function testSourceGraphScoringAndCadence() {
+  const strong = scoreSourceQuality({
+    total_candidates: 12,
+    total_saved: 5,
+    total_planned: 3,
+    total_passed: 1,
+    total_library_items: 4,
+    trust_score: 0.75,
+    taste_fit_score: 0.75,
+    novelty_score: 0.7,
+    freshness_score: 0.7,
+  });
+  assert.equal(strong.status, "watching");
+  assert.ok(strong.cadenceHours <= 24);
+
+  const weak = scoreSourceQuality({
+    total_candidates: 20,
+    total_saved: 1,
+    total_planned: 0,
+    total_passed: 12,
+    duplicate_rate: 0.45,
+    trust_score: 0.35,
+    taste_fit_score: 0.25,
+  });
+  assert.equal(weak.status, "cooldown");
+  assert.ok(weak.cadenceHours >= 168);
+}
+
+function testCampaignPlannerUsesContext() {
+  const packet = emptyPacket();
+  packet.location.homeCity = "Austin";
+  packet.north.activePriorities = [
+    {
+      id: "north_1",
+      title: "Land ownership",
+      pillarId: "pillar_1",
+      summary: "Build the ownership lane.",
+      source: "test",
+    },
+  ];
+  const campaigns = planRadarCampaigns({
+    context: packet,
+    health: {
+      activeCount: 7,
+      holdingCount: 20,
+      candidateInboxCount: 40,
+      sourceCount: 2,
+      library: healthyLibrary({ places: 4, depthScore: 0.2 }),
+    },
+    now: new Date(now),
+  });
+  assert.equal(campaigns[0]?.kind, "source_building");
+  assert.ok(campaigns.some((campaign) => campaign.queryIdeas.join(" ").includes("Land ownership")));
+  assert.ok(campaigns.every((campaign) => !/Chicago|Schaumburg/.test(campaign.queryIdeas.join(" "))));
+}
+
+function testCandidateAndLibraryBoundaries() {
+  assert.equal(qualityTierFromScore(0.8), "A");
+  assert.equal(qualityTierFromScore(0.62), "B");
+  assert.equal(qualityTierFromScore(0.4), "C");
+  assert.equal(
+    chooseRadarAutopilotOperation({
+      health: autopilotHealth({
+        activeCount: 7,
+        holdingCount: 24,
+        candidateInboxCount: 100,
+        library: healthyLibrary({ depthScore: 0.9 }),
+        sourceCount: 20,
+      }),
+      campaigns: [],
+    }),
+    "no_op",
+  );
+}
+
 async function main() {
   testEmptyContextDoesNotInventData();
   testBehaviorPatterns();
@@ -340,6 +492,10 @@ async function main() {
   testEmptyMissionsDoNotCreateFakeDiscovery();
   testCircleMomentReason();
   testRadarRejectionHasStructuredReason();
+  testAutopilotOperationSelection();
+  testSourceGraphScoringAndCadence();
+  testCampaignPlannerUsesContext();
+  testCandidateAndLibraryBoundaries();
 
   console.log("brain coherence tests passed");
 }

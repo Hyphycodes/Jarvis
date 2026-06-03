@@ -7,7 +7,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { requireOwner } from "@/lib/auth";
 import { refillRadarBoard } from "@/lib/intelligence/radarRefill";
+import { runRadarAutopilot } from "@/lib/radar/autopilot";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,10 +18,16 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as { force?: unknown };
+    const owner = await requireOwner();
+    const autopilot = await runRadarAutopilot({
+      userId: owner.id,
+      mode: body.force ? "manual_force" : "owner_requested",
+      force: Boolean(body.force),
+    });
     const result = await refillRadarBoard({
       trigger: "manual_refresh",
       force: Boolean(body.force),
-      maxAttempts: 2,
+      maxAttempts: autopilot.operation === "front_room_refill" ? 1 : 0,
     });
     const lastRun = result.runs.at(-1);
     return NextResponse.json({
@@ -42,6 +50,19 @@ export async function POST(req: Request) {
       lanes_wildcard: 0,
       skipped_lane_ids: [],
       strategist_fallback_used: result.runs.some((run) => run.fallback_used),
+      autopilot,
+      active_count: autopilot.activeCount,
+      held_count: autopilot.holdingCount,
+      library_count:
+        (autopilot.libraryCounts?.places ?? 0) +
+        (autopilot.libraryCounts?.events ?? 0) +
+        (autopilot.libraryCounts?.sources ?? 0),
+      candidates_discovered: autopilot.candidatesDiscovered,
+      promoted: autopilot.candidatesPromoted,
+      sources_checked: autopilot.sourcesChecked,
+      sources_upgraded: autopilot.sourcesUpgraded,
+      sources_cooled_down: autopilot.sourcesCooledDown,
+      no_op_reason: autopilot.skipped ? autopilot.summary : undefined,
     });
   } catch (error) {
     if (error instanceof Error) {

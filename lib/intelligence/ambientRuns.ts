@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireOwner } from "@/lib/auth";
 import { anthropicStatus, hasAnthropic } from "@/lib/ai/anthropic";
 import { buildBrainContext } from "@/lib/brain/context";
@@ -22,6 +23,7 @@ import {
 import { expireOldCandidates, ingestCandidates } from "@/lib/sources/ingest";
 import { runDayOfPromotion } from "@/lib/scheduling/promoteItems";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   AMBIENT_RUN_POLICIES,
   decisionRunType,
@@ -68,6 +70,7 @@ export async function runAmbientIntelligence(input: {
   const owner = input.ownerUserId
     ? { id: input.ownerUserId }
     : await requireOwner();
+  const supabase = input.ownerUserId ? getSupabaseServiceClient() : await getServerSupabase();
   const runType = input.runType;
   const budget = await createIntelligenceBudget({
     userId: owner.id,
@@ -85,7 +88,7 @@ export async function runAmbientIntelligence(input: {
   }
 
   if (!input.force) {
-    const cd = await checkCooldown(owner.id, runType);
+      const cd = await checkCooldown(owner.id, runType, supabase);
     if (cd.blocked) {
       return emptySkipped(runType, cd.nextAllowedAt, budgetForLog(budget));
     }
@@ -113,7 +116,7 @@ export async function runAmbientIntelligence(input: {
   };
 
   try {
-    summary.expired = await expireOldCandidates();
+    summary.expired = await expireOldCandidates(owner.id);
   } catch (err) {
     summary.errors.push(`expire: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -127,12 +130,11 @@ export async function runAmbientIntelligence(input: {
     }
     summary.cleaned = await cleanupRadar(owner.id);
     try {
-      const supabase = await getServerSupabase();
       await detectAndProposePatterns(owner.id, supabase);
     } catch (err) {
       summary.errors.push(`patterns: ${err instanceof Error ? err.message : String(err)}`);
     }
-    summary.decision_run_id = await logAmbientRun(owner.id, runType, summary);
+    summary.decision_run_id = await logAmbientRun(owner.id, runType, summary, supabase);
     return { ...summary, budget: budgetForLog(workingBudget) };
   }
 
@@ -161,9 +163,9 @@ export async function runAmbientIntelligence(input: {
     return { ...summary, budget: budgetForLog(workingBudget) };
   }
 
-  const context = await buildBrainContext();
+  const context = await buildBrainContext({ userId: owner.id, supabase });
   const graph = buildInterestGraph({ context });
-  const inventory = await readInventoryCounts(owner.id);
+  const inventory = await readInventoryCounts(owner.id, supabase);
   const strategist = await runTasteStrategist({
     context,
     graph,
@@ -173,7 +175,7 @@ export async function runAmbientIntelligence(input: {
   workingBudget = recordBudgetUsage(workingBudget, {
     claudeCalls: strategist.fallbackUsed ? 0 : 1,
   });
-  const recentLaneIds = await readRecentLaneIds(owner.id);
+  const recentLaneIds = await readRecentLaneIds(owner.id, supabase);
   const curiosity = buildCuriosityPlan({
     lanes: strategist.output.lanes,
     graph,
@@ -236,11 +238,12 @@ export async function runAmbientIntelligence(input: {
   for (const lane of lanes) {
     const candidates = lane.candidates.slice(0, policy.maxCandidates);
     summary.candidates_found += candidates.length;
-    const ingest = await ingestCandidates({
-      source: lane.source,
-      candidates,
-      destination: lane.source === "ai" ? undefined : "radar",
-    });
+      const ingest = await ingestCandidates({
+        source: lane.source,
+        candidates,
+        destination: lane.source === "ai" ? undefined : "radar",
+        userId: owner.id,
+      });
     summary.inserted += ingest.inserted;
     summary.updated += ingest.updated;
     summary.errors.push(...ingest.errors);
@@ -288,9 +291,9 @@ function syntheticMovesEnabled(): boolean {
 async function checkCooldown(
   userId: string,
   runType: AmbientRunType,
+  supabase: SupabaseClient,
 ): Promise<{ blocked: boolean; nextAllowedAt?: string }> {
   try {
-    const supabase = await getServerSupabase();
     const policy = AMBIENT_RUN_POLICIES[runType];
     const legacyType = runType === "radar_discovery" ? "radar.refresh" : decisionRunType(runType);
     const { data } = await supabase
@@ -322,8 +325,8 @@ async function logAmbientRun(
   userId: string,
   runType: AmbientRunType,
   summary: AmbientRunSummary,
+  supabase: SupabaseClient,
 ): Promise<string | null> {
-  const supabase = await getServerSupabase();
   const { data, error } = await supabase
     .from("brain_decision_runs")
     .insert({
@@ -351,9 +354,9 @@ async function logAmbientRun(
 
 async function readInventoryCounts(
   userId: string,
+  supabase: SupabaseClient,
 ): Promise<{ active: number; holding: number }> {
   try {
-    const supabase = await getServerSupabase();
     const [activeRes, holdingRes] = await Promise.all([
       supabase
         .from("surfaced_items")
@@ -374,9 +377,8 @@ async function readInventoryCounts(
   }
 }
 
-async function readRecentLaneIds(userId: string): Promise<string[]> {
+async function readRecentLaneIds(userId: string, supabase: SupabaseClient): Promise<string[]> {
   try {
-    const supabase = await getServerSupabase();
     const { data } = await supabase
       .from("brain_decision_runs")
       .select("raw_output")

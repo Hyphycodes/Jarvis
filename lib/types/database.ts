@@ -1112,6 +1112,168 @@ export interface Database {
         };
         Relationships: [];
       };
+      radar_candidate_inbox: {
+        Row: {
+          id: string;
+          user_id: string;
+          source_id: string | null;
+          campaign_id: string | null;
+          title: string;
+          description: string | null;
+          url: string | null;
+          image_url: string | null;
+          entity_type: string;
+          raw_payload: Json;
+          discovered_at: string;
+          evaluated_at: string | null;
+          status: string;
+          score: number | null;
+          reason: Json | null;
+          rejection_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          source_id?: string | null;
+          campaign_id?: string | null;
+          title: string;
+          description?: string | null;
+          url?: string | null;
+          image_url?: string | null;
+          entity_type?: string;
+          raw_payload?: Json;
+          discovered_at?: string;
+          evaluated_at?: string | null;
+          status?: string;
+          score?: number | null;
+          reason?: Json | null;
+          rejection_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          source_id?: string | null;
+          campaign_id?: string | null;
+          title?: string;
+          description?: string | null;
+          url?: string | null;
+          image_url?: string | null;
+          entity_type?: string;
+          raw_payload?: Json;
+          discovered_at?: string;
+          evaluated_at?: string | null;
+          status?: string;
+          score?: number | null;
+          reason?: Json | null;
+          rejection_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      intelligence_sources: {
+        Row: {
+          id: string;
+          user_id: string;
+          source_key: string;
+          source_type: string;
+          url: string | null;
+          domain: string | null;
+          name: string | null;
+          city: string | null;
+          topics: string[];
+          trust_score: number;
+          taste_fit_score: number;
+          novelty_score: number;
+          freshness_score: number;
+          save_rate: number;
+          pass_rate: number;
+          plan_rate: number;
+          duplicate_rate: number;
+          total_candidates: number;
+          total_library_items: number;
+          total_promoted: number;
+          total_saved: number;
+          total_passed: number;
+          total_planned: number;
+          last_checked_at: string | null;
+          next_check_at: string | null;
+          cadence_hours: number;
+          status: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          source_key: string;
+          source_type?: string;
+          url?: string | null;
+          domain?: string | null;
+          name?: string | null;
+          city?: string | null;
+          topics?: string[];
+          trust_score?: number;
+          taste_fit_score?: number;
+          novelty_score?: number;
+          freshness_score?: number;
+          save_rate?: number;
+          pass_rate?: number;
+          plan_rate?: number;
+          duplicate_rate?: number;
+          total_candidates?: number;
+          total_library_items?: number;
+          total_promoted?: number;
+          total_saved?: number;
+          total_passed?: number;
+          total_planned?: number;
+          last_checked_at?: string | null;
+          next_check_at?: string | null;
+          cadence_hours?: number;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          source_key?: string;
+          source_type?: string;
+          url?: string | null;
+          domain?: string | null;
+          name?: string | null;
+          city?: string | null;
+          topics?: string[];
+          trust_score?: number;
+          taste_fit_score?: number;
+          novelty_score?: number;
+          freshness_score?: number;
+          save_rate?: number;
+          pass_rate?: number;
+          plan_rate?: number;
+          duplicate_rate?: number;
+          total_candidates?: number;
+          total_library_items?: number;
+          total_promoted?: number;
+          total_saved?: number;
+          total_passed?: number;
+          total_planned?: number;
+          last_checked_at?: string | null;
+          next_check_at?: string | null;
+          cadence_hours?: number;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       north_signals: {
         Row: {
           id: string;
@@ -1208,6 +1370,10 @@ export type BrainDecisionRunRow =
   Database["public"]["Tables"]["brain_decision_runs"]["Row"];
 export type IntelligenceTraceRow =
   Database["public"]["Tables"]["intelligence_traces"]["Row"];
+export type RadarCandidateInboxRow =
+  Database["public"]["Tables"]["radar_candidate_inbox"]["Row"];
+export type IntelligenceSourceRow =
+  Database["public"]["Tables"]["intelligence_sources"]["Row"];
 
 // Standalone types for tables added in migration 0007
 export type CurrentEventRow = {
@@ -1228,6 +1394,9 @@ export type CurrentEventRow = {
   sources_cited: unknown;
   verdict: string | null;
   verdict_strength: number | null;
+  quality_tier?: string | null;
+  quality_score?: number | null;
+  source_id?: string | null;
   occasion_type?: string | null;
   discovered_at: string;
   discovered_via: string | null;
@@ -1286,6 +1455,10 @@ export type PlacesLibraryRow = {
   sources_cited: unknown;
   verdict: string | null;
   verdict_strength: number | null;
+  quality_tier?: string | null;
+  quality_score?: number | null;
+  next_refresh_at?: string | null;
+  source_id?: string | null;
   best_for: string[];
   not_for: string[];
   compared_to: string | null;

@@ -32,6 +32,10 @@
 - **brain_decision_runs** — run-level curation snapshots and strategy summaries
 - **intelligence_traces** — compact best-effort per-decision traces for Radar,
   Today, Scout, plans, chat/voice, Circle, North, and cron decisions
+- **radar_candidate_inbox** — raw/evaluation layer for aggressive discovery
+  before anything reaches Library, Holding, or Active Radar
+- **intelligence_sources** — Source Graph for publications, domains, venues,
+  calendars, tastemakers, organizers, authors, and search patterns
 
 ## Current policy
 
@@ -41,6 +45,12 @@
 - Use `intelligence_traces` for explainability: compact context summary,
   reasoning, candidates considered, rejected alternatives, North alignment,
   behavior/Circle/memory influence, source quality, confidence, and outcome.
+- Use `radar_candidate_inbox` for raw candidates. Candidate Inbox items do not
+  surface directly.
+- Use existing `places_library`, `current_events`, and `tastemakers` as the
+  Living Library. Quality tiers are metadata for curation, not a browsing UI.
+- Use `intelligence_sources` for source learning and adaptive cadence. It is
+  not an API uptime table.
 - Do not add fake production rows to fill empty states. Synthetic rows belong
   only in tests or QA-only helpers.
 

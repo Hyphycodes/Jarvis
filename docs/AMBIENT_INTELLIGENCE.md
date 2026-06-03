@@ -34,11 +34,13 @@ budget into `brain_decision_runs.raw_output.budget`.
 ## Endpoints
 
 - `POST /api/intelligence/run`
+- `GET /api/radar/autopilot`
 - `POST /api/radar/refresh` (manual debug path, runs bounded Radar refill)
 - `POST /api/radar/cleanup`
 
-The code is cron-ready in shape, but automatic Vercel Cron should only be wired
-after cadence and budget are monitored in production.
+Radar Autopilot is wired to Vercel Cron every two hours. It decides no-op vs
+real work from inventory health, Source Graph cadence, Library depth, and
+context windows before calling expensive discovery.
 
 ## Radar Refill Contract
 

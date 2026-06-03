@@ -15,7 +15,8 @@ import {
   sourceStrengthFromConfidence,
 } from "@/lib/brain/intelligenceReason";
 import { hasTavily, searchWeb, extractUrls } from "@/lib/sources/tavily";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,7 +166,7 @@ export async function runScout(
   candidates_added: number;
   duplicates_skipped: number;
 }> {
-  const supabase = await getServerSupabase();
+  const supabase = getSupabaseServiceClient();
 
   let articles_processed = 0;
   let candidates_added = 0;
@@ -176,7 +177,7 @@ export async function runScout(
     return { articles_processed, candidates_added, duplicates_skipped };
   }
 
-  const brainContext = await buildBrainContext({ userId, includeWeather: false });
+  const brainContext = await buildBrainContext({ userId, includeWeather: false, supabase });
   const city = brainContext.homeCity?.trim();
   if (!city) {
     console.warn("[scout] No profile home city — skipping Scout run");
@@ -184,7 +185,7 @@ export async function runScout(
   }
   const year = new Date(brainContext.now).getFullYear();
   const graph = buildInterestGraph({ context: brainContext });
-  const inventory = await readScoutInventory(userId);
+  const inventory = await readScoutInventory(userId, supabase);
   const strategist = await runTasteStrategist({
     context: brainContext,
     graph,
@@ -391,8 +392,8 @@ export async function runScout(
 
 async function readScoutInventory(
   userId: string,
+  supabase: SupabaseClient,
 ): Promise<{ activeRadar: number; holding: number }> {
-  const supabase = await getServerSupabase();
   const [activeRes, holdingRes] = await Promise.all([
     supabase
       .from("surfaced_items")

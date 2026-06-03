@@ -1,6 +1,8 @@
 import "server-only";
 
 import { requireOwner } from "@/lib/auth";
+import { upsertSourceFromCandidate } from "@/lib/library/sourceGraph";
+import { upsertCandidateInboxFromIndexedCandidate } from "@/lib/radar/candidateInbox";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import type {
@@ -38,6 +40,7 @@ export async function ingestCandidates(input: {
   source: string;
   candidates: CreateIndexedItemInput[];
   destination?: IndexDestination;
+  userId?: string;
 }): Promise<IngestSummary> {
   const summary: IngestSummary = {
     source: input.source,
@@ -48,7 +51,7 @@ export async function ingestCandidates(input: {
   };
   if (input.candidates.length === 0) return summary;
 
-  const owner = await requireOwner();
+  const owner = input.userId ? { id: input.userId } : await requireOwner();
   const supabase = await getServerSupabase();
 
   const sourceIds = input.candidates
@@ -83,6 +86,22 @@ export async function ingestCandidates(input: {
       if (result === "inserted") summary.inserted++;
       else if (result === "updated") summary.updated++;
       else summary.skipped++;
+      if (result !== "skipped") {
+        await Promise.allSettled([
+          upsertCandidateInboxFromIndexedCandidate({
+            userId: owner.id,
+            source: input.source,
+            candidate,
+            supabase,
+          }),
+          upsertSourceFromCandidate({
+            userId: owner.id,
+            sourceName: input.source,
+            candidate,
+            supabase,
+          }),
+        ]);
+      }
     } catch (err) {
       summary.errors.push(
         err instanceof Error ? err.message : "unknown upsert error",
@@ -134,8 +153,8 @@ export async function upsertCandidate(
   return rowToIndexedItem(row as SurfacedItemRow);
 }
 
-export async function expireOldCandidates(): Promise<number> {
-  const owner = await requireOwner();
+export async function expireOldCandidates(userId?: string): Promise<number> {
+  const owner = userId ? { id: userId } : await requireOwner();
   const supabase = await getServerSupabase();
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase

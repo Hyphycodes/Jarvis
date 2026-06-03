@@ -9,6 +9,10 @@
       "schedule": "0 21 * * 5"
     },
     {
+      "path": "/api/radar/autopilot",
+      "schedule": "17 */2 * * *"
+    },
+    {
       "path": "/api/library/scout",
       "schedule": "0 */4 * * *"
     },

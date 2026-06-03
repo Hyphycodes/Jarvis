@@ -4,7 +4,7 @@ import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ function dedupeKey(venueName: string, startsAt: string): string {
 export async function runEventScout(
   userId: string,
 ): Promise<{ candidates_added: number }> {
-  const supabase = await getServerSupabase();
+  const supabase = getSupabaseServiceClient();
   let candidates_added = 0;
 
   if (!hasTavily()) {
@@ -151,7 +151,7 @@ export async function runEventScout(
     return { candidates_added };
   }
 
-  const brainContext = await buildBrainContext({ userId, includeWeather: false });
+  const brainContext = await buildBrainContext({ userId, includeWeather: false, supabase });
   const city = brainContext.homeCity?.trim();
   if (!city) {
     console.warn("[eventScout] No profile home city — skipping Event Scout run");

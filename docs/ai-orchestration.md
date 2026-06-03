@@ -8,13 +8,16 @@ content to hide empty data.
 
 ```
 FounderContextPacket
+  -> Radar/Library Autopilot health check
+  -> campaign selection
   -> BrainContext + Interest Graph
   -> Taste Strategist missions
-  -> Scout / Researcher / Curator / Critic / Briefing Editor
+  -> Scout / Candidate Inbox / Researcher / Living Library
+  -> Holding / Curator / Critic / Briefing Editor
   -> Decision Council + North alignment
   -> IntelligenceReason + IntelligenceTrace
   -> routed action
-  -> behavior signals / memory proposals
+  -> behavior signals / source stats / memory proposals
   -> future FounderContextPacket
 ```
 
@@ -45,6 +48,44 @@ Scout is mission-driven:
 5. Location-specific seeds, including Chicago sources, only run when the user
    profile/location context is compatible.
 
+## Radar Autopilot
+
+`lib/radar/autopilot.ts` is the background research-desk orchestrator. It does
+not directly become a search function. It reads system health and chooses one
+bounded operation:
+
+- Active Radar refill when the front room is thin
+- Holding build when Active is healthy but the back room is shallow
+- Candidate Inbox build for raw discoveries
+- Library build/refresh for durable places/events/sources
+- Source Graph recheck/expansion
+- weekend, after-work, Circle, or North campaigns
+- no-op when the system is healthy enough
+
+`/api/radar/autopilot` is cron-protected and runs every two hours. The cron can
+run often because the orchestrator decides whether to do real work.
+
+Manual `/api/radar/refresh` now runs an autopilot review/override path and then
+keeps the old refill response shape for existing UI consumers.
+
+## Library Layers
+
+- **Candidate Inbox** (`radar_candidate_inbox`) is raw/evaluation inventory. It
+  can be large and must never surface directly.
+- **Living Library** uses existing `places_library`, `current_events`, and
+  `tastemakers`, with quality tiers and source links added where useful.
+- **Holding** is the curated back room for strong maybes.
+- **Active Radar** is the small editorial board for what matters now.
+- **Source Graph** (`intelligence_sources`) learns which publications, domains,
+  venues, calendars, tastemakers, organizers, and search patterns produce
+  quality for this user.
+
+Source Graph scoring is intentionally simple: saves, plans, Library conversion,
+trust, taste fit, novelty, and freshness upgrade sources; passes, duplicates,
+and weak quality cool them down. Strong sources recheck in 6-24 hours, normal
+sources in 24-72 hours, weak sources in 7+ days, and muted/retired sources stay
+quiet.
+
 ## Reasoning and traces
 
 `lib/brain/intelligenceReason.ts` provides the reusable "Why this?" payload:
@@ -59,7 +100,7 @@ writes must never block Radar, Today, chat/voice, plans, cron, or Scout.
 
 Meaningful actions should write behavior signals and, when appropriate, memory
 proposals. Save/pass/plan/complete/archive/cancel/chat commands should affect
-future scoring through the next context packet.
+future scoring through the next context packet and Source Graph source stats.
 
 ## Verification
 

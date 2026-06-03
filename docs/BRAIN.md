@@ -12,18 +12,19 @@
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  1.  buildBrainContext()      ← founder, memory, signals, weather│
-│  2.  buildInterestGraph()     ← seed + memory + behavior nudges  │
-│  3.  runTasteStrategist()     ← exploration lanes (Claude)       │
-│  4.  buildScoutMissions()     ← lanes → typed Scout missions     │
-│  5.  gatherFromCuriosityPlan()← real source calls, capped        │
-│  6.  ingestCandidates()       ← upsert into surfaced_items       │
-│  7.  runRadarCuration()       ← score, curator, critic, briefing │
-│  8.  Intelligence Core        ← signal, truth, diversity, plan    │
-│  9.  briefing/front-room gate ← keep weak output out of Radar     │
-│ 10.  enforceActiveRadarCap()  ← rotate excess to Holding          │
-│ 11.  pruneStaleHolding()      ← archive aged Holding              │
-│ 12.  logDecisionRun()         ← strategy snapshot stored          │
-│ 13.  IntelligenceTrace        ← compact durable decision trace    │
+│  2.  Radar Autopilot          ← health check + campaign choice    │
+│  3.  Source Graph             ← due source checks + cadence       │
+│  4.  Candidate Inbox          ← raw/evaluation discovery layer    │
+│  5.  Living Library           ← durable places/events/sources     │
+│  6.  buildInterestGraph()     ← seed + memory + behavior nudges  │
+│  7.  runTasteStrategist()     ← exploration lanes (Claude)       │
+│  8.  buildScoutMissions()     ← lanes → typed Scout missions     │
+│  9.  gatherFromCuriosityPlan()← real source calls, capped        │
+│ 10.  ingestCandidates()       ← upsert into surfaced_items       │
+│ 11.  runRadarCuration()       ← score, curator, critic, briefing │
+│ 12.  Intelligence Core        ← signal, truth, diversity, plan    │
+│ 13.  briefing/front-room gate ← keep weak output out of Radar     │
+│ 14.  IntelligenceTrace        ← compact durable decision trace    │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -31,6 +32,27 @@
 The pipeline runs ONLY from owner actions and ambient endpoints such as
 `POST /api/radar/refresh` and `POST /api/intelligence/run`. Page loads never
 trigger discovery or external source calls.
+
+## Radar Autopilot
+
+`lib/radar/autopilot.ts` is the background research-desk coordinator. It reads:
+
+- Active Radar count and front-room health
+- Holding depth
+- Candidate Inbox depth
+- Living Library depth and refresh need
+- Source Graph depth and sources due for recheck
+- event freshness
+- Today, Circle, North, and day context from FounderContextPacket
+
+It then chooses one operation: refill, Holding build, Candidate Inbox build,
+Library build/refresh, event pulse, Source Graph recheck/expansion, weekend /
+after-work / Circle / North campaign, stale cleanup, promotion review, or
+no-op. `/api/radar/autopilot` is cron-protected and scheduled every two hours.
+The cron can run often because the orchestrator can no-op.
+
+Manual `/api/radar/refresh` now runs an autopilot review/override first, then
+keeps the existing refill response shape for UI compatibility.
 
 ## Intelligence Core (Sprint 7)
 

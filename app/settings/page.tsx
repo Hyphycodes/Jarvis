@@ -118,6 +118,13 @@ export default async function SettingsPage() {
             title="Integrations"
             copy="Control what Jarvis can access, when it refreshes, and how much it spends."
           />
+          {owner ? (
+            <SettingsCard
+              href="/settings/library"
+              title="Library"
+              copy="Review the permanent intelligence bank, source graph, and candidate queue."
+            />
+          ) : null}
           <SettingsCard
             title="Preferences"
             copy="Adjust how Jarvis presents itself."
