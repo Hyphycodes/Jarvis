@@ -25,7 +25,12 @@ export type RadarAutopilotOperation =
   | "foundation_build_mode"
   | "no_op";
 
-export type RadarAutopilotMode = "cron" | "manual_force" | "owner_requested" | "bootstrap";
+export type RadarAutopilotMode =
+  | "scheduled"
+  | "cron"
+  | "manual_force"
+  | "owner_requested"
+  | "bootstrap";
 
 export type RadarAutopilotHealth = {
   activeCount: number;

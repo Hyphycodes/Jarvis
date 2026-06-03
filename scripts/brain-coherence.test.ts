@@ -26,6 +26,10 @@ import {
   BOOTSTRAP_TARGETS,
   foundationOperationStack,
 } from "../lib/radar/bootstrapPolicy";
+import {
+  isPausedForMode,
+  normalizeAutopilotMode,
+} from "../lib/radar/autopilotControlPolicy";
 import { planRadarCampaigns } from "../lib/radar/campaigns";
 import { qualityTierFromScore } from "../lib/library/quality";
 import type { LibraryHealth } from "../lib/library/types";
@@ -440,6 +444,16 @@ function testBootstrapPolicy() {
   );
 }
 
+function testAutopilotModeAndPausePolicy() {
+  assert.equal(normalizeAutopilotMode("cron"), "scheduled");
+  assert.equal(normalizeAutopilotMode("scheduled"), "scheduled");
+  assert.equal(normalizeAutopilotMode("bootstrap"), "bootstrap");
+  assert.equal(isPausedForMode({ mode: "scheduled", enabled: false }), true);
+  assert.equal(isPausedForMode({ mode: "bootstrap", enabled: false }), false);
+  assert.equal(isPausedForMode({ mode: "owner_requested", enabled: false }), false);
+  assert.equal(isPausedForMode({ mode: "scheduled", enabled: false, force: true }), false);
+}
+
 function testFoundationOperationStackIsBoundedAndConservative() {
   const stack = foundationOperationStack({
     health: autopilotHealth({
@@ -569,6 +583,35 @@ function testAutopilotCronWiring() {
   const route = readFileSync("app/api/radar/autopilot/route.ts", "utf8");
   assert.match(route, /CRON_SECRET/);
   assert.match(route, /mode=bootstrap|searchParams\.get\("mode"\)/);
+  assert.match(route, /requireOwner/);
+  assert.match(route, /toAutopilotResponse/);
+}
+
+function testAutopilotRunStateMigrationAndControls() {
+  const migration = readFileSync(
+    "supabase/migrations/0013_radar_autopilot_control_room.sql",
+    "utf8",
+  );
+  assert.match(migration, /create table if not exists public\.radar_autopilot_runs/);
+  assert.match(migration, /create table if not exists public\.radar_autopilot_activity/);
+  assert.match(migration, /create table if not exists public\.radar_autopilot_settings/);
+
+  const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
+  assert.match(autopilot, /createAutopilotRun/);
+  assert.match(autopilot, /finishAutopilotRun/);
+  assert.match(autopilot, /shouldStopAutopilot/);
+  assert.match(autopilot, /foundation_build_mode/);
+
+  const page = readFileSync("app/settings/library/page.tsx", "utf8");
+  assert.match(page, /ControlRoomActions/);
+  assert.match(page, /Discovery is blocked/);
+  assert.match(page, /Activity/);
+
+  const actions = readFileSync("app/settings/library/ControlRoomActions.tsx", "utf8");
+  assert.match(actions, /Run Bootstrap/);
+  assert.match(actions, /Pause/);
+  assert.match(actions, /Resume/);
+  assert.match(actions, /Stop After Current Step/);
 }
 
 async function main() {
@@ -588,12 +631,14 @@ async function main() {
   testRadarRejectionHasStructuredReason();
   testAutopilotOperationSelection();
   testBootstrapPolicy();
+  testAutopilotModeAndPausePolicy();
   testFoundationOperationStackIsBoundedAndConservative();
   testProviderMissingSummaryAndSourceIdentity();
   testSourceGraphScoringAndCadence();
   testCampaignPlannerUsesContext();
   testCandidateAndLibraryBoundaries();
   testAutopilotCronWiring();
+  testAutopilotRunStateMigrationAndControls();
 
   console.log("brain coherence tests passed");
 }

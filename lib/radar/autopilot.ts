@@ -43,6 +43,17 @@ import {
   syncCandidateInboxFromExistingPipelines,
   upsertCandidateInboxFromIndexedCandidate,
 } from "@/lib/radar/candidateInbox";
+import {
+  clearAutopilotStop,
+  createAutopilotRun,
+  ensureAutopilotSettings,
+  finishAutopilotRun,
+  heartbeatAutopilotRun,
+  isPausedForMode,
+  logAutopilotActivity,
+  normalizeAutopilotMode,
+  shouldStopAutopilot,
+} from "@/lib/radar/autopilotRuns";
 import { describeSourceHealth, gatherRadarCandidates } from "@/lib/sources/gather";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -91,6 +102,8 @@ export type RadarAutopilotResult = {
   activeAfter?: number;
   holdingAfter?: number;
   errors?: string[];
+  runId?: string | null;
+  runStatus?: string;
 };
 
 export async function runRadarAutopilot(input: {
@@ -100,6 +113,11 @@ export async function runRadarAutopilot(input: {
   supabase?: SupabaseClient;
 }): Promise<RadarAutopilotResult> {
   const supabase = input.supabase ?? getSupabaseServiceClient();
+  const mode = normalizeAutopilotMode(input.mode);
+  const settings = await ensureAutopilotSettings({
+    userId: input.userId,
+    supabase,
+  });
   const context = await buildFounderContextPacket({
     userId: input.userId,
     includeWeather: false,
@@ -124,16 +142,60 @@ export async function runRadarAutopilot(input: {
   const operation = chooseRadarAutopilotOperation({
     health,
     campaigns,
-    mode: input.mode,
+    mode,
   });
   const bootstrap = assessBootstrapNeed(health);
   const providerStatus = describeSourceHealth();
+  const missing = missingProviders(providerStatus);
+  if (isPausedForMode({ mode, enabled: settings.enabled, force: input.force })) {
+    const paused = baseResult("no_op", health, campaigns[0]);
+    paused.mode = mode;
+    paused.bootstrapNeeded = bootstrap.needed;
+    paused.bootstrap = bootstrap;
+    paused.providerStatus = providerStatus;
+    paused.missingProviders = missing;
+    paused.skipped = true;
+    paused.runStatus = "paused";
+    paused.summary = "Scheduled Radar Autopilot is paused. Owner-requested runs can still be started manually.";
+    const runId = await createAutopilotRun({
+      userId: input.userId,
+      mode,
+      operation: "no_op",
+      providerStatus: providerStatus as Json,
+      missingProviders: missing as Json,
+      countsBefore: countsFromHealth(health),
+      supabase,
+    });
+    paused.runId = runId;
+    await finishAutopilotRun({
+      userId: input.userId,
+      runId,
+      status: "paused",
+      summary: paused.summary,
+      operation: "no_op",
+      providerStatus: providerStatus as Json,
+      missingProviders: missing as Json,
+      countsAfter: countsFromHealth(health),
+      supabase,
+    });
+    return paused;
+  }
+  await clearAutopilotStop({ userId: input.userId, supabase });
   const base = baseResult(operation, health, campaigns[0]);
-  base.mode = input.mode;
-  base.bootstrapNeeded = input.mode === "bootstrap" || bootstrap.needed;
+  base.mode = mode;
+  base.bootstrapNeeded = mode === "bootstrap" || bootstrap.needed;
   base.bootstrap = bootstrap;
   base.providerStatus = providerStatus;
-  base.missingProviders = missingProviders(providerStatus);
+  base.missingProviders = missing;
+  const runId = await createAutopilotRun({
+    userId: input.userId,
+    mode,
+    operation,
+    providerStatus: providerStatus as Json,
+    missingProviders: missing as Json,
+    countsBefore: countsFromHealth(health),
+    supabase,
+  });
   const result = await executeOperation({
     userId: input.userId,
     operation,
@@ -142,9 +204,11 @@ export async function runRadarAutopilot(input: {
     campaigns,
     context,
     supabase,
-    force: input.force || input.mode === "manual_force",
+    force: input.force || mode === "manual_force",
     providerStatus,
+    runId,
   });
+  result.runId = runId;
   if (operation === "foundation_build_mode") {
     const after = await readAutopilotHealth({
       userId: input.userId,
@@ -156,11 +220,42 @@ export async function runRadarAutopilot(input: {
     result.activeAfter = after.activeCount;
     result.holdingAfter = after.holdingCount;
   }
+  const runStatus = result.runStatus === "cancelled"
+    ? "cancelled"
+    : result.summary.includes("failed safely")
+      ? "failed"
+      : result.bootstrapNeeded && result.candidatesDiscovered === 0 && result.sourcesCreated === 0 && result.libraryItemsCreated === 0 && missing.length >= 5
+        ? "blocked"
+        : "succeeded";
+  result.runStatus = runStatus;
+  await finishAutopilotRun({
+    userId: input.userId,
+    runId,
+    status: runStatus,
+    summary: result.summary,
+    operation,
+    operationsRun: (result.operationsRun ?? [operation]) as unknown as Json,
+    providerStatus: providerStatus as Json,
+    missingProviders: missing as Json,
+    countsAfter: {
+      active: result.activeAfter ?? result.activeCount,
+      holding: result.holdingAfter ?? result.holdingCount,
+      candidateInbox: result.candidateInboxAfter ?? result.candidateInboxCount ?? 0,
+      library: result.libraryAfter ?? result.libraryCounts ?? {},
+    },
+    candidatesCreated: result.candidatesDiscovered,
+    libraryItemsCreated: result.libraryItemsCreated,
+    sourcesCreated: result.sourcesCreated,
+    candidatesHeld: result.candidatesHeld,
+    candidatesPromoted: result.candidatesPromoted,
+    errorMessage: result.errors?.join("; ") || null,
+    supabase,
+  });
   await safeWriteIntelligenceTrace(
     {
       userId: input.userId,
       route: "lib/radar/autopilot.runRadarAutopilot",
-      surface: input.mode === "cron" ? "cron" : "radar",
+      surface: mode === "scheduled" ? "cron" : "radar",
       decisionType: operation,
       contextSummary: buildContextTraceSummary(context),
       reasoning: buildIntelligenceReason({
@@ -180,7 +275,7 @@ export async function runRadarAutopilot(input: {
         source_count: health.sourceCount,
         sources_due: health.sourcesDue,
         source_graph_depth: health.sourceCount,
-        mode: input.mode ?? "auto",
+        mode,
         operations_run: result.operationsRun ?? [operation],
         provider_status: providerStatus,
         bootstrap_needed: result.bootstrapNeeded ?? false,
@@ -248,6 +343,7 @@ async function executeOperation(input: {
   supabase: SupabaseClient;
   force?: boolean;
   providerStatus: SourceHealth;
+  runId?: string | null;
 }): Promise<RadarAutopilotResult> {
   const result = { ...input.base };
   try {
@@ -259,6 +355,19 @@ async function executeOperation(input: {
         });
         const errors: string[] = [];
         for (const operation of stack) {
+          await heartbeatAutopilotRun({
+            userId: input.userId,
+            runId: input.runId,
+            operation,
+            supabase: input.supabase,
+          });
+          await logAutopilotActivity({
+            userId: input.userId,
+            runId: input.runId,
+            level: "info",
+            message: `Running ${operation}.`,
+            supabase: input.supabase,
+          });
           const partial = await executeOperation({
             ...input,
             operation,
@@ -266,6 +375,22 @@ async function executeOperation(input: {
           });
           mergeResult(result, partial);
           if (partial.errors?.length) errors.push(...partial.errors);
+          if (await shouldStopAutopilot({
+            userId: input.userId,
+            runId: input.runId,
+            supabase: input.supabase,
+          })) {
+            result.runStatus = "cancelled";
+            result.summary = `Foundation build stopped after ${operation}.`;
+            await logAutopilotActivity({
+              userId: input.userId,
+              runId: input.runId,
+              level: "warning",
+              message: result.summary,
+              supabase: input.supabase,
+            });
+            break;
+          }
         }
         result.operationsRun = stack;
         result.errors = errors;
@@ -622,6 +747,20 @@ function libraryCountsFromHealth(health: RadarAutopilotHealth): NonNullable<Rada
     organizations: health.library.organizations,
     people: health.library.people,
     recurringSignals: health.library.recurringSignals,
+  };
+}
+
+function countsFromHealth(health: RadarAutopilotHealth): Json {
+  return {
+    active: health.activeCount,
+    holding: health.holdingCount,
+    candidateInbox: health.candidateInboxCount,
+    library: libraryCountsFromHealth(health),
+    tierA: health.library.tierA,
+    tierB: health.library.tierB,
+    tierC: health.library.tierC,
+    needsRefresh: health.library.needsRefresh,
+    rejectedMuted: health.library.rejectedMuted,
   };
 }
 

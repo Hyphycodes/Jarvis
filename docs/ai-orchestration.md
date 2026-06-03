@@ -68,6 +68,10 @@ run often because the orchestrator decides whether to do real work.
 Manual `/api/radar/refresh` now runs an autopilot review/override path and then
 keeps the old refill response shape for existing UI consumers.
 
+The owner can also run `POST /api/radar/autopilot` with
+`mode=bootstrap|owner_requested|manual_force`. Scheduled GET calls require
+`CRON_SECRET`; owner POST calls use the normal authenticated owner session.
+
 ## Bootstrap Mode
 
 Bootstrap Mode is the first-run/foundation-builder path for an empty or thin
@@ -117,6 +121,22 @@ Bootstrap source seeding also captures real provider result domains/articles as
 `intelligence_sources` and `radar_candidate_inbox` source candidates. This lets
 Jarvis learn where quality comes from even before an article yields a durable
 place or event.
+
+## Library Control Room
+
+`/settings/library` is the operational surface for this layer. It shows:
+
+- current state: Running, Idle, Paused, Blocked, Failed, Healthy, or Bootstrap needed
+- provider availability and missing keys
+- last run, last bootstrap run, current operation, and next scheduled estimate
+- progress against bootstrap targets
+- last activity messages from `radar_autopilot_activity`
+- owner controls to run Bootstrap, run Autopilot, pause, resume, or request
+  stop after the current step
+
+The control room reads `radar_autopilot_runs`,
+`radar_autopilot_activity`, and `radar_autopilot_settings`. These tables are
+operational observability, not recommendation memory.
 
 ## Reasoning and traces
 

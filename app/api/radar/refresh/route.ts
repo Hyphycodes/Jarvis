@@ -71,6 +71,8 @@ export async function POST(req: Request) {
       refresh_summary: autopilot.bootstrapNeeded
         ? `Library is thin; ${autopilot.summary}`
         : autopilot.summary,
+      run_id: autopilot.runId ?? null,
+      run_status: autopilot.runStatus ?? null,
       no_op_reason: autopilot.skipped ? autopilot.summary : undefined,
     });
   } catch (error) {

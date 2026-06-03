@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { readLibraryHealth, readLibraryOperationalStatus } from "@/lib/library";
+import { readLibraryHealth } from "@/lib/library";
+import { readLibraryControlRoomStatus } from "@/lib/radar/autopilotRuns";
 import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
 import { BackButton, MotionPage } from "@/components";
+import { ControlRoomActions } from "./ControlRoomActions";
 
 export const metadata = { title: "Library · Jarvis" };
 export const dynamic = "force-dynamic";
@@ -12,10 +14,7 @@ export default async function SettingsLibraryPage() {
   if (!user) redirect("/login?next=/settings/library");
   if (user.role !== "owner") redirect("/settings");
 
-  const [health, operations] = await Promise.all([
-    readLibraryHealth({ userId: user.id }),
-    readLibraryOperationalStatus({ userId: user.id }),
-  ]);
+  const health = await readLibraryHealth({ userId: user.id });
   const tierAPlusB = health.tierA + health.tierB;
   const bootstrapNeeded =
     health.places < BOOTSTRAP_TARGETS.places ||
@@ -23,6 +22,10 @@ export default async function SettingsLibraryPage() {
     health.sources < BOOTSTRAP_TARGETS.sources ||
     health.pendingCandidates < BOOTSTRAP_TARGETS.candidateInbox ||
     tierAPlusB < BOOTSTRAP_TARGETS.tierAPlusB;
+  const control = await readLibraryControlRoomStatus({
+    userId: user.id,
+    bootstrapNeeded,
+  });
   const rows = [
     ["Places", String(health.places)],
     ["Events", `${health.events} active`],
@@ -61,6 +64,31 @@ export default async function SettingsLibraryPage() {
 
         <section className="motion-card mt-10 grid gap-3">
           <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+                Control Room
+              </span>
+              <span className="font-serif text-[17px] italic text-warm-ivory">
+                {stateLabel(control.state)}
+              </span>
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-warm-ivory/55">
+              {controlSummary(control.state)}
+            </p>
+            {control.missingProviders.length > 0 ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-warm-ivory/42">
+                Missing providers: {control.missingProviders.join(", ")}
+              </p>
+            ) : null}
+            <div className="mt-4">
+              <ControlRoomActions
+                enabled={control.settings.enabled}
+                activeRunId={control.activeRun?.id ?? null}
+              />
+            </div>
+          </div>
+
+          <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
             <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
               Bootstrap
             </div>
@@ -98,26 +126,60 @@ export default async function SettingsLibraryPage() {
         </section>
 
         <section className="motion-card mt-8 grid gap-3">
-          <StatusRow label="Sources watching" value={operations.sourceStatuses.watching} />
-          <StatusRow label="Sources testing" value={operations.sourceStatuses.testing} />
-          <StatusRow label="Sources cooldown" value={operations.sourceStatuses.cooldown} />
+          <StatusRow
+            label="Current operation"
+            value={control.activeRun?.operation ?? "None"}
+          />
           <StatusRow
             label="Last operation"
-            value={operations.lastAutopilotRun
-              ? `${operations.lastAutopilotRun.operation} · ${relativeTime(operations.lastAutopilotRun.createdAt)}`
+            value={control.lastRun
+              ? `${control.lastRun.operation ?? control.lastRun.status} · ${relativeTime(control.lastRun.started_at)}`
               : "None yet"}
           />
           <StatusRow
             label="Last bootstrap"
-            value={operations.lastBootstrapRun
-              ? relativeTime(operations.lastBootstrapRun.createdAt)
+            value={control.lastBootstrapRun
+              ? relativeTime(control.lastBootstrapRun.started_at)
               : "None yet"}
           />
-          {operations.lastAutopilotRun?.summary ? (
+          <StatusRow
+            label="Next scheduled"
+            value={control.settings.enabled ? "Within 2h" : "Paused"}
+          />
+          {control.lastRun?.summary ? (
             <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
-              {operations.lastAutopilotRun.summary}
+              {control.lastRun.summary}
             </p>
           ) : null}
+        </section>
+
+        <section className="motion-card mt-8 grid gap-2">
+          {control.providerStatus.map((provider) => (
+            <StatusRow
+              key={provider.key}
+              label={provider.name}
+              value={provider.configured ? provider.purpose : "Missing key"}
+            />
+          ))}
+        </section>
+
+        <section className="motion-card mt-8 grid gap-2">
+          <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+            Activity
+          </div>
+          {control.activity.length > 0 ? control.activity.slice(0, 12).map((event) => (
+            <p
+              key={event.id}
+              className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58"
+            >
+              <span className="text-warm-ivory/34">{timeOnly(event.created_at)} — </span>
+              {event.message}
+            </p>
+          )) : (
+            <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/50">
+              No autopilot runs yet. Run Bootstrap to start building the intelligence bank.
+            </p>
+          )}
         </section>
       </MotionPage>
     </main>
@@ -158,4 +220,34 @@ function relativeTime(value: string): string {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function stateLabel(state: string): string {
+  if (state === "bootstrap_needed") return "Bootstrap needed";
+  return state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+function controlSummary(state: string): string {
+  switch (state) {
+    case "running":
+      return "Jarvis is actively building or reviewing the intelligence bank.";
+    case "paused":
+      return "Scheduled Autopilot is paused. Manual runs are still available.";
+    case "blocked":
+      return "Discovery is blocked because no external provider keys are configured.";
+    case "failed":
+      return "The last Autopilot run failed. Check activity before retrying.";
+    case "healthy":
+      return "Foundation targets are healthy enough for normal background maintenance.";
+    case "bootstrap_needed":
+      return "The intelligence bank is thin. Bootstrap can build sources, candidates, and Library rows from real providers.";
+    default:
+      return "Autopilot is idle and ready.";
+  }
+}
+
+function timeOnly(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }

@@ -64,6 +64,13 @@ keeps the existing refill response shape for UI compatibility. If the Library,
 Candidate Inbox, Source Graph, or Tier A/B inventory is thin, manual refresh
 enters Bootstrap Mode rather than silently returning an empty-looking refresh.
 
+Run state is recorded in `radar_autopilot_runs`, and short operator messages go
+to `radar_autopilot_activity`. `/settings/library` uses those rows plus
+`radar_autopilot_settings` to show whether Jarvis is running, idle, paused,
+blocked by missing providers, failed, healthy, or in need of bootstrap. Pause
+blocks scheduled cron only. Stop is cooperative and means stop after the
+current major operation.
+
 ## Intelligence Core (Sprint 7)
 
 `lib/intelligence` is the shared entrypoint for the Radar curation engine:

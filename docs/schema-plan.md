@@ -36,6 +36,12 @@
   before anything reaches Library, Holding, or Active Radar
 - **intelligence_sources** — Source Graph for publications, domains, venues,
   calendars, tastemakers, organizers, authors, and search patterns
+- **radar_autopilot_settings** — owner control flags for scheduled Autopilot
+  pause/resume and cooperative stop requests
+- **radar_autopilot_runs** — operational run ledger for scheduled, bootstrap,
+  owner-requested, and manual-force Autopilot runs
+- **radar_autopilot_activity** — short owner-facing activity messages for the
+  Library Control Room
 
 ## Current policy
 
@@ -55,6 +61,8 @@
   schema: real provider results enter `radar_candidate_inbox`, real durable
   places/events enter `places_library` / `current_events`, and real domains,
   calendars, venues, or search patterns enter `intelligence_sources`.
+- Use `radar_autopilot_runs` / `radar_autopilot_activity` for operational
+  visibility. They are not memory and should not drive recommendations directly.
 - Do not add fake production rows to fill empty states. Synthetic rows belong
   only in tests or QA-only helpers.
 

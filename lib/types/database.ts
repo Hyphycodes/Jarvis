@@ -1274,6 +1274,144 @@ export interface Database {
         };
         Relationships: [];
       };
+      radar_autopilot_settings: {
+        Row: {
+          user_id: string;
+          enabled: boolean;
+          paused_at: string | null;
+          paused_reason: string | null;
+          stop_requested_at: string | null;
+          stop_requested_run_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          enabled?: boolean;
+          paused_at?: string | null;
+          paused_reason?: string | null;
+          stop_requested_at?: string | null;
+          stop_requested_run_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          enabled?: boolean;
+          paused_at?: string | null;
+          paused_reason?: string | null;
+          stop_requested_at?: string | null;
+          stop_requested_run_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      radar_autopilot_runs: {
+        Row: {
+          id: string;
+          user_id: string;
+          mode: string;
+          status: string;
+          operation: string | null;
+          operations_run: Json;
+          started_at: string;
+          finished_at: string | null;
+          last_heartbeat_at: string | null;
+          summary: string | null;
+          provider_status: Json;
+          missing_providers: Json;
+          counts_before: Json;
+          counts_after: Json;
+          candidates_created: number;
+          library_items_created: number;
+          sources_created: number;
+          candidates_held: number;
+          candidates_promoted: number;
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          mode: string;
+          status?: string;
+          operation?: string | null;
+          operations_run?: Json;
+          started_at?: string;
+          finished_at?: string | null;
+          last_heartbeat_at?: string | null;
+          summary?: string | null;
+          provider_status?: Json;
+          missing_providers?: Json;
+          counts_before?: Json;
+          counts_after?: Json;
+          candidates_created?: number;
+          library_items_created?: number;
+          sources_created?: number;
+          candidates_held?: number;
+          candidates_promoted?: number;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          mode?: string;
+          status?: string;
+          operation?: string | null;
+          operations_run?: Json;
+          started_at?: string;
+          finished_at?: string | null;
+          last_heartbeat_at?: string | null;
+          summary?: string | null;
+          provider_status?: Json;
+          missing_providers?: Json;
+          counts_before?: Json;
+          counts_after?: Json;
+          candidates_created?: number;
+          library_items_created?: number;
+          sources_created?: number;
+          candidates_held?: number;
+          candidates_promoted?: number;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      radar_autopilot_activity: {
+        Row: {
+          id: string;
+          run_id: string | null;
+          user_id: string;
+          level: string;
+          message: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          run_id?: string | null;
+          user_id: string;
+          level?: string;
+          message: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          run_id?: string | null;
+          user_id?: string;
+          level?: string;
+          message?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       north_signals: {
         Row: {
           id: string;
@@ -1374,6 +1512,12 @@ export type RadarCandidateInboxRow =
   Database["public"]["Tables"]["radar_candidate_inbox"]["Row"];
 export type IntelligenceSourceRow =
   Database["public"]["Tables"]["intelligence_sources"]["Row"];
+export type RadarAutopilotSettingsRow =
+  Database["public"]["Tables"]["radar_autopilot_settings"]["Row"];
+export type RadarAutopilotRunRow =
+  Database["public"]["Tables"]["radar_autopilot_runs"]["Row"];
+export type RadarAutopilotActivityRow =
+  Database["public"]["Tables"]["radar_autopilot_activity"]["Row"];
 
 // Standalone types for tables added in migration 0007
 export type CurrentEventRow = {

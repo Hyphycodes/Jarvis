@@ -36,6 +36,10 @@ budget into `brain_decision_runs.raw_output.budget`.
 - `POST /api/intelligence/run`
 - `GET /api/radar/autopilot`
 - `GET /api/radar/autopilot?mode=bootstrap`
+- `POST /api/radar/autopilot` with `mode=bootstrap|owner_requested|manual_force`
+- `POST /api/radar/autopilot/pause`
+- `POST /api/radar/autopilot/resume`
+- `POST /api/radar/autopilot/stop`
 - `POST /api/radar/refresh` (manual debug path, runs bounded Radar refill)
 - `POST /api/radar/cleanup`
 
@@ -55,6 +59,18 @@ Provider keys matter. Google Places builds places, Ticketmaster builds events,
 and Tavily/Brave/SerpAPI build source and opportunity inventory. If no external
 discovery provider is configured, bootstrap records a clear missing-provider
 summary and creates no fake candidates.
+
+Operational state is durable:
+
+- `radar_autopilot_runs` records scheduled/bootstrap/manual runs, status,
+  counts before/after, provider status, and summary.
+- `radar_autopilot_activity` records short control-room messages.
+- `radar_autopilot_settings` stores pause and stop-after-current-step flags.
+
+Pause only blocks scheduled cron. Owner-requested runs can still be launched
+from `/settings/library`. Stop is cooperative: the current serverless step is
+allowed to finish, then Bootstrap checks the flag before starting the next major
+operation.
 
 ## Radar Refill Contract
 

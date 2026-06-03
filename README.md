@@ -17,6 +17,7 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Radar Autopilot:** background health checks choose no-op, refill, Holding build, Candidate Inbox build, Library build/refresh, event pulse, or Source Graph work.
 - **Library Bootstrap Mode:** when Candidate Inbox, Living Library, Source Graph, or Tier A/B inventory is thin, Autopilot runs a bounded foundation-building stack instead of one tiny maintenance pass.
 - **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
+- **Library Control Room:** `/settings/library` shows run state, provider blockers, activity, bootstrap progress, and owner controls for run/pause/resume/stop-after-current-step.
 
 **Brain pipeline (5 agents + Decision Council):**
 1. Taste Strategist — derives interest lanes and source plan from the Interest Graph
@@ -106,7 +107,7 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 
 1. Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`
 2. Supabase Auth → URL Configuration: set Site URL and add `${SITE_URL}/auth/callback` to Redirect URLs
-3. Apply migrations in `supabase/migrations/` (0001–0012) in the SQL Editor
+3. Apply migrations in `supabase/migrations/` (0001–0013) in the SQL Editor
 4. Visit `/login`, sign in with magic link
 5. Run in Supabase SQL Editor: `select public.seed_founder('your-email@example.com');`
 6. Refresh `/settings` — role should read `owner`
@@ -140,7 +141,7 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 /lib/library           Living Library and Source Graph helpers
 /lib/radar             Autopilot, campaigns, Candidate Inbox
 /lib/brain/refresher   Library refresher agent
-/supabase/migrations   Schema migrations (0001–0012)
+/supabase/migrations   Schema migrations (0001–0013)
 ```
 
 ## How the brain works
@@ -158,6 +159,12 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 11. **Future context packets** read those real behavior/memory/source signals, so recommendations improve without fake filler.
 
 If external discovery keys are missing, Bootstrap Mode reports the missing providers instead of inventing rows. With Tavily configured but Anthropic missing, Scout can still seed Source Graph and Candidate Inbox from real article results, but it will not fabricate extracted places.
+
+`/settings/library` is the operator view. It reads `radar_autopilot_runs`,
+`radar_autopilot_activity`, and `radar_autopilot_settings` to show Running,
+Idle, Paused, Blocked, Failed, Healthy, or Bootstrap needed. Pause affects
+scheduled cron only; owner-requested Bootstrap/Autopilot runs can still be
+started manually. Stop means "stop after current major step."
 
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 

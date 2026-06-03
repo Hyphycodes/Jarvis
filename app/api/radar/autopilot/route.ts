@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { requireOwner } from "@/lib/auth";
 import { runRadarAutopilot } from "@/lib/radar/autopilot";
+import { normalizeAutopilotMode } from "@/lib/radar/autopilotRuns";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +29,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
   const url = new URL(req.url);
-  const mode = url.searchParams.get("mode") === "bootstrap" ? "bootstrap" : "cron";
+  const mode = url.searchParams.get("mode") === "bootstrap" ? "bootstrap" : "scheduled";
   const ownerUserId = await findOwnerUserId();
   if (!ownerUserId) {
     return NextResponse.json({ ok: false, error: "Owner not found." }, { status: 500 });
@@ -37,27 +39,65 @@ export async function GET(req: Request) {
     mode,
     force: mode === "bootstrap",
   });
-  return NextResponse.json({ ok: true, ...result });
+  return NextResponse.json(toAutopilotResponse(mode, result));
 }
 
 export async function POST(req: Request) {
-  if (!validateCronSecret(req)) {
-    return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
+  let ownerUserId: string | null = null;
+  if (validateCronSecret(req)) {
+    ownerUserId = await findOwnerUserId();
+  } else {
+    try {
+      ownerUserId = (await requireOwner()).id;
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      }
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
   }
-  const ownerUserId = await findOwnerUserId();
-  if (!ownerUserId) {
-    return NextResponse.json({ ok: false, error: "Owner not found." }, { status: 500 });
-  }
+  if (!ownerUserId) return NextResponse.json({ ok: false, error: "Owner not found." }, { status: 500 });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const mode = body.mode === "bootstrap"
-    ? "bootstrap"
-    : body.force
-      ? "manual_force"
-      : "owner_requested";
+  const mode = normalizeAutopilotMode(
+    typeof body.mode === "string" ? body.mode : body.force ? "manual_force" : "owner_requested",
+  );
   const result = await runRadarAutopilot({
     userId: ownerUserId,
     mode,
     force: Boolean(body.force) || mode === "bootstrap",
   });
-  return NextResponse.json({ ok: true, ...result });
+  return NextResponse.json(toAutopilotResponse(mode, result));
+}
+
+function toAutopilotResponse(mode: string, result: Awaited<ReturnType<typeof runRadarAutopilot>>) {
+  return {
+    ok: true,
+    mode,
+    operation: result.operation,
+    bootstrap_needed: result.bootstrapNeeded ?? false,
+    operations_run: result.operationsRun ?? [result.operation],
+    provider_status: result.providerStatus ?? {},
+    missing_providers: result.missingProviders ?? [],
+    counts_before: {
+      active: result.activeCount,
+      holding: result.holdingCount,
+      candidateInbox: result.candidateInboxCount ?? 0,
+      library: result.libraryBefore ?? result.libraryCounts ?? {},
+    },
+    counts_after: {
+      active: result.activeAfter ?? result.activeCount,
+      holding: result.holdingAfter ?? result.holdingCount,
+      candidateInbox: result.candidateInboxAfter ?? result.candidateInboxCount ?? 0,
+      library: result.libraryAfter ?? result.libraryCounts ?? {},
+    },
+    candidates_created: result.candidatesDiscovered,
+    library_items_created: result.libraryItemsCreated,
+    sources_created: result.sourcesCreated,
+    candidates_promoted: result.candidatesPromoted,
+    candidates_held: result.candidatesHeld,
+    summary: result.summary,
+    run_id: result.runId ?? null,
+    run_status: result.runStatus ?? null,
+    raw: result,
+  };
 }
