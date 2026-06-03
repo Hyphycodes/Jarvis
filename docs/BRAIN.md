@@ -108,6 +108,47 @@ sources, and event missions collect intake without running the event verdict
 worker that can write Active Radar rows. Promotion remains a separate
 conservative review step.
 
+## Foundation Sprint Visibility
+
+Foundation Sprint is not useful if the owner cannot see what it is finding.
+The Settings Library control room is the inspection layer for the hidden bank,
+not a consumer browsing UI. It reads the real tables:
+
+- `radar_candidate_inbox` for raw/evaluated candidates and rejection reasons
+- `intelligence_sources` for source status, scores, cadence, and rates
+- `places_library` for durable places and quality tiers
+- `current_events` for upcoming Event Pulse rows
+- `radar_autopilot_runs` and `radar_autopilot_activity` for run summaries,
+  partial-success counts, and safe error detail
+
+Times are stored as UTC and rendered as relative time plus America/Chicago
+local time in the control room. Error details should identify the failed
+mission/operation/table/provider where possible, but must not expose secrets.
+
+## Radar Promotion Diagnostics
+
+`lib/radar/promotionDiagnostics.ts` explains why the front room is or is not
+changing. It reviews Candidate Inbox, Holding, Tier A/B Library places, and
+upcoming current events, then returns:
+
+```ts
+{
+  sourceLayer: "candidate_inbox" | "holding" | "places_library" | "current_events",
+  score,
+  radarEligible,
+  reason,
+  blockers,
+  nextStep
+}
+```
+
+The diagnostic layer is read-only for raw candidates and Library rows. Candidate
+Inbox rows never promote directly to Active Radar. Library places are durable
+context and usually wait for timing or a plan reason. Current events can be
+ready for Holding/Radar review when timing, source, and quality clear the
+threshold. Holding is the only direct promotion path, and it still uses
+`isPromotableWhenUnderfilled()` and the front-room gate constants.
+
 ## Taste Seed Importer
 
 `lib/tasteSeed/parser.ts` parses owner-provided markdown with these sections:

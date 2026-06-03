@@ -105,6 +105,47 @@ The Library conversion batch is intentionally small during Foundation Sprint.
 It stops when the time budget is near, marks each candidate as it goes, and lets
 the next run continue with the remaining inbox rows.
 
+## Foundation Visibility
+
+The owner needs to inspect what Jarvis is finding without turning Radar into a
+feed. `/settings/library` now exposes the hidden layers as compact previews:
+
+- Candidate Inbox: latest raw/evaluated rows with type, status, score, source,
+  campaign, reason, rejection reason, URL, and discovered time
+- Source Graph: testing/watching/cooldown/muted sources with trust, taste,
+  novelty, freshness, save/pass/plan rates, last check, and next check
+- Places and Events: latest durable Library rows and Event Pulse rows with
+  quality tier, score, summary, tags, and timing
+- Rejected / Muted: filtered candidates and cooled/muted sources with the
+  stored reason
+- Tier A/B/C: quick slices of the best Library inventory by quality tier
+
+Timestamps remain UTC in the database and are displayed in the control room as
+relative time plus America/Chicago local time unless a richer user timezone is
+available later.
+
+Run errors should be visible but safe. Control Room summaries show the actual
+run `error_message` with token-like bearer values redacted, plus partial row
+counts so "partial success" is understandable without opening Vercel logs.
+
+## Promotion Diagnostics
+
+Radar can be quiet while Library and Candidate Inbox grow. That is expected
+when items are durable, raw, missing timing, low-confidence, duplicate, or not
+better than what is already active. The promotion diagnostic helper reviews:
+
+- raw Candidate Inbox rows
+- Holding rows
+- Tier A/B Places Library rows
+- current upcoming Event Pulse rows
+
+It returns each item with source layer, score, `radarEligible`, reason,
+blockers, and next step. Raw Candidate Inbox rows are never Radar-eligible.
+Durable places are useful Library context but need a timely plan/reason before
+Radar. Current events can be ready for review when timing, source, and quality
+are sufficient. Actual Active Radar promotion still happens through Holding and
+the existing front-room gates.
+
 ## Taste Seed Import
 
 The taste seed importer is not a discovery run and does not call external

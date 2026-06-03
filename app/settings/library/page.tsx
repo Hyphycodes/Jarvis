@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { readLibraryHealth } from "@/lib/library";
+import { readLibraryPreview, type LibraryPreviewCandidate, type LibraryPreviewEntity, type LibraryPreviewRejected, type LibraryPreviewSource } from "@/lib/library/previews";
 import { readLibraryControlRoomStatus } from "@/lib/radar/autopilotRuns";
 import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
 import { FOUNDATION_SPRINT_TARGETS } from "@/lib/radar/foundationSprint";
+import { readRadarPromotionDiagnostics, type RadarPromotionDiagnostic } from "@/lib/radar/promotionDiagnostics";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { BackButton, MotionPage } from "@/components";
 import { ControlRoomActions } from "./ControlRoomActions";
@@ -11,11 +14,14 @@ import { ControlRoomActions } from "./ControlRoomActions";
 export const metadata = { title: "Library · Jarvis" };
 export const dynamic = "force-dynamic";
 
+const DISPLAY_TIME_ZONE = "America/Chicago";
+
 export default async function SettingsLibraryPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=/settings/library");
   if (user.role !== "owner") redirect("/settings");
 
+  const supabase = await getServerSupabase();
   const health = await readLibraryHealth({ userId: user.id });
   const tierAPlusB = health.tierA + health.tierB;
   const bootstrapNeeded =
@@ -27,8 +33,12 @@ export default async function SettingsLibraryPage() {
   const control = await readLibraryControlRoomStatus({
     userId: user.id,
     bootstrapNeeded,
+    supabase,
   });
-  const supabase = await getServerSupabase();
+  const [preview, promotionDiagnostics] = await Promise.all([
+    readLibraryPreview({ userId: user.id, supabase, limit: 25 }),
+    readRadarPromotionDiagnostics({ userId: user.id, supabase, limit: 20 }),
+  ]);
   const { data: lastTasteSeedImport } = await supabase
     .from("intelligence_traces")
     .select("created_at,outcome,selected_candidate,context_summary")
@@ -153,7 +163,7 @@ export default async function SettingsLibraryPage() {
           <StatusRow
             label="Taste seed import"
             value={lastTasteSeedImport?.created_at
-              ? relativeTime(String(lastTasteSeedImport.created_at))
+              ? formatTimestamp(String(lastTasteSeedImport.created_at))
               : "None yet"}
           />
           <StatusRow
@@ -182,13 +192,13 @@ export default async function SettingsLibraryPage() {
           <StatusRow
             label="Last operation"
             value={control.lastRun
-              ? `${control.lastRun.operation ?? control.lastRun.status} · ${relativeTime(control.lastRun.started_at)}`
+              ? `${control.lastRun.operation ?? control.lastRun.status} · ${formatTimestamp(control.lastRun.started_at)}`
               : "None yet"}
           />
           <StatusRow
             label="Last bootstrap"
             value={control.lastBootstrapRun
-              ? relativeTime(control.lastBootstrapRun.started_at)
+              ? formatTimestamp(control.lastBootstrapRun.started_at)
               : "None yet"}
           />
           <StatusRow
@@ -199,6 +209,19 @@ export default async function SettingsLibraryPage() {
             <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
               {control.lastRun.summary}
             </p>
+          ) : null}
+          {control.lastRun?.error_message ? (
+            <details className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
+              <summary className="cursor-pointer text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+                Last error detail
+              </summary>
+              <p className="mt-2 text-warm-ivory/58">
+                {safeErrorDetail(control.lastRun.error_message)}
+              </p>
+              <p className="mt-2 text-warm-ivory/34">
+                Partial progress preserved: +{control.lastRun.candidates_created} candidates, +{control.lastRun.sources_created} sources, +{control.lastRun.library_items_created} library/events, promoted {control.lastRun.candidates_promoted}.
+              </p>
+            </details>
           ) : null}
         </section>
 
@@ -221,7 +244,7 @@ export default async function SettingsLibraryPage() {
               key={event.id}
               className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58"
             >
-              <span className="text-warm-ivory/34">{timeOnly(event.created_at)} — </span>
+              <span className="text-warm-ivory/34">{formatTimestamp(event.created_at)} — </span>
               {event.message}
             </p>
           )) : (
@@ -229,6 +252,89 @@ export default async function SettingsLibraryPage() {
               No autopilot runs yet. Run Bootstrap to start building the intelligence bank.
             </p>
           )}
+        </section>
+
+        <section className="motion-card mt-8 grid gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+              Radar Promotion Diagnostics
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-warm-ivory/55">
+              {promotionDiagnostics.summary}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-warm-ivory/34">
+              Active {promotionDiagnostics.activeCount}/{promotionDiagnostics.target} target · cap {promotionDiagnostics.cap}. Raw Candidate Inbox does not promote directly.
+            </p>
+          </div>
+          <PreviewDetails title="Why Radar is quiet" count={promotionDiagnostics.items.length} open>
+            {promotionDiagnostics.items.length > 0 ? promotionDiagnostics.items.map((item) => (
+              <PromotionRow key={`${item.sourceLayer}:${item.id}`} item={item} />
+            )) : (
+              <EmptyPreview text="No promotion candidates were available to review." />
+            )}
+          </PreviewDetails>
+        </section>
+
+        <section className="motion-card mt-8 grid gap-3">
+          <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+            Library Preview
+          </div>
+          <PreviewDetails title="Pending Candidates" count={preview.candidates.length} open>
+            {preview.candidates.length > 0 ? preview.candidates.map((candidate) => (
+              <CandidateRow key={candidate.id} candidate={candidate} />
+            )) : (
+              <EmptyPreview text="No Candidate Inbox rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Sources" count={preview.sources.length}>
+            {preview.sources.length > 0 ? preview.sources.map((source) => (
+              <SourceRow key={source.id} source={source} />
+            )) : (
+              <EmptyPreview text="No Source Graph rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Places" count={preview.places.length}>
+            {preview.places.length > 0 ? preview.places.map((entity) => (
+              <EntityRow key={entity.id} entity={entity} />
+            )) : (
+              <EmptyPreview text="No Places Library rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Events" count={preview.events.length}>
+            {preview.events.length > 0 ? preview.events.map((entity) => (
+              <EntityRow key={entity.id} entity={entity} />
+            )) : (
+              <EmptyPreview text="No active Event Pulse rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Rejected / Muted" count={preview.rejectedMuted.length}>
+            {preview.rejectedMuted.length > 0 ? preview.rejectedMuted.map((item) => (
+              <RejectedRow key={`${item.status}:${item.id}`} item={item} />
+            )) : (
+              <EmptyPreview text="No rejected or muted rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Tier A" count={preview.tiers.A.length}>
+            {preview.tiers.A.length > 0 ? preview.tiers.A.map((entity) => (
+              <EntityRow key={entity.id} entity={entity} />
+            )) : (
+              <EmptyPreview text="No Tier A Library rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Tier B" count={preview.tiers.B.length}>
+            {preview.tiers.B.length > 0 ? preview.tiers.B.map((entity) => (
+              <EntityRow key={entity.id} entity={entity} />
+            )) : (
+              <EmptyPreview text="No Tier B Library rows yet." />
+            )}
+          </PreviewDetails>
+          <PreviewDetails title="Tier C" count={preview.tiers.C.length}>
+            {preview.tiers.C.length > 0 ? preview.tiers.C.map((entity) => (
+              <EntityRow key={entity.id} entity={entity} />
+            )) : (
+              <EmptyPreview text="No Tier C Library rows yet." />
+            )}
+          </PreviewDetails>
         </section>
       </MotionPage>
     </main>
@@ -261,14 +367,164 @@ function StatusRow({ label, value }: { label: string; value: string | number }) 
   );
 }
 
+function PreviewDetails({
+  title,
+  count,
+  open = false,
+  children,
+}: {
+  title: string;
+  count: number;
+  open?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details open={open} className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3">
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+            {title}
+          </span>
+          <span className="font-serif text-[17px] italic text-warm-ivory">
+            {count}
+          </span>
+        </div>
+      </summary>
+      <div className="mt-3 grid gap-2">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function CandidateRow({ candidate }: { candidate: LibraryPreviewCandidate }) {
+  return (
+    <PreviewRow
+      title={candidate.title}
+      meta={`${candidate.entityType} · ${candidate.status} · ${formatScore(candidate.score)} · ${formatTimestamp(candidate.discoveredAt)}`}
+      body={candidate.rejectionReason ?? candidate.reason ?? "Captured for evaluation before Library, Holding, or Active Radar."}
+      footer={candidate.source ? `Source: ${candidate.source}` : candidate.campaign ? `Campaign: ${candidate.campaign}` : null}
+    />
+  );
+}
+
+function SourceRow({ source }: { source: LibraryPreviewSource }) {
+  return (
+    <PreviewRow
+      title={source.title}
+      meta={`${source.sourceType} · ${source.status} · trust ${formatScore(source.trustScore)} · taste ${formatScore(source.tasteFitScore)}`}
+      body={source.reason ?? `Candidates ${source.totalCandidates}, Library ${source.totalLibraryItems}, save/pass/plan ${percent(source.saveRate)}/${percent(source.passRate)}/${percent(source.planRate)}.`}
+      footer={[
+        source.lastCheckedAt ? `Last ${formatTimestamp(source.lastCheckedAt)}` : null,
+        source.nextCheckAt ? `Next ${formatTimestamp(source.nextCheckAt)}` : null,
+        source.domain,
+      ].filter(Boolean).join(" · ") || null}
+    />
+  );
+}
+
+function EntityRow({ entity }: { entity: LibraryPreviewEntity }) {
+  return (
+    <PreviewRow
+      title={entity.title}
+      meta={`${entity.type} · ${entity.status} · tier ${entity.tier ?? "none"} · ${formatScore(entity.score)}`}
+      body={entity.summary ?? "Stored as durable Library context; not automatically surfaced to Radar."}
+      footer={[
+        entity.when ? `When ${formatTimestamp(entity.when)}` : null,
+        entity.tags.slice(0, 4).join(", "),
+      ].filter(Boolean).join(" · ") || null}
+    />
+  );
+}
+
+function RejectedRow({ item }: { item: LibraryPreviewRejected }) {
+  return (
+    <PreviewRow
+      title={item.title}
+      meta={`${item.type} · ${item.status} · ${formatTimestamp(item.rejectedAt)}`}
+      body={item.reason ?? "Filtered out during evaluation."}
+      footer={item.source ? `Source: ${item.source}` : null}
+    />
+  );
+}
+
+function PromotionRow({ item }: { item: RadarPromotionDiagnostic }) {
+  return (
+    <PreviewRow
+      title={item.title}
+      meta={`${item.sourceLayer} · ${item.radarEligible ? "eligible" : "blocked"} · ${formatScore(item.score)} · next: ${item.nextStep}`}
+      body={item.reason}
+      footer={item.blockers.length > 0 ? `Blockers: ${item.blockers.slice(0, 3).join(" · ")}` : "No blockers recorded."}
+    />
+  );
+}
+
+function PreviewRow({
+  title,
+  meta,
+  body,
+  footer,
+}: {
+  title: string;
+  meta: string;
+  body: string;
+  footer: string | null;
+}) {
+  return (
+    <div className="rounded-[var(--radius-card)] border border-white/[0.06] px-3 py-3">
+      <div className="grid gap-1">
+        <h3 className="text-[13px] leading-snug text-warm-ivory/86">
+          {title}
+        </h3>
+        <span className="text-[10px] uppercase tracking-editorial text-warm-ivory/34">
+          {meta}
+        </span>
+      </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-warm-ivory/55">
+        {body}
+      </p>
+      {footer ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-warm-ivory/34">
+          {footer}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyPreview({ text }: { text: string }) {
+  return (
+    <p className="rounded-[var(--radius-card)] border border-white/[0.06] px-3 py-3 text-[12px] leading-relaxed text-warm-ivory/45">
+      {text}
+    </p>
+  );
+}
+
 function relativeTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
+  const minutes = Math.round((Date.now() - date.getTime()) / 60_000);
+  if (minutes < 0) {
+    const futureMinutes = Math.abs(minutes);
+    if (futureMinutes < 60) return `in ${futureMinutes}m`;
+    const futureHours = Math.round(futureMinutes / 60);
+    if (futureHours < 48) return `in ${futureHours}h`;
+    return `in ${Math.round(futureHours / 24)}d`;
+  }
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${relativeTime(value)} · ${date.toLocaleTimeString("en-US", {
+    timeZone: DISPLAY_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
 }
 
 function stateLabel(state: string): string {
@@ -301,8 +557,15 @@ function controlSummary(state: string): string {
   }
 }
 
-function timeOnly(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+function safeErrorDetail(value: string): string {
+  return value.replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[redacted]");
+}
+
+function formatScore(value: number | null): string {
+  if (typeof value !== "number") return "no score";
+  return value.toFixed(2);
+}
+
+function percent(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }

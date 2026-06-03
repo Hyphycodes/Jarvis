@@ -18,6 +18,8 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Foundation Sprint Mode:** when Candidate Inbox, Living Library, Source Graph, or Tier A/B inventory is thin, Autopilot can run persistent bounded mission batches every 15 minutes until the bank is healthy.
 - **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
 - **Library Control Room:** `/settings/library` shows run state, provider blockers, activity, Foundation Sprint progress, current/next mission, and owner controls for run/pause/resume/stop-after-current-step.
+- **Foundation visibility:** the control room also previews Candidate Inbox, Source Graph, Places, Events, rejected/muted rows, and Tier A/B/C inventory so the owner can inspect what Jarvis is finding before Radar.
+- **Radar promotion diagnostics:** `/settings/library` explains why Radar is quiet by reviewing Candidate Inbox, Holding, Tier A/B Library rows, and Event Pulse rows. Raw candidates never promote directly; eligible front-room moves still go through Holding/curation gates.
 - **Taste Seed Importer:** owner-provided markdown taste context can be dry-run or committed into Circle, Library, Source Graph, memory, taste signals, and negative scoring filters without becoming static Radar content.
 
 **Brain pipeline (5 agents + Decision Council):**
@@ -177,6 +179,20 @@ Idle, Paused, Blocked, Partial Success, Foundation Sprint, Failed, Healthy, or
 Bootstrap needed. Pause affects scheduled maintenance cron; Foundation Sprint
 has its own enable/pause flag and mission cursor. Stop means "stop after current
 major step."
+
+The control room is also the inspection surface for the hidden layers under
+Radar. Candidate Inbox preview shows raw intake, score, source/campaign,
+status, reason, and rejection reason. Source preview shows source type, status,
+trust/taste/freshness scores, save/pass/plan rates, and check cadence. Rejected
+/ muted preview shows what Jarvis filtered out and why. Timestamps are stored
+in UTC and displayed in the owner-local view, defaulting to America/Chicago.
+
+Radar promotion diagnostics explain the quiet front room. The diagnostic panel
+reviews Candidate Inbox, Holding, Tier A/B places, and current events, then
+records blockers such as missing enrichment, missing timing, low confidence,
+negative filters, source confidence, duplicate/pass history, or "durable place
+but not timely." Only Holding items can be promoted directly to Active Radar,
+and only after the existing front-room quality gates pass.
 
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 

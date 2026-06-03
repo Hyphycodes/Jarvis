@@ -172,6 +172,21 @@ exact provider dates exist, upserts sources to Source Graph, and marks weak or
 ambiguous rows with reasons. It stops when the time budget is near and does not
 write directly to Active Radar.
 
+The owner can inspect the hidden layers from `/settings/library`. The page
+shows latest Candidate Inbox rows, Source Graph rows, Places, Events,
+Rejected/Muted rows, and Tier A/B/C slices. This is visibility into the research
+desk, not a browsing product surface. Empty sections stay quiet; they are not
+filled with fake examples.
+
+Radar promotion diagnostics explain the final boundary. The diagnostic helper
+reviews Candidate Inbox, Holding, Tier A/B Library places, and current events,
+then returns source layer, score, eligibility, reason, blockers, and next step.
+Raw Candidate Inbox rows are always blocked from direct promotion. Library
+places can anchor taste and future timing but do not force Radar. Holding
+remains the direct promotion source, and `isPromotableWhenUnderfilled()` plus
+the Decision Council/front-room quality gates decide whether Active Radar
+changes.
+
 ## Taste Seed Importer
 
 `POST /api/library/import-taste-seed` and
@@ -206,6 +221,9 @@ the owner can verify that taste seed context reached the relationship map.
 - last run, last bootstrap/foundation run, current operation, current/next mission, and next scheduled estimate
 - progress against bootstrap and Foundation Sprint targets
 - last activity messages from `radar_autopilot_activity`
+- compact previews of Candidate Inbox, Source Graph, Places, Events,
+  Rejected/Muted rows, and Tier A/B/C Library inventory
+- Radar promotion diagnostics that explain blockers and eligible Holding items
 - owner controls to run Bootstrap, run Autopilot, pause, resume, or request
   stop after the current step
 - Foundation Sprint controls to start, pause, resume, and run the next mission
@@ -214,6 +232,11 @@ the owner can verify that taste seed context reached the relationship map.
 `partial_success` and "time budget reached" are progress states. They mean the
 batch returned before timeout with saved work and the next scheduled run should
 continue.
+
+Run timestamps are stored in UTC and displayed in the control room as relative
+time plus owner-local time, currently defaulting to America/Chicago. Error
+details come from `radar_autopilot_runs.error_message` and activity metadata;
+UI rendering should redact token-like values and show partial row counts.
 
 The control room reads `radar_autopilot_runs`,
 `radar_autopilot_activity`, and `radar_autopilot_settings`. These tables are

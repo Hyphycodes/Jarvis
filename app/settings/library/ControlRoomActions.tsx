@@ -153,6 +153,19 @@ export function ControlRoomActions({
       >
         Stop After Current Step
       </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => run("Promotion Review", () =>
+          fetch("/api/radar/autopilot", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ mode: "manual_force", force: true }),
+          }))}
+        className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/55 disabled:opacity-35"
+      >
+        Run Promotion Review
+      </button>
       {message ? (
         <p className="text-[11px] leading-relaxed text-warm-ivory/45">
           {message}

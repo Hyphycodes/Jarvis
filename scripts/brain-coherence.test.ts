@@ -935,6 +935,52 @@ function testTimeoutSafeAutopilotContract() {
   assert.doesNotMatch(autopilot, /input\.base\.mode === "foundation_sprint"[\s\S]{0,240}processEventCandidates/);
 }
 
+function testLibraryPreviewAndPromotionDiagnosticsContract() {
+  const previews = readFileSync("lib/library/previews.ts", "utf8");
+  assert.match(previews, /from\("radar_candidate_inbox"\)/);
+  assert.match(previews, /from\("intelligence_sources"\)/);
+  assert.match(previews, /from\("places_library"\)/);
+  assert.match(previews, /from\("current_events"\)/);
+  assert.match(previews, /Rejected \/ Muted|rejectedMuted/);
+  assert.match(previews, /rejection_reason/);
+  assert.match(previews, /sourceLabel\(row\.raw_payload\)/);
+
+  const diagnostics = readFileSync("lib/radar/promotionDiagnostics.ts", "utf8");
+  assert.match(diagnostics, /sourceLayer: "candidate_inbox"/);
+  assert.match(diagnostics, /Raw Candidate Inbox rows never promote directly/);
+  assert.match(diagnostics, /Missing exact event date\/time/);
+  assert.match(diagnostics, /nextStep: row\.status === "rejected"/);
+  assert.match(diagnostics, /isPromotableWhenUnderfilled/);
+  assert.match(diagnostics, /sourceLayer: "holding"/);
+  assert.match(diagnostics, /places_library/);
+  assert.match(diagnostics, /current_events/);
+  assert.doesNotMatch(diagnostics, /from\("surfaced_items"\)\.insert/);
+}
+
+function testSettingsLibraryVisibilityWiring() {
+  const page = readFileSync("app/settings/library/page.tsx", "utf8");
+  assert.match(page, /readLibraryPreview/);
+  assert.match(page, /readRadarPromotionDiagnostics/);
+  assert.match(page, /Radar Promotion Diagnostics/);
+  assert.match(page, /Pending Candidates/);
+  assert.match(page, /Rejected \/ Muted/);
+  assert.match(page, /DISPLAY_TIME_ZONE = "America\/Chicago"/);
+  assert.match(page, /Last error detail/);
+  assert.match(page, /safeErrorDetail/);
+
+  const actions = readFileSync("app/settings/library/ControlRoomActions.tsx", "utf8");
+  assert.match(actions, /Run Promotion Review/);
+  assert.match(actions, /manual_force/);
+}
+
+function testPromotionReviewActivityContract() {
+  const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
+  assert.match(autopilot, /readRadarPromotionDiagnostics/);
+  assert.match(autopilot, /Promotion review considered/);
+  assert.match(autopilot, /blockers: diagnostics\.items/);
+  assert.match(autopilot, /Promotion review promoted 0 items/);
+}
+
 type Row = Record<string, any>;
 
 class MemorySupabase {
@@ -1098,6 +1144,9 @@ async function main() {
   await testTasteSeedCommitWritesCirclePeople();
   testCandidateInboxConversionContract();
   testTimeoutSafeAutopilotContract();
+  testLibraryPreviewAndPromotionDiagnosticsContract();
+  testSettingsLibraryVisibilityWiring();
+  testPromotionReviewActivityContract();
 
   console.log("brain coherence tests passed");
 }

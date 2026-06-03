@@ -67,6 +67,7 @@ import {
   type RunBudget,
   selectFoundationMissions,
 } from "@/lib/radar/foundationSprint";
+import { readRadarPromotionDiagnostics } from "@/lib/radar/promotionDiagnostics";
 import { describeSourceHealth, gatherRadarCandidates } from "@/lib/sources/gather";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -777,6 +778,32 @@ async function executeOperation(input: {
         break;
       }
       case "promotion_review": {
+        const diagnostics = await readRadarPromotionDiagnostics({
+          userId: input.userId,
+          supabase: input.supabase,
+          limit: 16,
+        });
+        await logAutopilotActivity({
+          userId: input.userId,
+          runId: input.runId,
+          level: "info",
+          message: `Promotion review considered ${diagnostics.items.length} item(s): ${diagnostics.summary}`,
+          metadata: {
+            activeCount: diagnostics.activeCount,
+            target: diagnostics.target,
+            eligible: diagnostics.items.filter((item) => item.radarEligible).length,
+            blockers: diagnostics.items
+              .filter((item) => !item.radarEligible)
+              .slice(0, 8)
+              .map((item) => ({
+                title: item.title,
+                source_layer: item.sourceLayer,
+                blockers: item.blockers.slice(0, 3),
+                next_step: item.nextStep,
+              })),
+          },
+          supabase: input.supabase,
+        });
         const promoted = await promoteHoldingWithService({
           userId: input.userId,
           supabase: input.supabase,
@@ -784,7 +811,9 @@ async function executeOperation(input: {
         });
         result.candidatesPromoted += promoted.promoted;
         result.candidatesHeld += promoted.reviewed - promoted.promoted;
-        result.summary = `Manual review promoted ${promoted.promoted} qualified Holding item(s).`;
+        result.summary = promoted.promoted > 0
+          ? `Promotion review promoted ${promoted.promoted} qualified Holding item(s).`
+          : `Promotion review promoted 0 items. ${diagnostics.summary}`;
         break;
       }
       case "stale_cleanup":
