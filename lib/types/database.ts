@@ -1043,6 +1043,75 @@ export interface Database {
         };
         Relationships: [];
       };
+      intelligence_traces: {
+        Row: {
+          id: string;
+          user_id: string;
+          route: string;
+          surface: string;
+          decision_type: string;
+          entity_type: string | null;
+          entity_id: string | null;
+          context_summary: Json;
+          reasoning: Json;
+          candidates_considered: Json | null;
+          selected_candidate: Json | null;
+          rejected_candidates: Json | null;
+          north_alignment: Json | null;
+          behavior_influence: Json | null;
+          circle_influence: Json | null;
+          memory_influence: Json | null;
+          source_quality: Json | null;
+          confidence: number | null;
+          outcome: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          route: string;
+          surface: string;
+          decision_type: string;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          context_summary?: Json;
+          reasoning?: Json;
+          candidates_considered?: Json | null;
+          selected_candidate?: Json | null;
+          rejected_candidates?: Json | null;
+          north_alignment?: Json | null;
+          behavior_influence?: Json | null;
+          circle_influence?: Json | null;
+          memory_influence?: Json | null;
+          source_quality?: Json | null;
+          confidence?: number | null;
+          outcome?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          route?: string;
+          surface?: string;
+          decision_type?: string;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          context_summary?: Json;
+          reasoning?: Json;
+          candidates_considered?: Json | null;
+          selected_candidate?: Json | null;
+          rejected_candidates?: Json | null;
+          north_alignment?: Json | null;
+          behavior_influence?: Json | null;
+          circle_influence?: Json | null;
+          memory_influence?: Json | null;
+          source_quality?: Json | null;
+          confidence?: number | null;
+          outcome?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       north_signals: {
         Row: {
           id: string;
@@ -1137,6 +1206,8 @@ export type NorthSignalRow =
   Database["public"]["Tables"]["north_signals"]["Row"];
 export type BrainDecisionRunRow =
   Database["public"]["Tables"]["brain_decision_runs"]["Row"];
+export type IntelligenceTraceRow =
+  Database["public"]["Tables"]["intelligence_traces"]["Row"];
 
 // Standalone types for tables added in migration 0007
 export type CurrentEventRow = {

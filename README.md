@@ -10,9 +10,10 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Circle** — inner circle people with updates and context
 - **North** — long-arc pillars, life cadence, and direction
 
-**Two-track discovery system:**
-- **Track 1 — Places Library:** Persistent library of Chicago places researched by Scout → Researcher → Verdict Writer agents. 50+ entries and growing autonomously.
-- **Track 2 — Event Pulse:** Rolling window of events this week and next. Scout → Verdict Writer → surfaced to Tonight and Radar.
+**Mission-based discovery system:**
+- **Taste Strategist missions:** FounderContextPacket + Interest Graph + North + behavior produce exploration lanes before any source is called.
+- **Scout / Research / Curator:** Scout executes those missions against real sources, Curator and Decision Council decide what is worth attention, and weak output stays quiet.
+- **Seed sources:** static curated URLs and query pools are gated seeds/fallbacks, not the core intelligence. Location-specific seeds only run when profile/location context supports them.
 
 **Brain pipeline (5 agents + Decision Council):**
 1. Taste Strategist — derives interest lanes and source plan from the Interest Graph
@@ -24,6 +25,8 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 Each agent uses `generateStructured<T>` with Zod-validated output and deterministic fallbacks. No crashes if the API key is missing.
 
 **Decision Council** — deterministic 5-role weighted scorer (Scout, Operator, Taste, Growth, Critic) with 0.72 confidence floor for Active Radar admission.
+
+**Decision traceability** — major brain actions write compact best-effort `intelligence_traces` with context summary, reasoning, candidates considered, rejected alternatives, North alignment, behavior/Circle/memory influence, confidence, and outcome. Trace writes must never break user routes.
 
 **Phase 6 curation guardrails:**
 - Required `why_now` — generic patterns auto-demote to holding
@@ -38,6 +41,8 @@ Each agent uses `generateStructured<T>` with Zod-validated output and determinis
 - Drop It In — paste any text, URL, or screenshot for instant research + verdict
 - Tastemaker tracking — 30+ people monitored weekly for fresh signal
 - Memory + behavior signal infrastructure
+- Canonical FounderContextPacket shared by Radar, Today, Circle, North, plans, chat/voice, cron, and Scout
+- Reusable IntelligenceReason payload for "Why this?" explanations
 - Library Refresher — catches chef changes, closures, new menus
 
 ## Stack
@@ -68,7 +73,8 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 | `pnpm build`     | Production build             |
 | `pnpm start`     | Run the built app            |
 | `pnpm typecheck` | `tsc --noEmit`               |
-| `pnpm lint`      | Next.js lint                 |
+| `pnpm test:brain` | Brain coherence tests       |
+| `pnpm smoke`     | App smoke script             |
 
 ## Environment variables
 
@@ -89,12 +95,13 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 | `ELEVENLABS_VOICE_ID`             | optional | ElevenLabs voice ID for Jarvis's voice               |
 | `OPENWEATHER_API_KEY`             | optional | Weather context for curation                         |
 | `MLB_API_KEY`                     | optional | White Sox schedule                                   |
+| `JARVIS_ENABLE_SYNTHETIC_MOVES`   | optional | Defaults off. Opt-in cadence-derived move candidates |
 
 ## Auth setup
 
 1. Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`
 2. Supabase Auth → URL Configuration: set Site URL and add `${SITE_URL}/auth/callback` to Redirect URLs
-3. Apply migrations in `supabase/migrations/` (0001–0008) in the SQL Editor
+3. Apply migrations in `supabase/migrations/` (0001–0011) in the SQL Editor
 4. Visit `/login`, sign in with magic link
 5. Run in Supabase SQL Editor: `select public.seed_founder('your-email@example.com');`
 6. Refresh `/settings` — role should read `owner`
@@ -107,7 +114,7 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 | ------------------- | -------------------------------- | ------------------------------------------------|
 | Daily 12:00 UTC     | `/api/intelligence/run?run_type=daily_maintenance` | Cleanup, pattern detection, day-of promotion |
 | Fridays 21:00 UTC   | `/api/intelligence/run?run_type=weekend_preview`   | Weekend curation pass                        |
-| Daily 8:00 UTC      | `/api/library/scout`             | Discovers new Chicago place candidates          |
+| Daily 8:00 UTC      | `/api/library/scout`             | Runs mission-based Scout discovery              |
 | Daily 9:00 UTC      | `/api/library/process-candidates`| Researches and verdicts pending candidates      |
 | Every 2 days 10:00 UTC | `/api/events/scout`           | Discovers upcoming events                       |
 | Every 2 days 11:00 UTC | `/api/events/process`         | Verdicts and surfaces events                    |
@@ -125,21 +132,23 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 /lib/memory            Long-term memory layer
 /lib/sources           External API adapters (Tavily, Brave, Ticketmaster, Mapbox...)
 /lib/brain/refresher   Library refresher agent
-/supabase/migrations   Schema migrations (0001–0008)
+/supabase/migrations   Schema migrations (0001–0011)
 ```
 
 ## How the brain works
 
-1. **Curation run** triggered by cron or explicit owner action
-2. **Taste Strategist** reads the Interest Graph and North pillars → outputs interest lanes and source plan
-3. **Scout** (`lib/brain/scout.ts`) queries sources per lane → inserts candidates into `surfaced_items`
-4. **Curator** (`lib/brain/curator.ts`) shortlists candidates → selects up to N items for Radar or Holding
-5. **Critic** (`lib/brain/critic.ts`) stress-tests the selection → may demote or reject items
-6. **Briefing Editor** (`lib/brain/prompts/briefingEditorPrompt.ts`) writes final copy for each item
-7. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring + Phase 6 guardrails
-8. Selected items surface to Active Radar; rejected items go to Holding or Discovered
+1. **Context packet** (`lib/context/founderContextPacket.ts`) gathers real user context only: North, Radar actions, Today plans/events, Circle moments, memory, behavior, time, and available weather/location.
+2. **Taste Strategist** reads the BrainContext + Interest Graph → outputs exploration missions before any external source call.
+3. **Scout** (`lib/brain/scout.ts`) executes strategist missions first. Static curated queries/URLs are gated seeds/fallbacks only.
+4. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
+5. **Decision Council** (`lib/brain/decisionCouncil.ts`) applies deterministic scoring, North alignment, and curation guardrails.
+6. **IntelligenceReason + IntelligenceTrace** record why Jarvis chose or rejected something in compact structured form.
+7. **Routed actions** from Radar, Today, plans, chat/voice, and item actions write behavior signals and memory proposals.
+8. **Future context packets** read those real behavior/memory signals, so recommendations improve without fake filler.
 
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
+
+Production routes must not invent Radar items, Today suggestions, Circle people, plans, memories, or behavior. Empty real data should produce quiet empty states or skipped output, not generic filler. Synthetic objects belong in tests or QA-only helpers.
 
 ## Deploy
 

@@ -1,4 +1,5 @@
 import type { MemoryUpdateProposal, MemoryItem } from "@/lib/memory/types";
+import type { IntelligenceReason } from "@/lib/brain/intelligenceReason";
 
 export type IntelligenceDestination =
   | "today.hero"
@@ -124,6 +125,7 @@ export type TodayCommandItem = {
   planId?: string;
   planSlug?: string;
   reason?: string;
+  intelligenceReason?: IntelligenceReason;
   score?: number;
 };
 

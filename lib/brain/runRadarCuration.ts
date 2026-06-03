@@ -20,6 +20,14 @@ import { runCurator, summarizeContext } from "@/lib/brain/curator";
 import { runCritic } from "@/lib/brain/critic";
 import { shortlistByScore } from "@/lib/brain/router";
 import { inferRecentCadence } from "@/lib/brain/lifeCadence";
+import {
+  buildIntelligenceReason,
+  sourceStrengthFromConfidence,
+} from "@/lib/brain/intelligenceReason";
+import {
+  buildContextTraceSummary,
+  safeWriteIntelligenceTrace,
+} from "@/lib/brain/intelligenceTrace";
 import type { BrainDecision, ScoredItem } from "@/lib/brain/types";
 import type { IndexedItem } from "@/lib/index/types";
 import type { SurfacedItemRow } from "@/lib/types/database";
@@ -217,6 +225,7 @@ export async function runRadarCuration(options: {
     owner.id,
     intelligenceGated,
     pool,
+    shortlist,
   );
 
   // After applying the current selection, enforce the Active Radar inventory cap.
@@ -240,6 +249,51 @@ export async function runRadarCuration(options: {
       fallback_reason: intelligenceGated.fallbackReason,
       ...(options.rawOutputExtra ?? {}),
     } as unknown as BrainDecision,
+  });
+  await safeWriteIntelligenceTrace({
+    userId: owner.id,
+    route: "lib/brain/runRadarCuration.runRadarCuration",
+    surface: "radar",
+    decisionType: "curation",
+    contextSummary: buildContextTraceSummary(context),
+    reasoning: buildIntelligenceReason({
+      summary: `Radar curation selected ${intelligenceGated.selected.length} and rejected ${intelligenceGated.rejected.length}.`,
+      contextFactors: [
+        intelligenceGated.notes,
+        options.strategy?.strategist_reason,
+        `Shortlist: ${shortlist.length}`,
+      ],
+      behaviorInfluence: recentPassCategories.map((category) => `Recent pass category: ${category}`),
+      confidence: intelligenceGated.selected[0]?.confidence,
+      sourceStrength: sourceStrengthFromConfidence(intelligenceGated.selected[0]?.confidence),
+    }),
+    candidatesConsidered: shortlist.slice(0, 20).map((entry) => ({
+      id: entry.item.id,
+      title: entry.item.title,
+      score: entry.score,
+      northAlignment: entry.northAlignment,
+    })),
+    selectedCandidate: intelligenceGated.selected.slice(0, 8).map((selection) => ({
+      itemId: selection.itemId,
+      destination: selection.destination,
+      confidence: selection.confidence,
+      reason: selection.reason,
+    })),
+    rejectedCandidates: intelligenceGated.rejected.slice(0, 12).map((rejection) => ({
+      itemId: rejection.itemId,
+      reason: rejection.reason,
+      suggestedStatus: rejection.suggestedStatus,
+    })),
+    northAlignment: shortlist
+      .filter((entry) => entry.northAlignment?.score)
+      .slice(0, 8)
+      .map((entry) => ({
+        itemId: entry.item.id,
+        ...entry.northAlignment,
+      })),
+    behaviorInfluence: { recent_pass_categories: recentPassCategories },
+    confidence: intelligenceGated.selected[0]?.confidence ?? null,
+    outcome: decisionRunId ? `brain_decision_run:${decisionRunId}` : "logged_without_run_id",
   });
 
   return {
@@ -725,15 +779,18 @@ async function applyDecision(
   userId: string,
   decision: BrainDecision,
   pool: IndexedItem[],
+  shortlist: ScoredItem[],
 ): Promise<{ selectedApplied: number; rejectedApplied: number }> {
   const supabase = await getServerSupabase();
   const poolById = new Map(pool.map((p) => [p.id, p]));
+  const scoreByItemId = new Map(shortlist.map((entry) => [entry.item.id, entry]));
   let selectedApplied = 0;
   let rejectedApplied = 0;
 
   for (const sel of decision.selected) {
     const existing = poolById.get(sel.itemId);
     if (!existing || PROTECTED_STATUSES.has(existing.status)) continue;
+    const scored = scoreByItemId.get(sel.itemId);
 
     const newStatus = sel.destination === "holding" ? "discovered" : "shown";
     const reasons = uniq([
@@ -751,6 +808,17 @@ async function applyDecision(
     if (sel.radarIntelligence) {
       payload = mergeRadarIntelligencePayload(payload, sel.radarIntelligence);
     }
+    payload = mergeObjectPayload(payload, {
+      intelligence_reason: buildIntelligenceReason({
+        summary: sel.displayAngle || sel.reason,
+        contextFactors: [sel.reason, sel.radarDecision?.best_move],
+        northAlignment: sel.radarIntelligence?.northAlignment ?? scored?.northAlignment,
+        behaviorInfluence:
+          scored?.reasons.filter((reason) => /passed|saved|previously/i.test(reason)) ?? [],
+        sourceStrength: sourceStrengthFromConfidence(sel.confidence),
+        confidence: sel.confidence,
+      }),
+    });
 
     const { error } = await supabase
       .from("surfaced_items")

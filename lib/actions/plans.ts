@@ -6,6 +6,12 @@ import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { recordBehaviorSignal } from "@/lib/memory/behaviorSignals";
 import { getIndexItem, rowToIndexedItem } from "@/lib/index/repo";
+import { buildBrainContext } from "@/lib/brain/context";
+import { buildIntelligenceReason } from "@/lib/brain/intelligenceReason";
+import {
+  buildContextTraceSummary,
+  safeWriteIntelligenceTrace,
+} from "@/lib/brain/intelligenceTrace";
 import { generatePlanFromItem } from "@/lib/brain/planGenerator";
 import { slugify, type GeneratedPlan } from "@/lib/brain/planTypes";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
@@ -377,6 +383,34 @@ export async function generatePlanForItem(input: {
     planId: stub.planId,
     itemId: input.itemId,
     fallbackUsed: filled.fallbackUsed,
+  });
+  const context = await buildBrainContext({ userId: stub.userId, includeWeather: false });
+  await safeWriteIntelligenceTrace({
+    userId: stub.userId,
+    route: "lib/actions/plans.generatePlanForItem",
+    surface: "plan",
+    decisionType: "plan_generated",
+    entityType: "plan",
+    entityId: stub.planId,
+    contextSummary: buildContextTraceSummary(context),
+    reasoning: buildIntelligenceReason({
+      summary: filled.fallbackUsed
+        ? "Generated a fallback plan structure without pretending missing logistics are known."
+        : "Generated a plan from the source item and current Jarvis context.",
+      contextFactors: [
+        `Source item: ${input.itemId}`,
+        filled.fallbackUsed ? "Fallback generation used" : "Model generation used",
+      ],
+      confidence: filled.fallbackUsed ? 0.45 : 0.72,
+      sourceStrength: filled.fallbackUsed ? "weak" : "strong",
+    }),
+    selectedCandidate: {
+      plan_id: stub.planId,
+      plan_slug: stub.planSlug,
+      source_item_id: input.itemId,
+    },
+    confidence: filled.fallbackUsed ? 0.45 : 0.72,
+    outcome: filled.fallbackUsed ? "generated_fallback" : "generated",
   });
 
   revalidatePath(`/item/${input.itemId}`);

@@ -8,6 +8,13 @@ import {
   fillPlan,
 } from "@/lib/actions/plans";
 import { passItem, saveItem } from "@/lib/actions/items";
+import { buildBrainContext } from "@/lib/brain/context";
+import { buildIntelligenceReason } from "@/lib/brain/intelligenceReason";
+import {
+  buildContextTraceSummary,
+  safeWriteIntelligenceTrace,
+  type IntelligenceTraceSurface,
+} from "@/lib/brain/intelligenceTrace";
 import { createCanonicalMemory } from "@/lib/memory/memoryStore";
 import { recordAiAction } from "@/lib/chat/aiActions";
 import { addToRadarFromObservation } from "@/lib/chat/actions/addToRadarFromObservation";
@@ -16,6 +23,7 @@ import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
 import { learnSource } from "@/lib/chat/actions/learnSource";
 import { updateObservation } from "@/lib/chat/observations";
 import { clearChatContextCache } from "@/lib/chat/context/buildChatContext";
+import type { Json } from "@/lib/types/database";
 import type { ChatActionType, ChatChip } from "@/lib/chat/types";
 
 export const dynamic = "force-dynamic";
@@ -116,6 +124,16 @@ async function saveToRadar(
     objectId: itemId,
     metadata: { source: "chat_chip", observation_id: observationId ?? null },
   });
+  await traceChatAction({
+    userId,
+    actionType: "save_to_radar",
+    surface: "chat",
+    entityType: "radar_item",
+    entityId: itemId,
+    summary: "User confirmed a chat candidate should be kept in Radar.",
+    outcome: "saved_to_radar",
+    payload,
+  });
   await recordAiAction({
     userId,
     actionType: "save_to_radar",
@@ -158,6 +176,16 @@ async function saveCurrentItem(
     objectId: itemId,
     metadata: { source: "chat_command" },
   });
+  await traceChatAction({
+    userId,
+    actionType: "save_item",
+    surface: "chat",
+    entityType: "radar_item",
+    entityId: itemId,
+    summary: "User command saved the current item.",
+    outcome: "saved",
+    payload,
+  });
   clearChatContextCache(userId);
 
   return {
@@ -189,6 +217,16 @@ async function passCurrentItem(
     objectType: "radar_item",
     objectId: itemId,
     metadata: { source: "chat_command" },
+  });
+  await traceChatAction({
+    userId,
+    actionType: "pass_item",
+    surface: "chat",
+    entityType: "radar_item",
+    entityId: itemId,
+    summary: "User command passed on the current item.",
+    outcome: "passed",
+    payload,
   });
   clearChatContextCache(userId);
 
@@ -291,6 +329,21 @@ async function buildPlan(
     objectId: itemId,
     metadata: { plan_id: stub.planId, observation_id: observationId ?? null },
   });
+  await traceChatAction({
+    userId,
+    actionType: "build_plan",
+    surface: "chat",
+    entityType: "plan",
+    entityId: stub.planId,
+    summary: "User confirmed planning from chat.",
+    outcome: stub.reused ? "plan_reused" : "planning_started",
+    payload,
+    selectedCandidate: {
+      item_id: itemId,
+      plan_id: stub.planId,
+      plan_slug: stub.planSlug,
+    },
+  });
   clearChatContextCache(userId);
 
   return {
@@ -361,6 +414,23 @@ async function rememberFromChat(
       item_id: itemId,
     },
   });
+  await traceChatAction({
+    userId,
+    actionType: "remember",
+    surface: "chat",
+    entityType: "memory",
+    entityId: memoryId,
+    summary: memoryType === "north_goal"
+      ? "User saved chat context as a North memory."
+      : "User saved chat context as memory.",
+    outcome: "remembered",
+    payload,
+    selectedCandidate: {
+      memory_id: memoryId,
+      memory_type: memoryType,
+      item_id: itemId,
+    },
+  });
   clearChatContextCache(userId);
 
   return {
@@ -395,6 +465,16 @@ async function notMyVibe(
     objectId: itemId ?? observationId ?? null,
     metadata: { source: "chat_chip" },
   });
+  await traceChatAction({
+    userId,
+    actionType: "not_my_vibe",
+    surface: "chat",
+    entityType: itemId ? "radar_item" : "observation",
+    entityId: itemId ?? observationId,
+    summary: "User rejected a chat or item suggestion as not aligned.",
+    outcome: itemId ? "passed" : "observation_cancelled",
+    payload,
+  });
   clearChatContextCache(userId);
   return {
     ok: true,
@@ -416,6 +496,52 @@ function normalizeMemoryType(value: string | null) {
       return value;
     default:
       return "confirmed_behavior";
+  }
+}
+
+async function traceChatAction(input: {
+  userId: string;
+  actionType: string;
+  surface: IntelligenceTraceSurface;
+  entityType?: string | null;
+  entityId?: string | null;
+  summary: string;
+  outcome: string;
+  payload?: Record<string, unknown>;
+  selectedCandidate?: Record<string, unknown>;
+}) {
+  try {
+    const context = await buildBrainContext({
+      userId: input.userId,
+      includeWeather: false,
+    });
+    await safeWriteIntelligenceTrace({
+      userId: input.userId,
+      route: "app/api/chat/actions",
+      surface: input.payload?.origin === "voice" ? "voice" : input.surface,
+      decisionType: input.actionType,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      contextSummary: buildContextTraceSummary(context),
+      reasoning: buildIntelligenceReason({
+        summary: input.summary,
+        contextFactors: [
+          input.payload?.item_id ? `Item: ${String(input.payload.item_id)}` : null,
+          input.payload?.observation_id
+            ? `Observation: ${String(input.payload.observation_id)}`
+            : null,
+          input.payload?.memory_type ? `Memory type: ${String(input.payload.memory_type)}` : null,
+        ],
+      }),
+      selectedCandidate: (input.selectedCandidate ?? null) as Json | null,
+      behaviorInfluence: {
+        action_type: input.actionType,
+        payload: input.payload ?? {},
+      } as Json,
+      outcome: input.outcome,
+    });
+  } catch (error) {
+    console.error("[chat.actions.trace] failed", error);
   }
 }
 

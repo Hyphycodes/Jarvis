@@ -27,9 +27,22 @@
 
 - **research_cache** — external API results keyed and TTL'd
 - **surfaced_items** — what the system surfaced, when, and why
-- **user_feedback** — accepted / dismissed / saved signals on surfaced items
 - **memory_update_proposals** — proposal-first memory changes before canonical write
 - **behavior_signals** — save/pass/open/activate/complete signals
+- **brain_decision_runs** — run-level curation snapshots and strategy summaries
+- **intelligence_traces** — compact best-effort per-decision traces for Radar,
+  Today, Scout, plans, chat/voice, Circle, North, and cron decisions
+
+## Current policy
+
+- Use `behavior_signals` for what the user did.
+- Use `memory_update_proposals` for reviewable durable memory changes.
+- Use `brain_decision_runs` for run-level curation snapshots.
+- Use `intelligence_traces` for explainability: compact context summary,
+  reasoning, candidates considered, rejected alternatives, North alignment,
+  behavior/Circle/memory influence, source quality, confidence, and outcome.
+- Do not add fake production rows to fill empty states. Synthetic rows belong
+  only in tests or QA-only helpers.
 
 ## Open questions
 

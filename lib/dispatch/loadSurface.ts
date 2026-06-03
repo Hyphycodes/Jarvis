@@ -2,6 +2,11 @@ import "server-only";
 
 import { getViewableProfileId } from "@/lib/auth";
 import { buildBrainContext } from "@/lib/brain/context";
+import {
+  buildIntelligenceReason,
+  reasonForCircleMoment,
+  type IntelligenceReason,
+} from "@/lib/brain/intelligenceReason";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
@@ -654,6 +659,18 @@ function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
   const planId = readPlanId(row.payload);
   const briefing = readBriefingFromPayload(row.payload);
   const reason = briefing?.jarvis_take ?? row.reasons?.[0] ?? row.subtitle ?? undefined;
+  const intelligenceReason =
+    readIntelligenceReason(readPayloadValue(row.payload, "intelligence_reason")) ??
+    buildIntelligenceReason({
+      summary: reason ?? briefing?.one_line ?? "Matched current Today context.",
+      contextFactors: [
+        briefing?.why_it_matters,
+        briefing?.why_now,
+        row.starts_at ? `Timing: ${row.starts_at}` : null,
+      ],
+      timingReason: briefing?.why_now,
+      confidence: typeof row.score === "number" ? Math.max(0, Math.min(1, row.score)) : undefined,
+    });
   return {
     id: row.id,
     title: briefing?.display_title ?? row.title ?? "Untitled",
@@ -669,6 +686,7 @@ function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
     planId,
     planSlug,
     reason,
+    intelligenceReason,
     score: row.score ?? undefined,
   };
 }
@@ -695,6 +713,11 @@ function rowToCircleTodayItem(row: CircleUpdateRow): TodayCommandItem {
     destination: "circle",
     status: "shown",
     reason: row.suggested_action ?? row.summary,
+    intelligenceReason: reasonForCircleMoment({
+      title: row.title,
+      suggestedAction: row.suggested_action,
+      urgency: row.urgency,
+    }),
     score: scoreCircleUrgency(row.urgency),
   };
 }
@@ -1024,6 +1047,35 @@ function formatToday(): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readPayloadValue(payload: unknown, key: string): unknown {
+  return isRecord(payload) ? payload[key] : undefined;
+}
+
+function readIntelligenceReason(value: unknown): IntelligenceReason | undefined {
+  if (!isRecord(value) || typeof value.summary !== "string") return undefined;
+  return {
+    summary: value.summary,
+    contextFactors: readStringArray(value.contextFactors) ?? [],
+    northAlignment: isRecord(value.northAlignment)
+      ? {
+          score: typeof value.northAlignment.score === "number" ? value.northAlignment.score : 0,
+          matchedPillars: readStringArray(value.northAlignment.matchedPillars) ?? [],
+          reason: stringValue(value.northAlignment.reason) ?? "",
+        }
+      : undefined,
+    behaviorInfluence: readStringArray(value.behaviorInfluence),
+    circleInfluence: readStringArray(value.circleInfluence),
+    memoryInfluence: readStringArray(value.memoryInfluence),
+    timingReason: stringValue(value.timingReason),
+    sourceStrength: readSourceStrength(value.sourceStrength),
+    confidence: typeof value.confidence === "number" ? value.confidence : undefined,
+  };
+}
+
+function readSourceStrength(value: unknown): IntelligenceReason["sourceStrength"] | undefined {
+  return value === "weak" || value === "medium" || value === "strong" ? value : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {

@@ -5,6 +5,11 @@ import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { recordBehaviorSignal } from "@/lib/memory/behaviorSignals";
 import { behaviorMetadataForItem } from "@/lib/intelligence/memoryWriteback";
+import { buildIntelligenceReason } from "@/lib/brain/intelligenceReason";
+import {
+  safeWriteIntelligenceTrace,
+  type IntelligenceTraceSurface,
+} from "@/lib/brain/intelligenceTrace";
 import {
   getIndexItem,
   updateIndexItemStatus,
@@ -35,7 +40,7 @@ async function transition(
     nextDestination?: IndexDestination;
   } = {},
 ): Promise<ItemActionResult> {
-  await requireOwner();
+  const owner = await requireOwner();
   const existing = await getIndexItem(itemId);
   if (!existing) throw new Error("Index item not found.");
 
@@ -55,6 +60,46 @@ async function transition(
   }
 
   await recordBehaviorSignal(signal);
+  await safeWriteIntelligenceTrace({
+    userId: owner.id,
+    route: "lib/actions/items.transition",
+    surface: traceSurfaceForDestination(options.nextDestination ?? existing.destination),
+    decisionType: signal.type,
+    entityType: "radar_item",
+    entityId: itemId,
+    contextSummary: {
+      now: new Date().toISOString(),
+      previous_status: existing.status,
+      next_status: nextStatus,
+      previous_destination: existing.destination,
+      next_destination: options.nextDestination ?? existing.destination,
+      category: existing.category,
+    },
+    reasoning: buildIntelligenceReason({
+      summary: `User action ${signal.type} changed ${existing.title}.`,
+      contextFactors: [
+        existing.category ? `Category: ${existing.category}` : null,
+        options.nextDestination && options.nextDestination !== existing.destination
+          ? `Moved from ${existing.destination} to ${options.nextDestination}`
+          : `Stayed in ${existing.destination}`,
+      ],
+      behaviorInfluence: [
+        signal.type === "item.pass" ? "Pass should reduce similar future confidence." : null,
+        signal.type === "item.save" ? "Save should increase similar future confidence." : null,
+        signal.type === "item.plan" ? "Plan should increase similar future confidence." : null,
+      ],
+    }),
+    selectedCandidate: {
+      item_id: itemId,
+      title: existing.title,
+      status: nextStatus,
+      destination: options.nextDestination ?? existing.destination,
+    },
+    behaviorInfluence: {
+      signal,
+    },
+    outcome: nextStatus,
+  });
 
   const destinations = uniq([
     existing.destination,
@@ -69,6 +114,21 @@ async function transition(
     status: nextStatus,
     destination: options.nextDestination ?? existing.destination,
   };
+}
+
+function traceSurfaceForDestination(destination: IndexDestination): IntelligenceTraceSurface {
+  switch (destination) {
+    case "today":
+      return "today";
+    case "circle":
+      return "circle";
+    case "north":
+      return "north";
+    case "plan":
+      return "plan";
+    default:
+      return "radar";
+  }
 }
 
 async function updateItemDestination(

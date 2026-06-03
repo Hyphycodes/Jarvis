@@ -3,12 +3,12 @@
 Ambient Intelligence is the controlled background-thinking layer for Jarvis. It
 does not run on page load and it does not create an endless feed. Owner-triggered
 routes use the same brain pipeline as manual Radar refresh, but add run type,
-budget, source quality, cleanup, and synthetic move metadata.
+budget, source quality, cleanup, and trace metadata.
 
 ## Run Types
 
 - `daily_maintenance`: cheap stale-item, Today promotion, and Radar cleanup pass.
-- `radar_discovery`: heavier discovery pass for candidates and synthetic moves.
+- `radar_discovery`: heavier discovery pass for source-backed candidates.
 - `weekend_preview`: weekend-oriented discovery and Holding ideas.
 - `holding_review`: re-evaluates Holding and cleans Active Radar without broad source calls.
 - `north_reflection`: low-frequency long-term ideas, usually Holding.
@@ -60,7 +60,7 @@ not trigger discovery.
 ## Quality Rules
 
 Active Radar requires Decision Council admission. That means a clean action
-title, purpose label, useful evidence or strong synthetic context, no major
+title, purpose label, useful evidence, no major
 quality flags, and enough confidence to be decision-ready. Holding is for good
 signal with weak timing, thin evidence, or higher effort. Archive/discovered is
 for noisy, literal, expired, duplicated, low-trust, fake-luxury, corny,

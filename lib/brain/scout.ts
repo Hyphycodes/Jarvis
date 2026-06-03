@@ -3,6 +3,17 @@ import "server-only";
 import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
+import { buildInterestGraph } from "@/lib/brain/interestGraph";
+import { runTasteStrategist } from "@/lib/brain/tasteStrategist";
+import { buildScoutMissions, isChicagoLike, type ScoutMission } from "@/lib/brain/scoutMissions";
+import {
+  buildContextTraceSummary,
+  safeWriteIntelligenceTrace,
+} from "@/lib/brain/intelligenceTrace";
+import {
+  buildIntelligenceReason,
+  sourceStrengthFromConfidence,
+} from "@/lib/brain/intelligenceReason";
 import { hasTavily, searchWeb, extractUrls } from "@/lib/sources/tavily";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 
@@ -30,7 +41,7 @@ type ScoutExtractionResult = {
 
 // ── Query pool ────────────────────────────────────────────────────────────────
 
-const SCOUT_QUERIES: Array<{ q: string; domains: string[]; chicagoOnly?: boolean }> = [
+const SCOUT_SEEDS: Array<{ q: string; domains: string[]; chicagoOnly?: boolean }> = [
   // Food & Dining
   { q: "best new restaurants {city} {year}", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
   { q: "best steakhouses {city}", domains: ["theinfatuation.com", "chicago.eater.com", "chicagomag.com"] },
@@ -136,26 +147,9 @@ function makeSlug(name: string): string {
 
 // ── Random selection ──────────────────────────────────────────────────────────
 
-function pickQueries(
-  count: number,
-  chicagoLike: boolean,
-): Array<{ q: string; domains: string[]; chicagoOnly?: boolean }> {
-  const eligible = SCOUT_QUERIES.filter((query) => chicagoLike || !query.chicagoOnly);
-  const shuffled = [...eligible].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
-}
-
 function pickUrls(count: number): string[] {
   const shuffled = [...SCOUT_URLS].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
-}
-
-function renderScoutQuery(query: string, city: string, year: number): string {
-  return query
-    .replace(/\{city\}/g, city)
-    .replace(/\{year\}/g, String(year))
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function scoutSystemPrompt(city: string): string {
@@ -189,32 +183,71 @@ export async function runScout(
     return { articles_processed, candidates_added, duplicates_skipped };
   }
   const year = new Date(brainContext.now).getFullYear();
-  const chicagoLike = /chicago/i.test(city);
+  const graph = buildInterestGraph({ context: brainContext });
+  const inventory = await readScoutInventory(userId);
+  const strategist = await runTasteStrategist({
+    context: brainContext,
+    graph,
+    activeRadarCount: inventory.activeRadar,
+    holdingCount: inventory.holding,
+  });
+  const missions = buildScoutMissions({
+    lanes: strategist.output.lanes,
+    city,
+    year,
+    staticSeeds: SCOUT_SEEDS,
+    allowStaticFallback: strategist.fallbackUsed,
+    minMissionCount: 4,
+  });
+  const chicagoContext = isChicagoLike(city);
+  if (missions.length === 0) {
+    console.warn("[scout] No valid strategist missions — skipping Scout run");
+    await safeWriteIntelligenceTrace({
+      userId,
+      route: "lib/brain/scout.runScout",
+      surface: "scout",
+      decisionType: "mission_skipped",
+      contextSummary: buildContextTraceSummary(brainContext),
+      reasoning: buildIntelligenceReason({
+        summary: "Scout skipped because no mission cleared the strategist/context gate.",
+        contextFactors: [strategist.output.notes, strategist.reason],
+      }),
+      candidatesConsidered: [],
+      outcome: "skipped_no_missions",
+    });
+    return { articles_processed, candidates_added, duplicates_skipped };
+  }
 
-  // Pick 6-8 random queries + 2 curated list URLs for this run
-  const queryCount = 6 + Math.floor(Math.random() * 3); // 6, 7, or 8
-  const queries = pickQueries(queryCount, chicagoLike);
-  const urls = chicagoLike ? pickUrls(2) : [];
+  // Curated URLs are Chicago-only seed material and remain subordinate to
+  // strategist missions. They are used only when a static seed mission is active.
+  const urls = chicagoContext && missions.some((mission) => mission.seed)
+    ? pickUrls(2)
+    : [];
 
   // Collect all articles from all queries
   const articleMap = new Map<string, { title: string; content: string; url: string }>();
 
-  for (const { q, domains } of queries) {
-    const query = renderScoutQuery(q, city, year);
-    try {
-      const res = await searchWeb({
-        query,
-        maxResults: 5,
-        days: 90,
-        includeDomains: chicagoLike ? domains : undefined,
-      });
-      for (const r of res.results) {
-        if (!articleMap.has(r.url)) {
-          articleMap.set(r.url, { title: r.title, url: r.url, content: r.content });
+  for (const mission of missions) {
+    for (const query of mission.queryIdeas.slice(0, 3)) {
+      try {
+        const res = await searchWeb({
+          query,
+          maxResults: 5,
+          days: 90,
+          includeDomains: chicagoContext ? mission.domains : undefined,
+        });
+        for (const r of res.results) {
+          if (!articleMap.has(r.url)) {
+            articleMap.set(r.url, { title: r.title, url: r.url, content: r.content });
+          }
         }
+      } catch (err) {
+        console.warn("[scout] Tavily mission query failed", {
+          missionId: mission.id,
+          query,
+          err,
+        });
       }
-    } catch (err) {
-      console.warn("[scout] Tavily query failed", { q: query, err });
     }
   }
 
@@ -242,6 +275,16 @@ export async function runScout(
   if (!hasAnthropic()) {
     console.warn("[scout] No Anthropic key — skipping extraction, articles logged only");
     console.warn("[scout] Articles found:", articles.map((a) => a.url));
+    await traceScoutRun({
+      userId,
+      context: brainContext,
+      missions,
+      articlesProcessed: articles_processed,
+      candidatesAdded: candidates_added,
+      duplicatesSkipped: duplicates_skipped,
+      outcome: "articles_found_extraction_skipped",
+      strategistFallbackUsed: strategist.fallbackUsed,
+    });
     return { articles_processed, candidates_added, duplicates_skipped };
   }
 
@@ -332,6 +375,90 @@ export async function runScout(
     candidates_added,
     duplicates_skipped,
   });
+  await traceScoutRun({
+    userId,
+    context: brainContext,
+    missions,
+    articlesProcessed: articles_processed,
+    candidatesAdded: candidates_added,
+    duplicatesSkipped: duplicates_skipped,
+    outcome: "completed",
+    strategistFallbackUsed: strategist.fallbackUsed,
+  });
 
   return { articles_processed, candidates_added, duplicates_skipped };
+}
+
+async function readScoutInventory(
+  userId: string,
+): Promise<{ activeRadar: number; holding: number }> {
+  const supabase = await getServerSupabase();
+  const [activeRes, holdingRes] = await Promise.all([
+    supabase
+      .from("surfaced_items")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("destination", "radar")
+      .in("status", ["shown", "opened"]),
+    supabase
+      .from("surfaced_items")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("destination", "holding")
+      .in("status", ["discovered", "shown"]),
+  ]);
+  return {
+    activeRadar: activeRes.count ?? 0,
+    holding: holdingRes.count ?? 0,
+  };
+}
+
+async function traceScoutRun(input: {
+  userId: string;
+  context: Awaited<ReturnType<typeof buildBrainContext>>;
+  missions: ScoutMission[];
+  articlesProcessed: number;
+  candidatesAdded: number;
+  duplicatesSkipped: number;
+  outcome: string;
+  strategistFallbackUsed: boolean;
+}) {
+  const topMission = input.missions[0];
+  await safeWriteIntelligenceTrace({
+    userId: input.userId,
+    route: "lib/brain/scout.runScout",
+    surface: "scout",
+    decisionType: "mission_execution",
+    contextSummary: buildContextTraceSummary(input.context),
+    reasoning: buildIntelligenceReason({
+      summary: topMission
+        ? `Scout executed ${input.missions.length} strategist mission${input.missions.length === 1 ? "" : "s"}.`
+        : "Scout had no executable mission.",
+      contextFactors: input.missions.slice(0, 5).map((mission) => mission.contextReason),
+      sourceStrength: sourceStrengthFromConfidence(topMission?.confidence),
+      confidence: topMission?.confidence,
+    }),
+    candidatesConsidered: input.missions.map((mission) => ({
+      id: mission.id,
+      lane: mission.lane,
+      intent: mission.intent,
+      queries: mission.queryIdeas,
+      seed: Boolean(mission.seed),
+    })),
+    selectedCandidate: topMission
+      ? {
+          id: topMission.id,
+          intent: topMission.intent,
+          destination: topMission.destination,
+        }
+      : null,
+    sourceQuality: {
+      articles_processed: input.articlesProcessed,
+      candidates_added: input.candidatesAdded,
+      duplicates_skipped: input.duplicatesSkipped,
+      strategist_fallback_used: input.strategistFallbackUsed,
+    },
+    confidence: topMission?.confidence ?? null,
+    outcome: input.outcome,
+  });
 }

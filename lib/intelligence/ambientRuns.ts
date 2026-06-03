@@ -215,11 +215,13 @@ export async function runAmbientIntelligence(input: {
     candidates: lanes.reduce((sum, lane) => sum + lane.candidates.length, 0),
   });
 
-  const syntheticMoves = generateSyntheticMoves({
-    context,
-    mode: runType,
-    activeRadarCount: inventory.active,
-  });
+  const syntheticMoves = syntheticMovesEnabled()
+    ? generateSyntheticMoves({
+        context,
+        mode: runType,
+        activeRadarCount: inventory.active,
+      })
+    : [];
   summary.synthetic_moves = syntheticMoves.length;
   if (syntheticMoves.length > 0) {
     lanes = [
@@ -277,6 +279,10 @@ export async function runAmbientIntelligence(input: {
     summary.fallback_reason;
   summary.budget = budgetForLog(workingBudget);
   return summary;
+}
+
+function syntheticMovesEnabled(): boolean {
+  return process.env.JARVIS_ENABLE_SYNTHETIC_MOVES === "true";
 }
 
 async function checkCooldown(

@@ -148,7 +148,7 @@ export function buildCommandActionChips(input: {
       label: "Save Item",
       message: "Save this.",
       action_type: "save_item",
-      payload: { item_id: itemId },
+      payload: { item_id: itemId, origin: "voice" },
     });
   }
 
@@ -157,7 +157,7 @@ export function buildCommandActionChips(input: {
       label: "Pass",
       message: "Pass on this.",
       action_type: "pass_item",
-      payload: { item_id: itemId },
+      payload: { item_id: itemId, origin: "voice" },
     });
   }
 
@@ -166,7 +166,7 @@ export function buildCommandActionChips(input: {
       label: "Plan It",
       message: "Plan this.",
       action_type: "build_plan",
-      payload: { item_id: itemId },
+      payload: { item_id: itemId, origin: "voice" },
     });
   }
 
@@ -182,6 +182,7 @@ export function buildCommandActionChips(input: {
           memory_content: content,
           memory_type: north ? "north_goal" : "confirmed_behavior",
           item_id: itemId ?? null,
+          origin: "voice",
         },
       });
     }

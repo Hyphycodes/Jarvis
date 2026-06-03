@@ -14,7 +14,7 @@
 │  1.  buildBrainContext()      ← founder, memory, signals, weather│
 │  2.  buildInterestGraph()     ← seed + memory + behavior nudges  │
 │  3.  runTasteStrategist()     ← exploration lanes (Claude)       │
-│  4.  buildCuriosityPlan()     ← lanes → typed source plan (code) │
+│  4.  buildScoutMissions()     ← lanes → typed Scout missions     │
 │  5.  gatherFromCuriosityPlan()← real source calls, capped        │
 │  6.  ingestCandidates()       ← upsert into surfaced_items       │
 │  7.  runRadarCuration()       ← score, curator, critic, briefing │
@@ -23,6 +23,7 @@
 │ 10.  enforceActiveRadarCap()  ← rotate excess to Holding          │
 │ 11.  pruneStaleHolding()      ← archive aged Holding              │
 │ 12.  logDecisionRun()         ← strategy snapshot stored          │
+│ 13.  IntelligenceTrace        ← compact durable decision trace    │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -139,13 +140,10 @@ type ExplorationLane = {
 
 ### Schedule awareness
 
-The prompt includes the founder's actual schedule:
-- Leaves for work around 06:20
-- Leaves Schaumburg around 15:30
-- Home by 16:30
-- Weeknights (Mon–Thu) = limited energy
-
-Weeknight lanes must be practical or lightweight unless exceptional.
+The prompt includes the founder's available Today and rhythm context from
+`FounderContextPacket` / `BrainContextPacket`. It should use real plans,
+calendar-like rows, Circle moments, weekly rhythm, and day context when present.
+It should not assume a fixed commute, fixed city, or fixed evening pattern.
 
 ### Output validation
 
@@ -160,35 +158,44 @@ Strict Zod schema in `tasteStrategist.ts`. Bad Claude JSON → falls back to a d
 
 Lane source strategies come from the interest's `relatedSources` field.
 
-## Curiosity Engine (`lib/brain/curiosity.ts`)
+## Mission-based Scout (`lib/brain/scoutMissions.ts`, `lib/brain/scout.ts`)
 
-Pure code. No Claude. No external calls. Converts strategist lanes into a typed source plan:
+Pure code converts strategist lanes into Scout missions before source calls:
 
 ```ts
-type SourcePlanEntry = {
-  lane_id: string;
-  source: "localRadar" | "googlePlaces" | "ticketmaster" | "tavily" | "brave" | "serpapi" | "mlb" | "none";
-  queries: string[];           // ≤ 3 per lane
-  max_results: number;
-  destination_bias: "radar" | "holding" | "discovered" | "north";
-  preferred_domains?: string[];
-  excluded_domains?: string[];
-  reason: string;
+type ScoutMission = {
+  id: string;
+  lane: string;
+  intent: string;
+  destination: "radar" | "holding" | "discovered" | "north" | "library";
+  queryIdeas: string[];
+  sourceStrategy?: string[];
+  domains?: string[];
+  locationScope?: string;
+  urgency?: string;
+  effort?: string;
+  spendingPosture?: string;
+  confidence?: number;
+  contextReason?: string;
 };
 ```
 
-### Code-enforced rules
+### Mission rules
 
-- **SerpAPI gate**: only when `isProductLane()` matches AND lane confidence ≥ 0.7.
-- **Brave gate**: never if Tavily is configured (Brave is the fallback, never both).
-- **localRadar cap**: at most `LOCAL_RADAR_MAX_QUERIES_PER_REFRESH` (6) lanes routed to LocalRadar.
-- **Lane rotation**: lanes whose id appeared in the last 3 runs get their query count cut to 1 unless urgency is "high".
-- **Global candidate cap**: `MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH` (60). Queries are trimmed mid-plan if the cap would be exceeded.
-- **Skip-to-Holding**: lanes destined for `holding` or `north` with low urgency and confidence < 0.6 get `source: "none"` — they become Holding/discovered ideas without an API call.
-- **Query translation**: stylistic lane language is translated before source
-  calls. For example, "rugged masculine" becomes useful searches such as
-  "Chicago heritage menswear", "Chicago leather goods boutique", and "Chicago
-  vintage menswear market" instead of literal phrase searches.
+- Strategist-generated query ideas are primary.
+- Static query pools and curated URLs are fallback/seed inputs only when
+  strategist missions are insufficient.
+- City-specific seeds are gated by profile/location context.
+- Scout may skip quietly when there are no valid missions.
+- Scout writes an `intelligence_traces` row with missions, source quality, and
+  outcome when a run executes or is skipped for no missions.
+
+## Curiosity Engine (`lib/brain/curiosity.ts`)
+
+The Radar refresh path still uses the Curiosity Engine to turn strategist lanes
+into typed source plans for `gatherFromCuriosityPlan()`. It remains pure code,
+uses no Claude, and enforces source caps before external calls. This path and
+Scout share the same principle: lanes first, static fallback only when needed.
 
 ## Briefing Editor (`lib/brain/briefingEditor.ts`)
 
@@ -258,6 +265,24 @@ Called from item-action server actions after save/pass/plan/complete/archive/res
 - Matches the action to an interest area (parent-walking, keyword match).
 - Returns **short-term deltas** (never persisted on their own).
 - Returns **pattern hints** when the same status accumulates (`repeated_save`, `repeated_pass`, `completed_streak`, `dormant_revival`).
+
+## Reasons and decision traces
+
+`lib/brain/intelligenceReason.ts` is the shared "Why this?" payload. Radar,
+Today, plans, Scout, and chat/voice actions can attach it without changing the
+visual design.
+
+`lib/brain/intelligenceTrace.ts` writes best-effort rows to
+`intelligence_traces`. Traces should stay compact:
+
+- relevant North priorities and matched pillars
+- behavior that influenced save/pass/plan scoring
+- Circle moments or memory/preferences that mattered
+- candidates considered, selected, and rejected
+- source quality, confidence, and final outcome
+
+Trace writes are observability, not business-critical writes. A trace failure
+must be logged and swallowed.
 - Strong patterns can be promoted to permanent memory via the existing `memory_update_proposals` flow — never directly written to `memory_items`.
 
 ## Decision logging
@@ -303,12 +328,13 @@ cron-ready later. They never execute from page load. Metadata lives in
 `brain_decision_runs.raw_output.ambient`; estimated cost lives in
 `brain_decision_runs.raw_output.budget`.
 
-## Move Generator
+## Derived Move Generator
 
-Synthetic moves are low-noise recommendations created from Weekly Rhythm, time
-of day, current inventory, and durable interests. They use `source = ai`, a
-stable `synthetic_move:*` source id, and a normal `payload.briefing`, so Radar
-and the Consideration Brief render them like any other surfaced item.
+`lib/brain/moveGenerator.ts` contains cadence-derived move candidates, but
+ambient runs keep them disabled by default. They only run when
+`JARVIS_ENABLE_SYNTHETIC_MOVES=true` is explicitly set. Normal production
+discovery should be mission/source driven and should not use hardcoded moves to
+pad empty Radar or Today states.
 
 ## Life Cadence
 
