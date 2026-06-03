@@ -152,7 +152,7 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 
 1. **Context packet** (`lib/context/founderContextPacket.ts`) gathers real user context only: North, Radar actions, Today plans/events, Circle moments, memory, behavior, time, and available weather/location.
 2. **Autopilot health check** reads Active Radar, Holding, Candidate Inbox, Living Library, Source Graph, event freshness, Today/Circle/North readiness, and recent behavior.
-3. **Foundation Sprint Mode** can be enabled when foundation targets are thin: places < 300, active events < 150, sources < 100, Candidate Inbox < 500, or Tier A/B < 75. It runs bounded mission batches with a persisted cursor instead of relying on repeated manual Bootstrap clicks.
+3. **Foundation Sprint Mode** can be enabled when foundation targets are thin: places < 300, active events < 150, sources < 100, Candidate Inbox < 500, or Tier A/B < 75. It runs one small mission batch per request with a persisted cursor instead of relying on repeated manual Bootstrap clicks.
 4. **Campaign planner** chooses the next useful operation: no-op, refill, Holding/Candidate Inbox/Library build, event pulse, source recheck, weekend/after-work/Circle/North campaign, cleanup, or foundation build.
 5. **Scout / source graph / Library workers** execute bounded discovery. Raw discoveries go to Candidate Inbox first; researched durable entities go to Library.
 6. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
@@ -163,6 +163,13 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 11. **Future context packets** read those real behavior/memory/source signals, so recommendations improve without fake filler.
 
 If external discovery keys are missing, Foundation Sprint reports the missing providers instead of inventing rows. With Tavily configured but Anthropic missing, Scout can still seed Source Graph and Candidate Inbox from real article results, but it will not fabricate extracted places.
+
+Foundation Sprint is timeout-safe by design. `/api/radar/autopilot` has a
+300-second route max duration as a safety buffer, but normal runs use a 35-second
+internal budget and Foundation Sprint uses a 45-second internal budget. The
+runner checks the budget before/after each major mission step, saves progress,
+and returns `partial_success` when useful work happened and the next cron should
+continue. A timeout-budget stop is progress, not a failure.
 
 `/settings/library` is the operator view. It reads `radar_autopilot_runs`,
 `radar_autopilot_activity`, and `radar_autopilot_settings` to show Running,

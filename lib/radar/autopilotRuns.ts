@@ -402,7 +402,8 @@ export async function readLibraryControlRoomStatus(input: {
       .order("created_at", { ascending: false })
       .limit(25),
   ]);
-  const activeRun = (activeRunRes.data as RadarAutopilotRunRow | null) ?? null;
+  const rawActiveRun = (activeRunRes.data as RadarAutopilotRunRow | null) ?? null;
+  const activeRun = isStaleRunningRun(rawActiveRun) ? null : rawActiveRun;
   const lastRun = (lastRunRes.data as RadarAutopilotRunRow | null) ?? null;
   const lastBootstrapRun = (lastBootstrapRes.data as RadarAutopilotRunRow | null) ?? null;
   const providerStatus = providerStatusRows();
@@ -466,4 +467,12 @@ function deriveControlState(input: {
   if (input.bootstrapNeeded) return "bootstrap_needed";
   if (input.lastRun?.status === "succeeded") return "healthy";
   return "idle";
+}
+
+function isStaleRunningRun(run: RadarAutopilotRunRow | null): boolean {
+  if (!run) return false;
+  const heartbeat = run.last_heartbeat_at ?? run.started_at;
+  const time = new Date(heartbeat).getTime();
+  if (Number.isNaN(time)) return false;
+  return Date.now() - time > 10 * 60 * 1000;
 }

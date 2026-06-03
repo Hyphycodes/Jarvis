@@ -62,13 +62,20 @@ owner/cron operations. `/api/radar/autopilot?mode=foundation_sprint` is the
 persistent foundation route and is scheduled every 15 minutes. It no-ops quickly
 when Foundation Sprint is off or the core targets are healthy.
 
-Foundation Sprint is a mission queue, not one giant search. Settings store an
-enable flag, aggressive targets, start/completion timestamps, and a mission
-cursor. Each run selects a bounded batch from missions such as taste-seed
-verification, source building, events windows, neighborhood/drift lanes,
-candidate evaluation, Library conversion, source recheck, and Holding promotion
-review. The next cron continues from the cursor, so the app does not need to
-stay open.
+Foundation Sprint is a timeout-safe mission queue, not one giant search.
+Settings store an enable flag, aggressive targets, start/completion timestamps,
+and a mission cursor. Each run selects one bounded mission from lanes such as
+taste-seed verification, source building, events windows, neighborhood/drift
+lanes, candidate evaluation, Library conversion, source recheck, and Holding
+promotion review. The next cron continues from the cursor, so the app does not
+need to stay open.
+
+The Autopilot route declares `maxDuration = 300`, but that is only a safety
+buffer. The code uses an internal budget: 35 seconds for normal Autopilot and
+45 seconds for Foundation Sprint. Budget checks happen before and after major
+steps; when the budget is nearly spent, the run saves progress, logs "Time
+budget reached", returns `partial_success` if useful rows were written, and
+waits for the next scheduled run.
 
 Manual `/api/radar/refresh` now runs an autopilot review/override first, then
 keeps the existing refill response shape for UI compatibility. If the Library,
@@ -85,15 +92,21 @@ from the control room. Stop is cooperative and means stop after the current
 major operation.
 
 Failures are partial whenever useful work happened. A mission can create
-candidates or sources, fail during conversion, and still finish as
-`partial_success` with row counts and error detail. Missing optional providers
-only block missions that need them.
+candidates or sources, fail during conversion, or hit the internal time budget
+and still finish as `partial_success` with row counts and error detail. Missing
+optional providers only block missions that need them.
 
 Candidate-to-Library conversion is explicit. `radar_candidate_inbox` can grow
 large during aggressive discovery, but rows must be evaluated and converted into
 `places_library`, `current_events`, or `intelligence_sources` before they can
 inform Holding or Radar. Ambiguous event dates remain contextual; exact event
 rows require exact provider-backed times.
+
+During Foundation Sprint, conversion and source checks are deliberately small:
+Candidate Inbox conversion handles a small batch, Source Graph checks a few due
+sources, and event missions collect intake without running the event verdict
+worker that can write Active Radar rows. Promotion remains a separate
+conservative review step.
 
 ## Taste Seed Importer
 

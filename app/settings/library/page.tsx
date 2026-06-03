@@ -293,7 +293,7 @@ function controlSummary(state: string): string {
     case "foundation_sprint":
       return "Foundation Sprint is active. Jarvis will keep running bounded mission batches until targets are healthy.";
     case "partial_success":
-      return "The last run preserved useful work but hit at least one mission error.";
+      return "The last run preserved useful work and is waiting for the next scheduled batch.";
     case "bootstrap_needed":
       return "The intelligence bank is thin. Bootstrap can build sources, candidates, and Library rows from real providers.";
     default:

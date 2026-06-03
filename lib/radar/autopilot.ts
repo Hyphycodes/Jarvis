@@ -58,9 +58,13 @@ import {
 import { convertCandidateInboxToLibrary } from "@/lib/radar/candidateConversion";
 import {
   assessFoundationSprint,
+  createRunBudget,
+  DEFAULT_RUN_BUDGET_MS,
   FOUNDATION_BATCH_BUDGET,
+  FOUNDATION_RUN_BUDGET_MS,
   foundationWorkDone,
   nextMissionCursor,
+  type RunBudget,
   selectFoundationMissions,
 } from "@/lib/radar/foundationSprint";
 import { describeSourceHealth, gatherRadarCandidates } from "@/lib/sources/gather";
@@ -116,6 +120,8 @@ export type RadarAutopilotResult = {
   currentMission?: string | null;
   nextMission?: string | null;
   eventsCreated?: number;
+  timeBudgetReached?: boolean;
+  timeRemainingMs?: number;
 };
 
 export async function runRadarAutopilot(input: {
@@ -126,6 +132,7 @@ export async function runRadarAutopilot(input: {
 }): Promise<RadarAutopilotResult> {
   const supabase = input.supabase ?? getSupabaseServiceClient();
   const mode = normalizeAutopilotMode(input.mode);
+  const runBudget = createRunBudget(mode === "foundation_sprint" ? FOUNDATION_RUN_BUDGET_MS : DEFAULT_RUN_BUDGET_MS);
   const settings = await ensureAutopilotSettings({
     userId: input.userId,
     supabase,
@@ -252,8 +259,10 @@ export async function runRadarAutopilot(input: {
     force: input.force || mode === "manual_force",
     providerStatus,
     runId,
+    runBudget,
   });
   result.runId = runId;
+  result.timeRemainingMs = runBudget.timeRemainingMs();
   if (operation === "foundation_build_mode") {
     const after = await readAutopilotHealth({
       userId: input.userId,
@@ -276,13 +285,17 @@ export async function runRadarAutopilot(input: {
   });
   const runStatus = result.runStatus === "cancelled"
     ? "cancelled"
-    : result.errors?.length && didUsefulWork
+    : result.timeBudgetReached && didUsefulWork
       ? "partial_success"
-      : result.summary.includes("failed safely")
-        ? "failed"
-      : result.bootstrapNeeded && result.candidatesDiscovered === 0 && result.sourcesCreated === 0 && result.libraryItemsCreated === 0 && missing.length >= 5
+      : result.timeBudgetReached
         ? "blocked"
-        : "succeeded";
+        : result.errors?.length && didUsefulWork
+          ? "partial_success"
+          : result.summary.includes("failed safely")
+            ? "failed"
+            : result.bootstrapNeeded && result.candidatesDiscovered === 0 && result.sourcesCreated === 0 && result.libraryItemsCreated === 0 && missing.length >= 5
+              ? "blocked"
+              : "succeeded";
   result.runStatus = runStatus;
   await finishAutopilotRun({
     userId: input.userId,
@@ -299,8 +312,8 @@ export async function runRadarAutopilot(input: {
       candidateInbox: result.candidateInboxAfter ?? result.candidateInboxCount ?? 0,
       library: result.libraryAfter ?? result.libraryCounts ?? {},
     },
-      candidatesCreated: result.candidatesDiscovered,
-      libraryItemsCreated: result.libraryItemsCreated + (result.eventsCreated ?? 0),
+    candidatesCreated: result.candidatesDiscovered,
+    libraryItemsCreated: result.libraryItemsCreated + (result.eventsCreated ?? 0),
     sourcesCreated: result.sourcesCreated,
     candidatesHeld: result.candidatesHeld,
     candidatesPromoted: result.candidatesPromoted,
@@ -400,20 +413,25 @@ async function executeOperation(input: {
   force?: boolean;
   providerStatus: SourceHealth;
   runId?: string | null;
+  runBudget: RunBudget;
 }): Promise<RadarAutopilotResult> {
   const result = { ...input.base };
   try {
     switch (input.operation) {
       case "foundation_build_mode": {
         const isSprint = input.base.mode === "foundation_sprint";
+        const currentSettings = isSprint
+          ? await ensureAutopilotSettings({
+              userId: input.userId,
+              supabase: input.supabase,
+            })
+          : null;
+        const cursor = Number(currentSettings?.foundation_sprint_mission_cursor ?? 0);
         const missions = isSprint
           ? selectFoundationMissions({
               health: input.health,
               providerStatus: input.providerStatus,
-              cursor: Number((await ensureAutopilotSettings({
-                userId: input.userId,
-                supabase: input.supabase,
-              })).foundation_sprint_mission_cursor ?? 0),
+              cursor,
               maxOperations: FOUNDATION_BATCH_BUDGET.maxOperations,
             })
           : [];
@@ -425,6 +443,19 @@ async function executeOperation(input: {
             });
         const errors: string[] = [];
         for (const [idx, operation] of stack.entries()) {
+          if (input.runBudget.shouldStopSoon()) {
+            result.timeBudgetReached = true;
+            result.summary = "Time budget reached before starting the next Foundation Sprint step. Partial progress saved; continuing on the next scheduled run.";
+            await logAutopilotActivity({
+              userId: input.userId,
+              runId: input.runId,
+              level: "warning",
+              message: "Time budget reached before starting the next Foundation Sprint step. Continuing next run.",
+              metadata: { timeRemainingMs: input.runBudget.timeRemainingMs() },
+              supabase: input.supabase,
+            });
+            break;
+          }
           const mission = missions[idx];
           await heartbeatAutopilotRun({
             userId: input.userId,
@@ -442,12 +473,28 @@ async function executeOperation(input: {
             metadata: mission ? { mission: mission.type, operation } : { operation },
             supabase: input.supabase,
           });
+          if (mission) {
+            const availableProviders = Object.entries(input.providerStatus)
+              .filter(([, status]) => status === "available")
+              .map(([provider]) => provider);
+            await logAutopilotActivity({
+              userId: input.userId,
+              runId: input.runId,
+              level: availableProviders.length > 0 ? "info" : "warning",
+              message: availableProviders.length > 0
+                ? `Provider availability: ${availableProviders.join(", ")}.`
+                : "Provider availability: no external discovery providers configured for this mission.",
+              metadata: { providers: input.providerStatus, mission: mission.type },
+              supabase: input.supabase,
+            });
+          }
           const partial = await executeOperation({
             ...input,
             operation,
             base: baseResult(operation, input.health, input.campaigns[0]),
           });
           mergeResult(result, partial);
+          result.timeBudgetReached = Boolean(result.timeBudgetReached || partial.timeBudgetReached);
           if (partial.errors?.length) errors.push(...partial.errors);
           await logAutopilotActivity({
             userId: input.userId,
@@ -473,6 +520,13 @@ async function executeOperation(input: {
             },
             supabase: input.supabase,
           });
+          if (isSprint) {
+            await advanceFoundationMissionCursor({
+              userId: input.userId,
+              cursor: nextMissionCursor(cursor, idx + 1),
+              supabase: input.supabase,
+            });
+          }
           if (await shouldStopAutopilot({
             userId: input.userId,
             runId: input.runId,
@@ -489,27 +543,25 @@ async function executeOperation(input: {
             });
             break;
           }
+          if (input.runBudget.shouldStopSoon() || partial.timeBudgetReached) {
+            result.timeBudgetReached = true;
+            result.summary = "Time budget reached. Partial progress saved. Continuing on the next scheduled run.";
+            await logAutopilotActivity({
+              userId: input.userId,
+              runId: input.runId,
+              level: "warning",
+              message: "Time budget reached. Partial progress saved. Continuing on the next scheduled run.",
+              metadata: { timeRemainingMs: input.runBudget.timeRemainingMs(), operation, mission: mission?.type ?? null },
+              supabase: input.supabase,
+            });
+            break;
+          }
         }
         result.operationsRun = stack;
         result.errors = errors;
         result.skipped = stack.length === 0;
         result.currentMission = missions[0]?.type ?? null;
         result.nextMission = missions[1]?.type ?? null;
-        if (isSprint) {
-          const currentSettings = await ensureAutopilotSettings({
-            userId: input.userId,
-            supabase: input.supabase,
-          });
-          const nextCursor = nextMissionCursor(
-            Number(currentSettings.foundation_sprint_mission_cursor ?? 0),
-            missions.length,
-          );
-          await advanceFoundationMissionCursor({
-            userId: input.userId,
-            cursor: nextCursor,
-            supabase: input.supabase,
-          });
-        }
         result.summary = foundationSummary({
           stack,
           result,
@@ -550,11 +602,14 @@ async function executeOperation(input: {
       case "after_work_campaign":
       case "circle_event_campaign":
       case "north_priority_campaign": {
-        const ambient = await runAmbientIntelligence({
-          runType: input.operation === "weekend_campaign" ? "weekend_preview" : "radar_discovery",
-          force: input.force,
-          ownerUserId: input.userId,
-        }).catch((error) => ({ error }));
+        const isSprint = input.base.mode === "foundation_sprint";
+        const ambient = isSprint || input.runBudget.shouldStopSoon()
+          ? { skipped: true as const }
+          : await runAmbientIntelligence({
+              runType: input.operation === "weekend_campaign" ? "weekend_preview" : "radar_discovery",
+              force: input.force,
+              ownerUserId: input.userId,
+            }).catch((error) => ({ error }));
         const inbox = await syncCandidateInboxFromExistingPipelines({
           userId: input.userId,
           supabase: input.supabase,
@@ -564,37 +619,55 @@ async function executeOperation(input: {
               userId: input.userId,
               context: input.context,
               supabase: input.supabase,
-              maxCandidates: BOOTSTRAP_RUN_BUDGET.maxCandidatesCreated,
+              maxCandidates: isSprint
+                ? FOUNDATION_BATCH_BUDGET.maxCandidatesCreated
+                : BOOTSTRAP_RUN_BUDGET.maxCandidatesCreated,
+              maxSources: isSprint ? FOUNDATION_BATCH_BUDGET.maxSourcesCreated : undefined,
+              budget: input.runBudget,
             })
-          : { candidates: 0, sources: 0, errors: [] };
+          : { candidates: 0, sources: 0, errors: [], timeBudgetReached: false };
         result.candidatesDiscovered += inbox.created + inbox.updated;
         result.candidatesDiscovered += providerGather.candidates;
         result.sourcesCreated += providerGather.sources;
+        result.timeBudgetReached = Boolean(providerGather.timeBudgetReached);
         if (providerGather.errors.length) result.errors = providerGather.errors;
-        if (!("error" in ambient)) {
+        if (!("error" in ambient) && !("skipped" in ambient)) {
           result.candidatesDiscovered += ambient.candidates_found;
           result.candidatesRejected += ambient.rejected;
           result.candidatesPromoted += ambient.selected;
         }
-        result.summary = `${input.operation} ran bounded discovery and synced Candidate Inbox.`;
+        result.summary = result.timeBudgetReached
+          ? `${input.operation} saved partial intake before the time budget.`
+          : `${input.operation} ran bounded discovery and synced Candidate Inbox.`;
         break;
       }
       case "library_build": {
-        const scout = await runScout(input.userId);
+        const isSprint = input.base.mode === "foundation_sprint";
+        const scout = isSprint || input.runBudget.shouldStopSoon()
+          ? { candidates_added: 0, sources_added: 0 }
+          : await runScout(input.userId);
         const conversion = await convertCandidateInboxToLibrary({
           userId: input.userId,
           supabase: input.supabase,
-          limit: FOUNDATION_BATCH_BUDGET.maxLibraryItemsCreated,
+          limit: isSprint ? FOUNDATION_BATCH_BUDGET.maxLibraryItemsCreated : 30,
+          budget: input.runBudget,
         });
-        const processed = await processCandidates(input.userId);
-        const inbox = await syncCandidateInboxFromExistingPipelines({ userId: input.userId, supabase: input.supabase });
+        const processed = isSprint || input.runBudget.shouldStopSoon()
+          ? { researched: 0, rejected: 0, errors: [] as string[] }
+          : await processCandidates(input.userId);
+        const inbox = input.runBudget.shouldStopSoon()
+          ? { created: 0, updated: 0 }
+          : await syncCandidateInboxFromExistingPipelines({ userId: input.userId, supabase: input.supabase });
         result.candidatesDiscovered += scout.candidates_added + inbox.created + inbox.updated;
         result.sourcesCreated += scout.sources_added ?? 0;
         result.libraryItemsCreated += processed.researched + conversion.placesCreated + conversion.placesUpdated;
         result.eventsCreated = (result.eventsCreated ?? 0) + conversion.eventsCreated + conversion.eventsUpdated;
         result.sourcesCreated += conversion.sourcesCreated;
         result.candidatesRejected += processed.rejected + conversion.rejected;
-        result.summary = `Library build ran Scout, converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s), and processed ${processed.researched} place candidate(s).`;
+        result.timeBudgetReached = conversion.timeBudgetReached || input.runBudget.shouldStopSoon();
+        result.summary = result.timeBudgetReached
+          ? `Library conversion saved partial progress: converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s). Continuing next run.`
+          : `Library build ran Scout, converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s), and processed ${processed.researched} place candidate(s).`;
         result.errors = [...(processed.errors ?? []), ...conversion.errors];
         break;
       }
@@ -605,8 +678,33 @@ async function executeOperation(input: {
         break;
       }
       case "event_pulse_build": {
+        if (input.base.mode === "foundation_sprint") {
+          if (input.runBudget.shouldStopSoon()) {
+            result.timeBudgetReached = true;
+            result.summary = "Event Pulse mission deferred because the run time budget is nearly spent.";
+            break;
+          }
+          const providerGather = await runBootstrapProviderGather({
+            userId: input.userId,
+            context: input.context,
+            supabase: input.supabase,
+            maxCandidates: FOUNDATION_BATCH_BUDGET.maxCandidatesCreated,
+            maxSources: FOUNDATION_BATCH_BUDGET.maxSourcesCreated,
+            budget: input.runBudget,
+          });
+          result.candidatesDiscovered += providerGather.candidates;
+          result.sourcesCreated += providerGather.sources;
+          result.timeBudgetReached = providerGather.timeBudgetReached;
+          if (providerGather.errors.length) result.errors = providerGather.errors;
+          result.summary = result.timeBudgetReached
+            ? "Event Pulse intake saved partial provider results before the time budget."
+            : `Event Pulse intake created ${providerGather.candidates} candidate(s) and ${providerGather.sources} source(s). Conversion continues in a later mission.`;
+          break;
+        }
         const scout = await runEventScout(input.userId);
-        const processed = await processEventCandidates(input.userId);
+        const processed = input.runBudget.shouldStopSoon()
+          ? { surfaced: 0, held: 0, rejected: 0, errors: [] as string[] }
+          : await processEventCandidates(input.userId, 5);
         result.candidatesDiscovered += scout.candidates_added;
         result.candidatesPromoted += processed.surfaced;
         result.candidatesHeld += processed.held;
@@ -619,8 +717,17 @@ async function executeOperation(input: {
       case "source_building_campaign":
       case "source_expansion":
       case "source_recheck": {
-        const due = await selectSourcesDueForCheck({ userId: input.userId, supabase: input.supabase, limit: 8 });
+        const due = await selectSourcesDueForCheck({
+          userId: input.userId,
+          supabase: input.supabase,
+          limit: input.base.mode === "foundation_sprint" ? FOUNDATION_BATCH_BUDGET.maxProviderCalls : 8,
+        });
         for (const source of due) {
+          if (input.runBudget.shouldStopSoon()) {
+            result.timeBudgetReached = true;
+            result.summary = "Time budget reached during Source Graph recheck. Partial source progress saved.";
+            break;
+          }
           const quality = scoreSourceQuality(source);
           await input.supabase
             .from("intelligence_sources")
@@ -640,14 +747,33 @@ async function executeOperation(input: {
           if (quality.status === "watching") result.sourcesUpgraded++;
           if (quality.status === "cooldown") result.sourcesCooledDown++;
         }
-        if (due.length === 0 && input.operation === "source_building_campaign") {
-          const scout = await runScout(input.userId);
-          result.candidatesDiscovered += scout.candidates_added;
+        if (!result.timeBudgetReached && due.length === 0 && input.operation === "source_building_campaign") {
+          if (input.base.mode === "foundation_sprint") {
+            const providerGather = await runBootstrapProviderGather({
+              userId: input.userId,
+              context: input.context,
+              supabase: input.supabase,
+              maxCandidates: FOUNDATION_BATCH_BUDGET.maxCandidatesCreated,
+              maxSources: FOUNDATION_BATCH_BUDGET.maxSourcesCreated,
+              budget: input.runBudget,
+            });
+            result.candidatesDiscovered += providerGather.candidates;
+            result.sourcesCreated += providerGather.sources;
+            result.timeBudgetReached = providerGather.timeBudgetReached;
+            if (providerGather.errors.length) result.errors = providerGather.errors;
+          } else {
+            const scout = await runScout(input.userId);
+            result.candidatesDiscovered += scout.candidates_added;
+          }
         }
         result.sourcesChecked = due.length;
-        result.summary = due.length > 0
+        result.summary = result.timeBudgetReached
+          ? result.summary
+          : due.length > 0
           ? `Rechecked ${due.length} Source Graph source(s).`
-          : "Source Graph was thin; ran Scout to discover new source candidates.";
+          : input.base.mode === "foundation_sprint"
+            ? `Source building intake created ${result.candidatesDiscovered} candidate(s) and ${result.sourcesCreated} source(s).`
+            : "Source Graph was thin; ran Scout to discover new source candidates.";
         break;
       }
       case "promotion_review": {
@@ -746,7 +872,9 @@ async function runBootstrapProviderGather(input: {
   context: FounderContextPacket;
   supabase: SupabaseClient;
   maxCandidates: number;
-}): Promise<{ candidates: number; sources: number; errors: string[] }> {
+  maxSources?: number;
+  budget: RunBudget;
+}): Promise<{ candidates: number; sources: number; errors: string[]; timeBudgetReached: boolean }> {
   const lat = input.context.location.homeLat;
   const lng = input.context.location.homeLng;
   if (typeof lat !== "number" || typeof lng !== "number") {
@@ -754,11 +882,13 @@ async function runBootstrapProviderGather(input: {
       candidates: 0,
       sources: 0,
       errors: ["Bootstrap provider gather skipped because home latitude/longitude are missing."],
+      timeBudgetReached: false,
     };
   }
   const errors: string[] = [];
   let candidates = 0;
   let sources = 0;
+  let timeBudgetReached = false;
   try {
     const lanes = await gatherRadarCandidates({
       userId: input.userId,
@@ -768,7 +898,17 @@ async function runBootstrapProviderGather(input: {
       state: input.context.location.homeState ?? undefined,
     });
     for (const lane of lanes) {
+      if (input.budget.shouldStopSoon()) {
+        timeBudgetReached = true;
+        errors.push("Time budget reached during provider gather. Partial provider progress saved.");
+        break;
+      }
       for (const candidate of lane.candidates.slice(0, input.maxCandidates)) {
+        if (input.budget.shouldStopSoon()) {
+          timeBudgetReached = true;
+          errors.push("Time budget reached during candidate intake. Partial provider progress saved.");
+          break;
+        }
         const sourceId = await upsertSourceFromCandidate({
           userId: input.userId,
           sourceName: lane.source,
@@ -784,14 +924,17 @@ async function runBootstrapProviderGather(input: {
         });
         if (sourceId) sources++;
         if (status === "created" || status === "updated") candidates++;
+        if (input.maxSources && sources >= input.maxSources) break;
         if (candidates >= input.maxCandidates) break;
       }
+      if (timeBudgetReached) break;
+      if (input.maxSources && sources >= input.maxSources) break;
       if (candidates >= input.maxCandidates) break;
     }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
   }
-  return { candidates, sources, errors };
+  return { candidates, sources, errors, timeBudgetReached };
 }
 
 function baseResult(
@@ -839,6 +982,8 @@ function mergeResult(target: RadarAutopilotResult, partial: RadarAutopilotResult
   target.sourcesCreated += partial.sourcesCreated;
   target.sourcesUpgraded += partial.sourcesUpgraded;
   target.sourcesCooledDown += partial.sourcesCooledDown;
+  target.eventsCreated = (target.eventsCreated ?? 0) + (partial.eventsCreated ?? 0);
+  target.timeBudgetReached = Boolean(target.timeBudgetReached || partial.timeBudgetReached);
 }
 
 function foundationSummary(input: {
@@ -858,6 +1003,7 @@ function foundationSummary(input: {
     input.result.candidatesDiscovered +
     input.result.libraryItemsCreated +
     input.result.libraryItemsRefreshed +
+    (input.result.eventsCreated ?? 0) +
     input.result.sourcesCreated +
     input.result.candidatesHeld +
     input.result.candidatesPromoted;
@@ -870,7 +1016,10 @@ function foundationSummary(input: {
   const label = input.sprint ? "Foundation Sprint" : "Foundation build";
   const missionText = input.missions?.length ? ` Missions: ${input.missions.join(", ")}.` : "";
   const partial = input.result.errors?.length ? ` Partial success with ${input.result.errors.length} error(s).` : "";
-  return `${label} ran ${input.stack.length} operation(s): ${input.stack.join(", ")}.${missionText} Discovered ${input.result.candidatesDiscovered}, created ${input.result.libraryItemsCreated} place/library item(s), created ${input.result.eventsCreated ?? 0} event(s), added ${input.result.sourcesCreated} source(s), checked ${input.result.sourcesChecked} source(s), promoted ${input.result.candidatesPromoted}.${partial}`;
+  const timed = input.result.timeBudgetReached
+    ? " Time budget reached. Partial progress saved; continuing on the next scheduled run."
+    : "";
+  return `${label} ran ${input.stack.length} operation(s): ${input.stack.join(", ")}.${missionText} Discovered ${input.result.candidatesDiscovered}, created ${input.result.libraryItemsCreated} place/library item(s), created ${input.result.eventsCreated ?? 0} event(s), added ${input.result.sourcesCreated} source(s), checked ${input.result.sourcesChecked} source(s), promoted ${input.result.candidatesPromoted}.${partial}${timed}`;
 }
 
 function libraryCountsFromHealth(health: RadarAutopilotHealth): NonNullable<RadarAutopilotResult["libraryCounts"]> {

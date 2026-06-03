@@ -39,8 +39,13 @@ import {
 } from "../lib/tasteSeed/parser";
 import {
   assessFoundationSprint,
+  createRunBudget,
+  DEFAULT_RUN_BUDGET_MS,
+  FOUNDATION_BATCH_BUDGET,
+  FOUNDATION_RUN_BUDGET_MS,
   FOUNDATION_SPRINT_TARGETS,
   foundationWorkDone,
+  nextMissionCursor,
   selectFoundationMissions,
 } from "../lib/radar/foundationSprint";
 import { planRadarCampaigns } from "../lib/radar/campaigns";
@@ -533,6 +538,23 @@ function testFoundationSprintPolicy() {
   }), true);
 }
 
+function testFoundationSprintTimeoutBudget() {
+  assert.ok(DEFAULT_RUN_BUDGET_MS < 60_000);
+  assert.ok(FOUNDATION_RUN_BUDGET_MS < 60_000);
+  assert.equal(FOUNDATION_BATCH_BUDGET.maxOperations, 1);
+  assert.ok(FOUNDATION_BATCH_BUDGET.maxCandidatesCreated <= 50);
+  assert.ok(FOUNDATION_BATCH_BUDGET.maxSourcesCreated <= 20);
+  assert.ok(FOUNDATION_BATCH_BUDGET.maxLibraryItemsCreated <= 20);
+
+  let nowMs = 1_000;
+  const budget = createRunBudget(10_000, () => nowMs);
+  assert.equal(budget.timeRemainingMs(), 10_000);
+  assert.equal(budget.shouldStopSoon(), false);
+  nowMs = 6_100;
+  assert.equal(budget.shouldStopSoon(), true);
+  assert.equal(nextMissionCursor(3, 1), 4);
+}
+
 function testFoundationOperationStackIsBoundedAndConservative() {
   const stack = foundationOperationStack({
     health: autopilotHealth({
@@ -655,6 +677,7 @@ function testCandidateAndLibraryBoundaries() {
 function testAutopilotCronWiring() {
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {
     crons?: Array<{ path?: string; schedule?: string }>;
+    functions?: Record<string, { maxDuration?: number }>;
   };
   assert.ok(vercel.crons?.some((cron) =>
     cron.path === "/api/radar/autopilot" && cron.schedule === "0 */2 * * *"
@@ -663,9 +686,11 @@ function testAutopilotCronWiring() {
     cron.path === "/api/radar/autopilot?mode=foundation_sprint" &&
     cron.schedule === "*/15 * * * *"
   ));
+  assert.equal(vercel.functions?.["app/api/radar/autopilot/route.ts"]?.maxDuration, 300);
   const route = readFileSync("app/api/radar/autopilot/route.ts", "utf8");
   assert.match(route, /CRON_SECRET/);
   assert.match(route, /foundation_sprint/);
+  assert.match(route, /maxDuration = 300/);
   assert.match(route, /requireOwner/);
   assert.match(route, /toAutopilotResponse/);
 }
@@ -867,7 +892,24 @@ function testCandidateInboxConversionContract() {
   assert.match(source, /from\("current_events"\)/);
   assert.match(source, /status: "library"/);
   assert.match(source, /no fake event date was created/);
+  assert.match(source, /budget\?: RunBudget/);
+  assert.match(source, /shouldStopSoon\(\)/);
+  assert.match(source, /Time budget reached during Candidate Inbox conversion/);
   assert.doesNotMatch(source, /from\("surfaced_items"\)\.insert/);
+}
+
+function testTimeoutSafeAutopilotContract() {
+  const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
+  assert.match(autopilot, /createRunBudget/);
+  assert.match(autopilot, /FOUNDATION_RUN_BUDGET_MS/);
+  assert.match(autopilot, /timeBudgetReached && didUsefulWork/);
+  assert.match(autopilot, /partial_success/);
+  assert.match(autopilot, /Time budget reached\. Partial progress saved/);
+  assert.match(autopilot, /maxOperations: FOUNDATION_BATCH_BUDGET\.maxOperations/);
+  assert.match(autopilot, /maxCandidates: FOUNDATION_BATCH_BUDGET\.maxCandidatesCreated/);
+  assert.match(autopilot, /limit: isSprint \? FOUNDATION_BATCH_BUDGET\.maxLibraryItemsCreated/);
+  assert.match(autopilot, /Provider availability:/);
+  assert.doesNotMatch(autopilot, /input\.base\.mode === "foundation_sprint"[\s\S]{0,240}processEventCandidates/);
 }
 
 type Row = Record<string, any>;
@@ -1016,6 +1058,7 @@ async function main() {
   testBootstrapPolicy();
   testAutopilotModeAndPausePolicy();
   testFoundationSprintPolicy();
+  testFoundationSprintTimeoutBudget();
   testFoundationOperationStackIsBoundedAndConservative();
   testProviderMissingSummaryAndSourceIdentity();
   testSourceGraphScoringAndCadence();
@@ -1030,6 +1073,7 @@ async function main() {
   testTasteSeedRouteAndDocsWiring();
   await testTasteSeedCommitWritesCirclePeople();
   testCandidateInboxConversionContract();
+  testTimeoutSafeAutopilotContract();
 
   console.log("brain coherence tests passed");
 }

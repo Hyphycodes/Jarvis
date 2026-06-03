@@ -63,6 +63,13 @@ Each batch is capped by provider calls, candidate writes, Library/event writes,
 source writes, and operation count. Promotion remains conservative: raw
 Candidate Inbox and Library rows do not become Active Radar automatically.
 
+Foundation Sprint is a scheduled batch worker, not a long request. The route has
+`maxDuration = 300` as a safety buffer, but the runner uses a shorter internal
+budget: 35 seconds for normal Autopilot and 45 seconds for Foundation Sprint.
+Sprint batches run one mission per request, check the budget before/after major
+steps, save the mission cursor after each completed step, and return before the
+platform timeout. Cron resumes from the cursor on the next 15-minute call.
+
 Provider keys matter. Google Places builds places, Ticketmaster builds events,
 and Tavily/Brave/SerpAPI build source and opportunity inventory. If no external
 discovery provider is configured, bootstrap records a clear missing-provider
@@ -82,10 +89,10 @@ allowed to finish, then Bootstrap checks the flag before starting the next major
 operation.
 
 Run status can be `partial_success`. If one mission creates useful rows and a
-later mission fails, the run should preserve counts and activity, not collapse
-to a vague failed state. Provider-specific failures only block affected
-missions; missing Brave or SerpAPI must not block Tavily, Google Places, or
-Ticketmaster work.
+later mission fails, or the internal time budget is reached after useful work,
+the run preserves counts and activity instead of collapsing to a vague failed
+state. Provider-specific failures only block affected missions; missing Brave
+or SerpAPI must not block Tavily, Google Places, or Ticketmaster work.
 
 Candidate-to-Library conversion runs as a Library mission. It reads unevaluated
 `radar_candidate_inbox` rows, classifies durable places/events/sources, applies
@@ -93,6 +100,10 @@ taste and negative-filter scoring, upserts strong places into `places_library`,
 upserts events into `current_events` only when a real exact start time exists,
 and marks weak, duplicate, or ambiguous rows with structured reasons. It never
 writes directly to Active Radar.
+
+The Library conversion batch is intentionally small during Foundation Sprint.
+It stops when the time budget is near, marks each candidate as it goes, and lets
+the next run continue with the remaining inbox rows.
 
 ## Taste Seed Import
 

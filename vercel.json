@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "app/api/radar/autopilot/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/intelligence/run?run_type=daily_maintenance",

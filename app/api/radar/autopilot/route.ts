@@ -9,7 +9,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function validateCronSecret(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -111,6 +111,8 @@ function toAutopilotResponse(mode: string, result: Awaited<ReturnType<typeof run
     current_mission: result.currentMission ?? null,
     next_mission: result.nextMission ?? null,
     events_created: result.eventsCreated ?? 0,
+    time_budget_reached: result.timeBudgetReached ?? false,
+    time_remaining_ms: result.timeRemainingMs ?? null,
     run_id: result.runId ?? null,
     run_status: result.runStatus ?? null,
     raw: result,

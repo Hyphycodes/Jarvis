@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
+import type { RunBudget } from "@/lib/radar/foundationSprint";
 import type { Json, RadarCandidateInboxRow } from "@/lib/types/database";
 
 export type CandidateConversionResult = {
@@ -16,12 +17,14 @@ export type CandidateConversionResult = {
   duplicates: number;
   needsEnrichment: number;
   errors: string[];
+  timeBudgetReached: boolean;
 };
 
 export async function convertCandidateInboxToLibrary(input: {
   userId: string;
   supabase: SupabaseClient;
   limit?: number;
+  budget?: RunBudget;
 }): Promise<CandidateConversionResult> {
   const result: CandidateConversionResult = {
     reviewed: 0,
@@ -34,6 +37,7 @@ export async function convertCandidateInboxToLibrary(input: {
     duplicates: 0,
     needsEnrichment: 0,
     errors: [],
+    timeBudgetReached: false,
   };
   const limit = input.limit ?? 30;
   const { data: founder } = await input.supabase
@@ -59,6 +63,11 @@ export async function convertCandidateInboxToLibrary(input: {
   }
 
   for (const row of (data ?? []) as RadarCandidateInboxRow[]) {
+    if (input.budget?.shouldStopSoon()) {
+      result.timeBudgetReached = true;
+      result.errors.push("Time budget reached during Candidate Inbox conversion. Partial progress saved.");
+      break;
+    }
     result.reviewed++;
     try {
       const penalty = negativeFilter(row, avoid);

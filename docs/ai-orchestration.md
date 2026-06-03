@@ -123,16 +123,23 @@ Aggressive targets:
 
 The sprint stores an enable flag, targets, timestamps, and mission cursor in
 `radar_autopilot_settings`. Each cron run picks the next useful bounded mission
-batch from taste-seed verification, source building, events windows,
+from taste-seed verification, source building, events windows,
 neighborhood/drift lanes, active-social lanes, candidate evaluation, Library
 conversion, source recheck, and Holding promotion review. This lets Jarvis keep
 building while the app is closed.
 
+This route is configured with `maxDuration = 300`, but it should not depend on
+that. Autopilot creates an internal run budget: 35 seconds for normal runs and
+45 seconds for Foundation Sprint. The runner checks the budget around provider
+intake, source rechecks, and conversion batches. If the budget is nearly spent,
+it saves the mission cursor, logs the activity, returns promptly, and lets the
+next 15-minute cron continue.
+
 Run state supports `partial_success`. A mission that creates candidates or
-sources and then hits a conversion error should preserve the useful work,
-record the error, and continue on the next scheduled run. Missing optional
-providers only block the affected mission; they do not stop configured
-providers from working.
+sources and then hits a conversion error or the internal time budget should
+preserve the useful work, record the detail, and continue on the next scheduled
+run. Missing optional providers only block the affected mission; they do not
+stop configured providers from working.
 
 ## Library Layers
 
@@ -158,11 +165,12 @@ Jarvis learn where quality comes from even before an article yields a durable
 place or event.
 
 Candidate-to-Library conversion is the bridge between aggressive intake and
-permanent memory. It reads unevaluated Candidate Inbox rows, classifies entity
-type, applies taste and negative-filter scoring, writes durable places to
-`places_library`, writes events to `current_events` only when exact provider
-dates exist, upserts sources to Source Graph, and marks weak or ambiguous rows
-with reasons. It does not write directly to Active Radar.
+permanent memory. It reads a small batch of unevaluated Candidate Inbox rows,
+classifies entity type, applies taste and negative-filter scoring, writes
+durable places to `places_library`, writes events to `current_events` only when
+exact provider dates exist, upserts sources to Source Graph, and marks weak or
+ambiguous rows with reasons. It stops when the time budget is near and does not
+write directly to Active Radar.
 
 ## Taste Seed Importer
 
@@ -202,6 +210,10 @@ the owner can verify that taste seed context reached the relationship map.
   stop after the current step
 - Foundation Sprint controls to start, pause, resume, and run the next mission
 - paste-based Taste Seed dry-run and commit controls
+
+`partial_success` and "time budget reached" are progress states. They mean the
+batch returned before timeout with saved work and the next scheduled run should
+continue.
 
 The control room reads `radar_autopilot_runs`,
 `radar_autopilot_activity`, and `radar_autopilot_settings`. These tables are

@@ -14,13 +14,37 @@ export const FOUNDATION_SPRINT_TARGETS = {
 } as const;
 
 export const FOUNDATION_BATCH_BUDGET = {
-  maxProviderCalls: 8,
-  maxCandidatesCreated: 75,
-  maxSourcesCreated: 30,
-  maxLibraryItemsCreated: 30,
-  maxEventsCreated: 30,
-  maxOperations: 3,
+  maxProviderCalls: 3,
+  maxCandidatesCreated: 35,
+  maxSourcesCreated: 15,
+  maxLibraryItemsCreated: 12,
+  maxEventsCreated: 15,
+  maxOperations: 1,
 } as const;
+
+export const DEFAULT_RUN_BUDGET_MS = 35_000;
+export const FOUNDATION_RUN_BUDGET_MS = 45_000;
+export const RUN_BUDGET_STOP_BUFFER_MS = 5_000;
+
+export type RunBudget = {
+  startedAt: number;
+  deadlineAt: number;
+  maxMs: number;
+  timeRemainingMs: () => number;
+  shouldStopSoon: () => boolean;
+};
+
+export function createRunBudget(maxMs: number, now: () => number = Date.now): RunBudget {
+  const startedAt = now();
+  const deadlineAt = startedAt + maxMs;
+  return {
+    startedAt,
+    deadlineAt,
+    maxMs,
+    timeRemainingMs: () => deadlineAt - now(),
+    shouldStopSoon: () => now() >= deadlineAt - RUN_BUDGET_STOP_BUFFER_MS,
+  };
+}
 
 export type FoundationMissionType =
   | "taste_seed_verify"
@@ -128,6 +152,12 @@ export function selectFoundationMissions(input: {
   return rotated
     .filter((mission) => hasProviderSupport(mission, input.providerStatus) || mission.type === "candidate_evaluation" || mission.type === "library_conversion" || mission.type === "holding_promotion_review")
     .slice(0, max);
+}
+
+export function missionProviderBlockReason(mission: FoundationMission, status: SourceHealth): string | null {
+  if (!mission.requiresProvider?.length) return null;
+  if (hasProviderSupport(mission, status)) return null;
+  return `Mission ${mission.type} blocked: none of ${mission.requiresProvider.join(", ")} are configured.`;
 }
 
 export function nextMissionCursor(current: number | null | undefined, ran: number): number {
