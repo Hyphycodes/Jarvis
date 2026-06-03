@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { readLibraryHealth } from "@/lib/library";
 import { readLibraryControlRoomStatus } from "@/lib/radar/autopilotRuns";
 import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
+import { FOUNDATION_SPRINT_TARGETS } from "@/lib/radar/foundationSprint";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { BackButton, MotionPage } from "@/components";
 import { ControlRoomActions } from "./ControlRoomActions";
@@ -37,6 +38,13 @@ export default async function SettingsLibraryPage() {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  const { data: circleRows } = await supabase
+    .from("circle_people")
+    .select("id,notes")
+    .eq("user_id", user.id);
+  const importedCirclePeople = ((circleRows ?? []) as Array<{ notes?: string[] | null }>)
+    .filter((row) => (row.notes ?? []).some((note) => note.includes("taste_seed_import")))
+    .length;
   const rows = [
     ["Places", String(health.places)],
     ["Events", `${health.events} active`],
@@ -95,24 +103,29 @@ export default async function SettingsLibraryPage() {
               <ControlRoomActions
                 enabled={control.settings.enabled}
                 activeRunId={control.activeRun?.id ?? null}
+                foundationSprintEnabled={control.settings.foundationSprintEnabled}
               />
             </div>
           </div>
 
           <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
             <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
-              Bootstrap
+              Foundation Sprint
             </div>
             <div className="mt-2 font-serif text-[20px] italic text-warm-ivory">
-              {bootstrapNeeded ? "Foundation build needed" : "Foundation healthy"}
+              {control.settings.foundationSprintEnabled
+                ? "Active"
+                : bootstrapNeeded ? "Off · needed" : "Completed / maintenance"}
             </div>
             <p className="mt-2 text-[12px] leading-relaxed text-warm-ivory/55">
-              {bootstrapNeeded
-                ? "Jarvis has the structure, but the intelligence bank is still thin. Refresh Radar to trigger bootstrap, or wait for the background Autopilot."
-                : "The permanent intelligence bank has enough base inventory for normal Autopilot maintenance."}
+              {control.settings.foundationSprintEnabled
+                ? "Jarvis is allowed to run aggressive bounded mission batches in the background until the bank is healthy."
+                : bootstrapNeeded
+                  ? "The intelligence bank is still thin. Start Foundation Sprint to keep building while the app is closed."
+                  : "The permanent intelligence bank has enough base inventory for normal Autopilot maintenance."}
             </p>
             <p className="mt-3 text-[11px] leading-relaxed text-warm-ivory/42">
-              Places {health.places}/{BOOTSTRAP_TARGETS.places} · Events {health.events}/{BOOTSTRAP_TARGETS.activeEvents} · Sources {health.sources}/{BOOTSTRAP_TARGETS.sources} · Candidates {health.pendingCandidates}/{BOOTSTRAP_TARGETS.candidateInbox} · Tier A/B {tierAPlusB}/{BOOTSTRAP_TARGETS.tierAPlusB}
+              Places {health.places}/{FOUNDATION_SPRINT_TARGETS.places} · Events {health.events}/{FOUNDATION_SPRINT_TARGETS.activeEvents} · Sources {health.sources}/{FOUNDATION_SPRINT_TARGETS.sources} · Candidates {health.pendingCandidates}/{FOUNDATION_SPRINT_TARGETS.candidateInbox} · Tier A/B {tierAPlusB}/{FOUNDATION_SPRINT_TARGETS.tierAPlusB}
             </p>
           </div>
           {rows.map(([label, value]) => (
@@ -143,6 +156,20 @@ export default async function SettingsLibraryPage() {
               ? relativeTime(String(lastTasteSeedImport.created_at))
               : "None yet"}
           />
+          <StatusRow
+            label="Circle seed people"
+            value={importedCirclePeople > 0 ? `${importedCirclePeople} visible` : "None imported"}
+          />
+          <StatusRow
+            label="Current mission"
+            value={control.activeRun?.operation ?? "None"}
+          />
+          <StatusRow
+            label="Sprint cursor"
+            value={control.settings.foundationSprintEnabled
+              ? String(control.settings.foundationSprintMissionCursor)
+              : "Off"}
+          />
           {lastTasteSeedImport?.outcome ? (
             <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
               {String(lastTasteSeedImport.outcome)}
@@ -166,7 +193,7 @@ export default async function SettingsLibraryPage() {
           />
           <StatusRow
             label="Next scheduled"
-            value={control.settings.enabled ? "Within 2h" : "Paused"}
+            value={control.settings.foundationSprintEnabled ? "Within 15m" : control.settings.enabled ? "Within 2h" : "Paused"}
           />
           {control.lastRun?.summary ? (
             <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
@@ -246,6 +273,8 @@ function relativeTime(value: string): string {
 
 function stateLabel(state: string): string {
   if (state === "bootstrap_needed") return "Bootstrap needed";
+  if (state === "foundation_sprint") return "Foundation Sprint";
+  if (state === "partial_success") return "Partial success";
   return state.charAt(0).toUpperCase() + state.slice(1);
 }
 
@@ -261,6 +290,10 @@ function controlSummary(state: string): string {
       return "The last Autopilot run failed. Check activity before retrying.";
     case "healthy":
       return "Foundation targets are healthy enough for normal background maintenance.";
+    case "foundation_sprint":
+      return "Foundation Sprint is active. Jarvis will keep running bounded mission batches until targets are healthy.";
+    case "partial_success":
+      return "The last run preserved useful work but hit at least one mission error.";
     case "bootstrap_needed":
       return "The intelligence bank is thin. Bootstrap can build sources, candidates, and Library rows from real providers.";
     default:

@@ -15,9 +15,9 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Scout / Research / Curator:** Scout executes those missions against real sources, Curator and Decision Council decide what is worth attention, and weak output stays quiet.
 - **Seed sources:** static curated URLs and query pools are gated seeds/fallbacks, not the core intelligence. Location-specific seeds only run when profile/location context supports them.
 - **Radar Autopilot:** background health checks choose no-op, refill, Holding build, Candidate Inbox build, Library build/refresh, event pulse, or Source Graph work.
-- **Library Bootstrap Mode:** when Candidate Inbox, Living Library, Source Graph, or Tier A/B inventory is thin, Autopilot runs a bounded foundation-building stack instead of one tiny maintenance pass.
+- **Foundation Sprint Mode:** when Candidate Inbox, Living Library, Source Graph, or Tier A/B inventory is thin, Autopilot can run persistent bounded mission batches every 15 minutes until the bank is healthy.
 - **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
-- **Library Control Room:** `/settings/library` shows run state, provider blockers, activity, bootstrap progress, and owner controls for run/pause/resume/stop-after-current-step.
+- **Library Control Room:** `/settings/library` shows run state, provider blockers, activity, Foundation Sprint progress, current/next mission, and owner controls for run/pause/resume/stop-after-current-step.
 - **Taste Seed Importer:** owner-provided markdown taste context can be dry-run or committed into Circle, Library, Source Graph, memory, taste signals, and negative scoring filters without becoming static Radar content.
 
 **Brain pipeline (5 agents + Decision Council):**
@@ -110,7 +110,7 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 
 1. Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`
 2. Supabase Auth → URL Configuration: set Site URL and add `${SITE_URL}/auth/callback` to Redirect URLs
-3. Apply migrations in `supabase/migrations/` (0001–0013) in the SQL Editor
+3. Apply migrations in `supabase/migrations/` (0001–0014) in the SQL Editor
 4. Visit `/login`, sign in with magic link
 5. Run in Supabase SQL Editor: `select public.seed_founder('your-email@example.com');`
 6. Refresh `/settings` — role should read `owner`
@@ -123,7 +123,8 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 | ------------------- | -------------------------------- | ------------------------------------------------|
 | Daily 12:00 UTC     | `/api/intelligence/run?run_type=daily_maintenance` | Cleanup, pattern detection, day-of promotion |
 | Fridays 21:00 UTC   | `/api/intelligence/run?run_type=weekend_preview`   | Weekend curation pass                        |
-| Every 2 hours        | `/api/radar/autopilot`          | Chooses maintenance or Bootstrap Mode          |
+| Every 2 hours        | `/api/radar/autopilot`          | Chooses maintenance or foundation build        |
+| Every 15 minutes     | `/api/radar/autopilot?mode=foundation_sprint` | Runs the next bounded Foundation Sprint mission when enabled |
 | Daily 8:00 UTC      | `/api/library/scout`             | Runs mission-based Scout discovery              |
 | Daily 9:00 UTC      | `/api/library/process-candidates`| Researches and verdicts pending candidates      |
 | Every 2 days 10:00 UTC | `/api/events/scout`           | Discovers upcoming events                       |
@@ -144,14 +145,14 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 /lib/library           Living Library and Source Graph helpers
 /lib/radar             Autopilot, campaigns, Candidate Inbox
 /lib/brain/refresher   Library refresher agent
-/supabase/migrations   Schema migrations (0001–0013)
+/supabase/migrations   Schema migrations (0001–0014)
 ```
 
 ## How the brain works
 
 1. **Context packet** (`lib/context/founderContextPacket.ts`) gathers real user context only: North, Radar actions, Today plans/events, Circle moments, memory, behavior, time, and available weather/location.
 2. **Autopilot health check** reads Active Radar, Holding, Candidate Inbox, Living Library, Source Graph, event freshness, Today/Circle/North readiness, and recent behavior.
-3. **Bootstrap Mode** triggers when foundation targets are thin: places < 100, active events < 40, sources < 50, Candidate Inbox < 150, or Tier A/B < 25. It runs up to six safe operations in one pass.
+3. **Foundation Sprint Mode** can be enabled when foundation targets are thin: places < 300, active events < 150, sources < 100, Candidate Inbox < 500, or Tier A/B < 75. It runs bounded mission batches with a persisted cursor instead of relying on repeated manual Bootstrap clicks.
 4. **Campaign planner** chooses the next useful operation: no-op, refill, Holding/Candidate Inbox/Library build, event pulse, source recheck, weekend/after-work/Circle/North campaign, cleanup, or foundation build.
 5. **Scout / source graph / Library workers** execute bounded discovery. Raw discoveries go to Candidate Inbox first; researched durable entities go to Library.
 6. **Researcher / Curator / Critic / Briefing Editor** enrich, shortlist, stress-test, and write private briefings.
@@ -161,13 +162,14 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 10. **Routed actions** from Radar, Today, plans, chat/voice, and item actions write behavior signals, source stats, and memory proposals.
 11. **Future context packets** read those real behavior/memory/source signals, so recommendations improve without fake filler.
 
-If external discovery keys are missing, Bootstrap Mode reports the missing providers instead of inventing rows. With Tavily configured but Anthropic missing, Scout can still seed Source Graph and Candidate Inbox from real article results, but it will not fabricate extracted places.
+If external discovery keys are missing, Foundation Sprint reports the missing providers instead of inventing rows. With Tavily configured but Anthropic missing, Scout can still seed Source Graph and Candidate Inbox from real article results, but it will not fabricate extracted places.
 
 `/settings/library` is the operator view. It reads `radar_autopilot_runs`,
 `radar_autopilot_activity`, and `radar_autopilot_settings` to show Running,
-Idle, Paused, Blocked, Failed, Healthy, or Bootstrap needed. Pause affects
-scheduled cron only; owner-requested Bootstrap/Autopilot runs can still be
-started manually. Stop means "stop after current major step."
+Idle, Paused, Blocked, Partial Success, Foundation Sprint, Failed, Healthy, or
+Bootstrap needed. Pause affects scheduled maintenance cron; Foundation Sprint
+has its own enable/pause flag and mission cursor. Stop means "stop after current
+major step."
 
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 
@@ -198,6 +200,12 @@ uses `dryRun: false` and routes the parsed sections into existing systems:
 Imported names are anchors and priors. Radar should use the reasons behind
 those names to score future candidates, not repeatedly recommend the imported
 places themselves.
+
+The Settings Library control room includes a paste-based dry-run/commit action
+for owner-provided taste seeds and reports how many imported Circle people are
+visible to the Circle data source. Commit mode is idempotent; a repeat import
+updates or skips existing people, places, sources, memories, and filters instead
+of duplicating them.
 
 ## Deploy
 

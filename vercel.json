@@ -13,6 +13,10 @@
       "schedule": "0 */2 * * *"
     },
     {
+      "path": "/api/radar/autopilot?mode=foundation_sprint",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/library/scout",
       "schedule": "0 */4 * * *"
     },

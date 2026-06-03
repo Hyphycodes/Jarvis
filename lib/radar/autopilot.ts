@@ -45,6 +45,7 @@ import {
 } from "@/lib/radar/candidateInbox";
 import {
   clearAutopilotStop,
+  advanceFoundationMissionCursor,
   createAutopilotRun,
   ensureAutopilotSettings,
   finishAutopilotRun,
@@ -54,6 +55,14 @@ import {
   normalizeAutopilotMode,
   shouldStopAutopilot,
 } from "@/lib/radar/autopilotRuns";
+import { convertCandidateInboxToLibrary } from "@/lib/radar/candidateConversion";
+import {
+  assessFoundationSprint,
+  FOUNDATION_BATCH_BUDGET,
+  foundationWorkDone,
+  nextMissionCursor,
+  selectFoundationMissions,
+} from "@/lib/radar/foundationSprint";
 import { describeSourceHealth, gatherRadarCandidates } from "@/lib/sources/gather";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -104,6 +113,9 @@ export type RadarAutopilotResult = {
   errors?: string[];
   runId?: string | null;
   runStatus?: string;
+  currentMission?: string | null;
+  nextMission?: string | null;
+  eventsCreated?: number;
 };
 
 export async function runRadarAutopilot(input: {
@@ -145,8 +157,41 @@ export async function runRadarAutopilot(input: {
     mode,
   });
   const bootstrap = assessBootstrapNeed(health);
+  const foundation = assessFoundationSprint(health);
   const providerStatus = describeSourceHealth();
   const missing = missingProviders(providerStatus);
+  if (mode === "foundation_sprint" && !settings.foundation_sprint_enabled && !input.force) {
+    return {
+      ...baseResult("no_op", health, campaigns[0]),
+      mode,
+      bootstrapNeeded: bootstrap.needed,
+      bootstrap,
+      providerStatus,
+      missingProviders: missing,
+      skipped: true,
+      runStatus: "paused",
+      summary: "Foundation Sprint is off. Cron no-op.",
+    };
+  }
+  if (mode === "foundation_sprint" && foundation.completed) {
+    await advanceFoundationMissionCursor({
+      userId: input.userId,
+      cursor: Number(settings.foundation_sprint_mission_cursor ?? 0),
+      completed: true,
+      supabase,
+    });
+    return {
+      ...baseResult("no_op", health, campaigns[0]),
+      mode,
+      bootstrapNeeded: false,
+      bootstrap,
+      providerStatus,
+      missingProviders: missing,
+      skipped: true,
+      runStatus: "succeeded",
+      summary: "Foundation Sprint targets are healthy. Returning to normal maintenance.",
+    };
+  }
   if (isPausedForMode({ mode, enabled: settings.enabled, force: input.force })) {
     const paused = baseResult("no_op", health, campaigns[0]);
     paused.mode = mode;
@@ -220,10 +265,21 @@ export async function runRadarAutopilot(input: {
     result.activeAfter = after.activeCount;
     result.holdingAfter = after.holdingCount;
   }
+  const didUsefulWork = foundationWorkDone({
+    candidates: result.candidatesDiscovered,
+    sources: result.sourcesCreated,
+    library: result.libraryItemsCreated + result.libraryItemsRefreshed,
+    events: result.eventsCreated ?? 0,
+    held: result.candidatesHeld,
+    promoted: result.candidatesPromoted,
+    checked: result.sourcesChecked,
+  });
   const runStatus = result.runStatus === "cancelled"
     ? "cancelled"
-    : result.summary.includes("failed safely")
-      ? "failed"
+    : result.errors?.length && didUsefulWork
+      ? "partial_success"
+      : result.summary.includes("failed safely")
+        ? "failed"
       : result.bootstrapNeeded && result.candidatesDiscovered === 0 && result.sourcesCreated === 0 && result.libraryItemsCreated === 0 && missing.length >= 5
         ? "blocked"
         : "succeeded";
@@ -243,8 +299,8 @@ export async function runRadarAutopilot(input: {
       candidateInbox: result.candidateInboxAfter ?? result.candidateInboxCount ?? 0,
       library: result.libraryAfter ?? result.libraryCounts ?? {},
     },
-    candidatesCreated: result.candidatesDiscovered,
-    libraryItemsCreated: result.libraryItemsCreated,
+      candidatesCreated: result.candidatesDiscovered,
+      libraryItemsCreated: result.libraryItemsCreated + (result.eventsCreated ?? 0),
     sourcesCreated: result.sourcesCreated,
     candidatesHeld: result.candidatesHeld,
     candidatesPromoted: result.candidatesPromoted,
@@ -349,12 +405,27 @@ async function executeOperation(input: {
   try {
     switch (input.operation) {
       case "foundation_build_mode": {
-        const stack = foundationOperationStack({
-          health: input.health,
-          maxOperations: BOOTSTRAP_RUN_BUDGET.maxCampaigns,
-        });
+        const isSprint = input.base.mode === "foundation_sprint";
+        const missions = isSprint
+          ? selectFoundationMissions({
+              health: input.health,
+              providerStatus: input.providerStatus,
+              cursor: Number((await ensureAutopilotSettings({
+                userId: input.userId,
+                supabase: input.supabase,
+              })).foundation_sprint_mission_cursor ?? 0),
+              maxOperations: FOUNDATION_BATCH_BUDGET.maxOperations,
+            })
+          : [];
+        const stack = isSprint
+          ? missions.map((mission) => mission.operation)
+          : foundationOperationStack({
+              health: input.health,
+              maxOperations: BOOTSTRAP_RUN_BUDGET.maxCampaigns,
+            });
         const errors: string[] = [];
-        for (const operation of stack) {
+        for (const [idx, operation] of stack.entries()) {
+          const mission = missions[idx];
           await heartbeatAutopilotRun({
             userId: input.userId,
             runId: input.runId,
@@ -365,7 +436,10 @@ async function executeOperation(input: {
             userId: input.userId,
             runId: input.runId,
             level: "info",
-            message: `Running ${operation}.`,
+            message: mission
+              ? `Mission: ${mission.type} started. ${mission.reason}`
+              : `Running ${operation}.`,
+            metadata: mission ? { mission: mission.type, operation } : { operation },
             supabase: input.supabase,
           });
           const partial = await executeOperation({
@@ -375,6 +449,30 @@ async function executeOperation(input: {
           });
           mergeResult(result, partial);
           if (partial.errors?.length) errors.push(...partial.errors);
+          await logAutopilotActivity({
+            userId: input.userId,
+            runId: input.runId,
+            level: partial.errors?.length
+              ? foundationWorkDone({
+                  candidates: partial.candidatesDiscovered,
+                  sources: partial.sourcesCreated,
+                  library: partial.libraryItemsCreated + partial.libraryItemsRefreshed,
+                  events: partial.eventsCreated ?? 0,
+                  held: partial.candidatesHeld,
+                  promoted: partial.candidatesPromoted,
+                  checked: partial.sourcesChecked,
+                }) ? "warning" : "error"
+              : "success",
+            message: `${mission ? `Mission ${mission.type}` : operation}: ${partial.summary}`,
+            metadata: {
+              candidates: partial.candidatesDiscovered,
+              sources: partial.sourcesCreated,
+              library: partial.libraryItemsCreated,
+              events: partial.eventsCreated ?? 0,
+              errors: partial.errors ?? [],
+            },
+            supabase: input.supabase,
+          });
           if (await shouldStopAutopilot({
             userId: input.userId,
             runId: input.runId,
@@ -395,10 +493,29 @@ async function executeOperation(input: {
         result.operationsRun = stack;
         result.errors = errors;
         result.skipped = stack.length === 0;
+        result.currentMission = missions[0]?.type ?? null;
+        result.nextMission = missions[1]?.type ?? null;
+        if (isSprint) {
+          const currentSettings = await ensureAutopilotSettings({
+            userId: input.userId,
+            supabase: input.supabase,
+          });
+          const nextCursor = nextMissionCursor(
+            Number(currentSettings.foundation_sprint_mission_cursor ?? 0),
+            missions.length,
+          );
+          await advanceFoundationMissionCursor({
+            userId: input.userId,
+            cursor: nextCursor,
+            supabase: input.supabase,
+          });
+        }
         result.summary = foundationSummary({
           stack,
           result,
           missingProviders: input.base.missingProviders ?? missingProviders(input.providerStatus),
+          sprint: isSprint,
+          missions: missions.map((mission) => mission.type),
         });
         break;
       }
@@ -464,14 +581,21 @@ async function executeOperation(input: {
       }
       case "library_build": {
         const scout = await runScout(input.userId);
+        const conversion = await convertCandidateInboxToLibrary({
+          userId: input.userId,
+          supabase: input.supabase,
+          limit: FOUNDATION_BATCH_BUDGET.maxLibraryItemsCreated,
+        });
         const processed = await processCandidates(input.userId);
         const inbox = await syncCandidateInboxFromExistingPipelines({ userId: input.userId, supabase: input.supabase });
         result.candidatesDiscovered += scout.candidates_added + inbox.created + inbox.updated;
         result.sourcesCreated += scout.sources_added ?? 0;
-        result.libraryItemsCreated += processed.researched;
-        result.candidatesRejected += processed.rejected;
-        result.summary = `Library build ran Scout and processed ${processed.researched} place candidate(s).`;
-        if (processed.errors.length) result.errors = processed.errors;
+        result.libraryItemsCreated += processed.researched + conversion.placesCreated + conversion.placesUpdated;
+        result.eventsCreated = (result.eventsCreated ?? 0) + conversion.eventsCreated + conversion.eventsUpdated;
+        result.sourcesCreated += conversion.sourcesCreated;
+        result.candidatesRejected += processed.rejected + conversion.rejected;
+        result.summary = `Library build ran Scout, converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s), and processed ${processed.researched} place candidate(s).`;
+        result.errors = [...(processed.errors ?? []), ...conversion.errors];
         break;
       }
       case "library_refresh": {
@@ -488,6 +612,7 @@ async function executeOperation(input: {
         result.candidatesHeld += processed.held;
         result.candidatesRejected += processed.rejected;
         result.summary = `Event Pulse found ${scout.candidates_added} candidate(s) and surfaced ${processed.surfaced}.`;
+        result.eventsCreated = (result.eventsCreated ?? 0) + scout.candidates_added;
         if (processed.errors.length) result.errors = processed.errors;
         break;
       }
@@ -544,7 +669,9 @@ async function executeOperation(input: {
         break;
     }
   } catch (error) {
-    result.summary = `Autopilot operation ${input.operation} failed safely: ${error instanceof Error ? error.message : String(error)}`;
+    const message = error instanceof Error ? error.message : String(error);
+    result.summary = `Autopilot operation ${input.operation} failed safely: ${message}`;
+    result.errors = [...(result.errors ?? []), message];
   }
   return result;
 }
@@ -718,9 +845,13 @@ function foundationSummary(input: {
   stack: RadarAutopilotOperation[];
   result: RadarAutopilotResult;
   missingProviders: string[];
+  sprint?: boolean;
+  missions?: string[];
 }): string {
   if (input.stack.length === 0) {
-    return "Foundation build had no safe operation to run.";
+    return input.sprint
+      ? "Foundation Sprint had no runnable mission in this batch. Check provider keys or target health."
+      : "Foundation build had no safe operation to run.";
   }
   const workDone =
     input.result.sourcesChecked +
@@ -736,7 +867,10 @@ function foundationSummary(input: {
       : null;
     return `Foundation build needed, but external discovery is blocked or limited. ${providerSummary ?? `Configure ${input.missingProviders.join(", ")} to build the intelligence bank from real sources.`}`;
   }
-  return `Foundation build ran ${input.stack.length} operation(s): ${input.stack.join(", ")}. Discovered ${input.result.candidatesDiscovered}, created ${input.result.libraryItemsCreated} library item(s), added ${input.result.sourcesCreated} source(s), checked ${input.result.sourcesChecked} source(s), promoted ${input.result.candidatesPromoted}.`;
+  const label = input.sprint ? "Foundation Sprint" : "Foundation build";
+  const missionText = input.missions?.length ? ` Missions: ${input.missions.join(", ")}.` : "";
+  const partial = input.result.errors?.length ? ` Partial success with ${input.result.errors.length} error(s).` : "";
+  return `${label} ran ${input.stack.length} operation(s): ${input.stack.join(", ")}.${missionText} Discovered ${input.result.candidatesDiscovered}, created ${input.result.libraryItemsCreated} place/library item(s), created ${input.result.eventsCreated ?? 0} event(s), added ${input.result.sourcesCreated} source(s), checked ${input.result.sourcesChecked} source(s), promoted ${input.result.candidatesPromoted}.${partial}`;
 }
 
 function libraryCountsFromHealth(health: RadarAutopilotHealth): NonNullable<RadarAutopilotResult["libraryCounts"]> {

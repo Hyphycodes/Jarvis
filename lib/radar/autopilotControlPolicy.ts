@@ -1,11 +1,13 @@
 export type RadarAutopilotRunMode =
   | "scheduled"
   | "bootstrap"
+  | "foundation_sprint"
   | "owner_requested"
   | "manual_force";
 
 export function normalizeAutopilotMode(mode?: string | null): RadarAutopilotRunMode {
   if (mode === "bootstrap") return "bootstrap";
+  if (mode === "foundation_sprint") return "foundation_sprint";
   if (mode === "manual_force") return "manual_force";
   if (mode === "owner_requested") return "owner_requested";
   return "scheduled";

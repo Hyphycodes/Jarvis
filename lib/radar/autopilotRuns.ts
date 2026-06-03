@@ -9,6 +9,7 @@ import {
   normalizeAutopilotMode,
   type RadarAutopilotRunMode,
 } from "@/lib/radar/autopilotControlPolicy";
+import { FOUNDATION_SPRINT_TARGETS } from "@/lib/radar/foundationSprint";
 import type {
   Database,
   Json,
@@ -24,6 +25,7 @@ export type RadarAutopilotRunStatus =
   | "queued"
   | "running"
   | "succeeded"
+  | "partial_success"
   | "failed"
   | "paused"
   | "cancelled"
@@ -38,8 +40,14 @@ export type LibraryControlRoomStatus = {
     pausedReason: string | null;
     stopRequestedAt: string | null;
     stopRequestedRunId: string | null;
+    foundationSprintEnabled: boolean;
+    foundationSprintStartedAt: string | null;
+    foundationSprintCompletedAt: string | null;
+    foundationSprintTargets: Json;
+    foundationSprintReason: string | null;
+    foundationSprintMissionCursor: number;
   };
-  state: "running" | "paused" | "blocked" | "failed" | "healthy" | "bootstrap_needed" | "idle";
+  state: "running" | "paused" | "blocked" | "failed" | "partial_success" | "healthy" | "foundation_sprint" | "bootstrap_needed" | "idle";
   activeRun: RadarAutopilotRunRow | null;
   lastRun: RadarAutopilotRunRow | null;
   lastBootstrapRun: RadarAutopilotRunRow | null;
@@ -107,6 +115,62 @@ export async function setAutopilotEnabled(input: {
     supabase,
   });
   return data as RadarAutopilotSettingsRow;
+}
+
+export async function setFoundationSprintEnabled(input: {
+  userId: string;
+  enabled: boolean;
+  reason?: string | null;
+  resetCursor?: boolean;
+  completed?: boolean;
+  supabase?: SupabaseClient;
+}): Promise<RadarAutopilotSettingsRow> {
+  const supabase = input.supabase ?? await getServerSupabase();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("radar_autopilot_settings")
+    .upsert({
+      user_id: input.userId,
+      foundation_sprint_enabled: input.enabled,
+      foundation_sprint_started_at: input.enabled ? now : undefined,
+      foundation_sprint_completed_at: input.completed ? now : null,
+      foundation_sprint_targets: FOUNDATION_SPRINT_TARGETS as unknown as Json,
+      foundation_sprint_reason: input.reason ?? (input.enabled ? "owner_requested" : "paused"),
+      foundation_sprint_mission_cursor: input.resetCursor ? 0 : undefined,
+      updated_at: now,
+    }, { onConflict: "user_id" })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  await logAutopilotActivity({
+    userId: input.userId,
+    level: input.enabled ? "success" : input.completed ? "success" : "warning",
+    message: input.enabled
+      ? "Foundation Sprint started."
+      : input.completed
+        ? "Foundation Sprint completed."
+        : "Foundation Sprint paused.",
+    metadata: { reason: input.reason ?? null },
+    supabase,
+  });
+  return data as RadarAutopilotSettingsRow;
+}
+
+export async function advanceFoundationMissionCursor(input: {
+  userId: string;
+  cursor: number;
+  completed?: boolean;
+  supabase: SupabaseClient;
+}): Promise<void> {
+  await input.supabase
+    .from("radar_autopilot_settings")
+    .update({
+      foundation_sprint_mission_cursor: input.cursor,
+      foundation_sprint_enabled: input.completed ? false : undefined,
+      foundation_sprint_completed_at: input.completed ? new Date().toISOString() : undefined,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", input.userId);
 }
 
 export async function requestAutopilotStop(input: {
@@ -271,7 +335,11 @@ export async function finishAutopilotRun(input: {
   await logAutopilotActivity({
     userId: input.userId,
     runId: input.runId,
-    level: input.status === "succeeded" ? "success" : input.status === "failed" ? "error" : "warning",
+    level: input.status === "succeeded"
+      ? "success"
+      : input.status === "failed"
+        ? "error"
+        : "warning",
     message: input.summary ?? `Autopilot ${input.status}.`,
     supabase: input.supabase,
   });
@@ -346,9 +414,16 @@ export async function readLibraryControlRoomStatus(input: {
       pausedReason: settings.paused_reason,
       stopRequestedAt: settings.stop_requested_at,
       stopRequestedRunId: settings.stop_requested_run_id,
+      foundationSprintEnabled: Boolean(settings.foundation_sprint_enabled),
+      foundationSprintStartedAt: settings.foundation_sprint_started_at,
+      foundationSprintCompletedAt: settings.foundation_sprint_completed_at,
+      foundationSprintTargets: settings.foundation_sprint_targets,
+      foundationSprintReason: settings.foundation_sprint_reason,
+      foundationSprintMissionCursor: Number(settings.foundation_sprint_mission_cursor ?? 0),
     },
     state: deriveControlState({
       enabled: settings.enabled,
+      foundationSprintEnabled: Boolean(settings.foundation_sprint_enabled),
       activeRun,
       lastRun,
       bootstrapNeeded: input.bootstrapNeeded,
@@ -376,6 +451,7 @@ function providerStatusRows(): LibraryControlRoomStatus["providerStatus"] {
 
 function deriveControlState(input: {
   enabled: boolean;
+  foundationSprintEnabled: boolean;
   activeRun: RadarAutopilotRunRow | null;
   lastRun: RadarAutopilotRunRow | null;
   bootstrapNeeded: boolean;
@@ -383,6 +459,8 @@ function deriveControlState(input: {
 }): LibraryControlRoomStatus["state"] {
   if (!input.enabled) return "paused";
   if (input.activeRun) return "running";
+  if (input.foundationSprintEnabled) return "foundation_sprint";
+  if (input.lastRun?.status === "partial_success") return "partial_success";
   if (input.lastRun?.status === "failed") return "failed";
   if (input.bootstrapNeeded && input.missingProviders.length >= 5) return "blocked";
   if (input.bootstrapNeeded) return "bootstrap_needed";

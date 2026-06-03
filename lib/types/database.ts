@@ -1282,6 +1282,12 @@ export interface Database {
           paused_reason: string | null;
           stop_requested_at: string | null;
           stop_requested_run_id: string | null;
+          foundation_sprint_enabled: boolean;
+          foundation_sprint_started_at: string | null;
+          foundation_sprint_completed_at: string | null;
+          foundation_sprint_targets: Json;
+          foundation_sprint_reason: string | null;
+          foundation_sprint_mission_cursor: number;
           created_at: string;
           updated_at: string;
         };
@@ -1292,6 +1298,12 @@ export interface Database {
           paused_reason?: string | null;
           stop_requested_at?: string | null;
           stop_requested_run_id?: string | null;
+          foundation_sprint_enabled?: boolean;
+          foundation_sprint_started_at?: string | null;
+          foundation_sprint_completed_at?: string | null;
+          foundation_sprint_targets?: Json;
+          foundation_sprint_reason?: string | null;
+          foundation_sprint_mission_cursor?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -1302,6 +1314,12 @@ export interface Database {
           paused_reason?: string | null;
           stop_requested_at?: string | null;
           stop_requested_run_id?: string | null;
+          foundation_sprint_enabled?: boolean;
+          foundation_sprint_started_at?: string | null;
+          foundation_sprint_completed_at?: string | null;
+          foundation_sprint_targets?: Json;
+          foundation_sprint_reason?: string | null;
+          foundation_sprint_mission_cursor?: number;
           created_at?: string;
           updated_at?: string;
         };

@@ -39,9 +39,10 @@
 - **taste seed import** — no standalone table; owner-provided markdown is routed
   into Circle, Places Library, taste signals, memory, Source Graph, and traces
 - **radar_autopilot_settings** — owner control flags for scheduled Autopilot
-  pause/resume and cooperative stop requests
+  pause/resume, cooperative stop requests, Foundation Sprint enablement,
+  aggressive targets, and mission cursor
 - **radar_autopilot_runs** — operational run ledger for scheduled, bootstrap,
-  owner-requested, and manual-force Autopilot runs
+  foundation-sprint, owner-requested, and manual-force Autopilot runs
 - **radar_autopilot_activity** — short owner-facing activity messages for the
   Library Control Room
 
@@ -63,10 +64,19 @@
   `taste_seed_import` provenance into existing rows and remains idempotent by
   existing natural keys such as person name, place slug, source key, trait, and
   memory content.
-- Bootstrap Mode uses these same tables. It does not add a separate bootstrap
-  schema: real provider results enter `radar_candidate_inbox`, real durable
-  places/events enter `places_library` / `current_events`, and real domains,
-  calendars, venues, or search patterns enter `intelligence_sources`.
+- Bootstrap Mode and Foundation Sprint use these same tables. Foundation Sprint
+  adds state only to `radar_autopilot_settings`: enablement, started/completed
+  timestamps, targets, reason, and mission cursor. Real provider results enter
+  `radar_candidate_inbox`, real durable places/events enter `places_library` /
+  `current_events`, and real domains, calendars, venues, or search patterns
+  enter `intelligence_sources`.
+- Use `partial_success` in `radar_autopilot_runs` when useful rows were written
+  before a later operation failed. Avoid contradictory running/failed states by
+  treating the latest active run and latest finished run separately in the
+  control room.
+- Use candidate-to-Library conversion as the explicit bridge from aggressive
+  intake to permanent memory. Candidate Inbox rows never write directly to
+  Active Radar.
 - Use `radar_autopilot_runs` / `radar_autopilot_activity` for operational
   visibility. They are not memory and should not drive recommendations directly.
 - Do not add fake production rows to fill empty states. Synthetic rows belong

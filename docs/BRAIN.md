@@ -46,7 +46,8 @@ trigger discovery or external source calls.
 - event freshness
 - Today, Circle, North, and day context from FounderContextPacket
 
-It then chooses maintenance or Bootstrap Mode. Maintenance runs one operation:
+It then chooses maintenance, Bootstrap Mode, or Foundation Sprint Mode.
+Maintenance runs one operation:
 refill, Holding build, Candidate Inbox build, Library build/refresh, event
 pulse, Source Graph recheck/expansion, weekend / after-work / Circle / North
 campaign, stale cleanup, promotion review, or no-op. Bootstrap Mode runs when
@@ -57,8 +58,17 @@ review.
 
 `/api/radar/autopilot` is cron-protected and scheduled every two hours.
 `/api/radar/autopilot?mode=bootstrap` forces the foundation-builder path for
-owner/cron operations. The cron can run often because the orchestrator can
-no-op once foundation targets are healthy.
+owner/cron operations. `/api/radar/autopilot?mode=foundation_sprint` is the
+persistent foundation route and is scheduled every 15 minutes. It no-ops quickly
+when Foundation Sprint is off or the core targets are healthy.
+
+Foundation Sprint is a mission queue, not one giant search. Settings store an
+enable flag, aggressive targets, start/completion timestamps, and a mission
+cursor. Each run selects a bounded batch from missions such as taste-seed
+verification, source building, events windows, neighborhood/drift lanes,
+candidate evaluation, Library conversion, source recheck, and Holding promotion
+review. The next cron continues from the cursor, so the app does not need to
+stay open.
 
 Manual `/api/radar/refresh` now runs an autopilot review/override first, then
 keeps the existing refill response shape for UI compatibility. If the Library,
@@ -68,9 +78,22 @@ enters Bootstrap Mode rather than silently returning an empty-looking refresh.
 Run state is recorded in `radar_autopilot_runs`, and short operator messages go
 to `radar_autopilot_activity`. `/settings/library` uses those rows plus
 `radar_autopilot_settings` to show whether Jarvis is running, idle, paused,
-blocked by missing providers, failed, healthy, or in need of bootstrap. Pause
-blocks scheduled cron only. Stop is cooperative and means stop after the
-current major operation.
+blocked by missing providers, partial-success, failed, healthy, in Foundation
+Sprint, or in need of bootstrap. Pause blocks scheduled maintenance cron;
+Foundation Sprint can be started, paused, resumed, or run for the next mission
+from the control room. Stop is cooperative and means stop after the current
+major operation.
+
+Failures are partial whenever useful work happened. A mission can create
+candidates or sources, fail during conversion, and still finish as
+`partial_success` with row counts and error detail. Missing optional providers
+only block missions that need them.
+
+Candidate-to-Library conversion is explicit. `radar_candidate_inbox` can grow
+large during aggressive discovery, but rows must be evaluated and converted into
+`places_library`, `current_events`, or `intelligence_sources` before they can
+inform Holding or Radar. Ambiguous event dates remain contextual; exact event
+rows require exact provider-backed times.
 
 ## Taste Seed Importer
 
@@ -93,6 +116,9 @@ Commit mode routes data into existing tables:
 Every row carries `taste_seed_import` provenance where the destination table
 supports source or metadata. The importer is idempotent by exact person name,
 place slug, source key, taste trait, memory content, and Circle update title.
+Imported people are written to the same `circle_people` data source that the
+Circle page reads; tests assert that owner-provided names appear through that
+loader after commit.
 
 The seed is not a recommendation list. Names build the Library; reasons build
 the brain. Imported places are context anchors and similarity seeds only. They

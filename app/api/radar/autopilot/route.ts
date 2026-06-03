@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
 import { runRadarAutopilot } from "@/lib/radar/autopilot";
-import { normalizeAutopilotMode } from "@/lib/radar/autopilotRuns";
+import {
+  normalizeAutopilotMode,
+  setFoundationSprintEnabled,
+} from "@/lib/radar/autopilotRuns";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +32,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
   const url = new URL(req.url);
-  const mode = url.searchParams.get("mode") === "bootstrap" ? "bootstrap" : "scheduled";
+  const mode = normalizeAutopilotMode(url.searchParams.get("mode"));
   const ownerUserId = await findOwnerUserId();
   if (!ownerUserId) {
     return NextResponse.json({ ok: false, error: "Owner not found." }, { status: 500 });
@@ -61,10 +64,19 @@ export async function POST(req: Request) {
   const mode = normalizeAutopilotMode(
     typeof body.mode === "string" ? body.mode : body.force ? "manual_force" : "owner_requested",
   );
+  if (mode === "foundation_sprint" && (body.start === true || body.resume === true)) {
+    await setFoundationSprintEnabled({
+      userId: ownerUserId,
+      enabled: true,
+      reason: typeof body.reason === "string" ? body.reason : "owner_requested",
+      resetCursor: body.start === true,
+      supabase: getSupabaseServiceClient(),
+    });
+  }
   const result = await runRadarAutopilot({
     userId: ownerUserId,
     mode,
-    force: Boolean(body.force) || mode === "bootstrap",
+    force: Boolean(body.force) || mode === "bootstrap" || Boolean(body.runNow),
   });
   return NextResponse.json(toAutopilotResponse(mode, result));
 }
@@ -96,6 +108,9 @@ function toAutopilotResponse(mode: string, result: Awaited<ReturnType<typeof run
     candidates_promoted: result.candidatesPromoted,
     candidates_held: result.candidatesHeld,
     summary: result.summary,
+    current_mission: result.currentMission ?? null,
+    next_mission: result.nextMission ?? null,
+    events_created: result.eventsCreated ?? 0,
     run_id: result.runId ?? null,
     run_status: result.runStatus ?? null,
     raw: result,

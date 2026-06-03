@@ -36,7 +36,9 @@ budget into `brain_decision_runs.raw_output.budget`.
 - `POST /api/intelligence/run`
 - `GET /api/radar/autopilot`
 - `GET /api/radar/autopilot?mode=bootstrap`
+- `GET /api/radar/autopilot?mode=foundation_sprint`
 - `POST /api/radar/autopilot` with `mode=bootstrap|owner_requested|manual_force`
+- `POST /api/radar/autopilot` with `mode=foundation_sprint`, plus optional `start`, `resume`, or `runNow`
 - `POST /api/radar/autopilot/pause`
 - `POST /api/radar/autopilot/resume`
 - `POST /api/radar/autopilot/stop`
@@ -48,13 +50,18 @@ Radar Autopilot is wired to Vercel Cron every two hours. It decides no-op vs
 real work from inventory health, Source Graph cadence, Library depth, and
 context windows before calling expensive discovery.
 
-Bootstrap Mode is Autopilot's foundation builder. When Places, active events,
-Source Graph, Candidate Inbox, or Tier A/B Library inventory is thin, Autopilot
-can run a bounded stack in one pass: source building, Library build, Event Pulse
-build, Candidate Inbox build, source recheck/expansion, Holding build, and a
-final conservative promotion review. Manual Radar refresh uses this path when
-the bank is empty, so the control room should report "building" or "blocked by
-missing providers" instead of appearing dead.
+Bootstrap Mode is the owner-requested foundation builder. Foundation Sprint Mode
+is the persistent aggressive builder. When Places, active events, Source Graph,
+Candidate Inbox, or Tier A/B Library inventory is thin, the owner can enable
+Foundation Sprint from `/settings/library`; the 15-minute cron then runs the
+next bounded mission batch until the core targets are healthy.
+
+Foundation Sprint missions include source building, new restaurant openings,
+events windows, taste-seed verification, neighborhood/drift lanes, candidate
+evaluation, Library conversion, source recheck, and Holding promotion review.
+Each batch is capped by provider calls, candidate writes, Library/event writes,
+source writes, and operation count. Promotion remains conservative: raw
+Candidate Inbox and Library rows do not become Active Radar automatically.
 
 Provider keys matter. Google Places builds places, Ticketmaster builds events,
 and Tavily/Brave/SerpAPI build source and opportunity inventory. If no external
@@ -66,12 +73,26 @@ Operational state is durable:
 - `radar_autopilot_runs` records scheduled/bootstrap/manual runs, status,
   counts before/after, provider status, and summary.
 - `radar_autopilot_activity` records short control-room messages.
-- `radar_autopilot_settings` stores pause and stop-after-current-step flags.
+- `radar_autopilot_settings` stores pause, stop-after-current-step,
+  Foundation Sprint enablement, targets, and mission cursor.
 
 Pause only blocks scheduled cron. Owner-requested runs can still be launched
 from `/settings/library`. Stop is cooperative: the current serverless step is
 allowed to finish, then Bootstrap checks the flag before starting the next major
 operation.
+
+Run status can be `partial_success`. If one mission creates useful rows and a
+later mission fails, the run should preserve counts and activity, not collapse
+to a vague failed state. Provider-specific failures only block affected
+missions; missing Brave or SerpAPI must not block Tavily, Google Places, or
+Ticketmaster work.
+
+Candidate-to-Library conversion runs as a Library mission. It reads unevaluated
+`radar_candidate_inbox` rows, classifies durable places/events/sources, applies
+taste and negative-filter scoring, upserts strong places into `places_library`,
+upserts events into `current_events` only when a real exact start time exists,
+and marks weak, duplicate, or ambiguous rows with structured reasons. It never
+writes directly to Active Radar.
 
 ## Taste Seed Import
 
@@ -84,6 +105,8 @@ ambient system:
   negative filters with `taste_seed_import` provenance
 - ambiguous dates remain planning context instead of fake exact events
 - imported places are never promoted directly to Active Radar
+- imported people are written to the same `circle_people` source read by Circle,
+  and the Library control room reports visible seed people after commit
 
 After commit, ambient runs can use the resulting FounderContextPacket,
 Source Graph rows, Library anchors, and negative filters to guide future

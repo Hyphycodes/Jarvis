@@ -9,7 +9,7 @@ content to hide empty data.
 ```
 FounderContextPacket
   -> Radar/Library Autopilot health check
-  -> campaign selection
+  -> maintenance / Bootstrap / Foundation Sprint mission selection
   -> BrainContext + Interest Graph
   -> Taste Strategist missions
   -> Scout / Candidate Inbox / Researcher / Living Library
@@ -53,7 +53,7 @@ Scout is mission-driven:
 
 `lib/radar/autopilot.ts` is the background research-desk orchestrator. It does
 not directly become a search function. It reads system health and chooses one
-bounded operation:
+bounded maintenance operation:
 
 - Active Radar refill when the front room is thin
 - Holding build when Active is healthy but the back room is shallow
@@ -70,8 +70,9 @@ Manual `/api/radar/refresh` now runs an autopilot review/override path and then
 keeps the old refill response shape for existing UI consumers.
 
 The owner can also run `POST /api/radar/autopilot` with
-`mode=bootstrap|owner_requested|manual_force`. Scheduled GET calls require
-`CRON_SECRET`; owner POST calls use the normal authenticated owner session.
+`mode=bootstrap|foundation_sprint|owner_requested|manual_force`. Scheduled GET
+calls require `CRON_SECRET`; owner POST calls use the normal authenticated owner
+session.
 
 ## Bootstrap Mode
 
@@ -100,6 +101,39 @@ web/source/opportunity discovery. If providers are missing or return nothing,
 the summary says so. It must not create fake rows to make the control room look
 alive.
 
+## Foundation Sprint Mode
+
+Foundation Sprint is the aggressive persistent version of Bootstrap. It is
+enabled from `/settings/library` or `POST /api/radar/autopilot` with
+`mode=foundation_sprint`. Vercel Cron calls
+`/api/radar/autopilot?mode=foundation_sprint` every 15 minutes, but the route
+no-ops quickly when the mode is off or core targets are healthy.
+
+Aggressive targets:
+
+- Places: 300
+- Active events: 150
+- Sources: 100
+- Candidate Inbox: 500
+- Tier A + B Library items: 75
+- Recurring signals: 50
+- Tastemakers: 50
+- Organizations: 50
+- Neighborhoods: 15
+
+The sprint stores an enable flag, targets, timestamps, and mission cursor in
+`radar_autopilot_settings`. Each cron run picks the next useful bounded mission
+batch from taste-seed verification, source building, events windows,
+neighborhood/drift lanes, active-social lanes, candidate evaluation, Library
+conversion, source recheck, and Holding promotion review. This lets Jarvis keep
+building while the app is closed.
+
+Run state supports `partial_success`. A mission that creates candidates or
+sources and then hits a conversion error should preserve the useful work,
+record the error, and continue on the next scheduled run. Missing optional
+providers only block the affected mission; they do not stop configured
+providers from working.
+
 ## Library Layers
 
 - **Candidate Inbox** (`radar_candidate_inbox`) is raw/evaluation inventory. It
@@ -123,6 +157,13 @@ Bootstrap source seeding also captures real provider result domains/articles as
 Jarvis learn where quality comes from even before an article yields a durable
 place or event.
 
+Candidate-to-Library conversion is the bridge between aggressive intake and
+permanent memory. It reads unevaluated Candidate Inbox rows, classifies entity
+type, applies taste and negative-filter scoring, writes durable places to
+`places_library`, writes events to `current_events` only when exact provider
+dates exist, upserts sources to Source Graph, and marks weak or ambiguous rows
+with reasons. It does not write directly to Active Radar.
+
 ## Taste Seed Importer
 
 `POST /api/library/import-taste-seed` and
@@ -144,17 +185,23 @@ queries. Imported names build the Library; imported reasons, notes, and filters
 build the brain. Known places are anchors and similarity seeds, not automatic
 Active Radar items.
 
+Commit mode writes people to the same `circle_people` table the Circle page
+reads. The Settings Library page reports visible seed-imported Circle people so
+the owner can verify that taste seed context reached the relationship map.
+
 ## Library Control Room
 
 `/settings/library` is the operational surface for this layer. It shows:
 
-- current state: Running, Idle, Paused, Blocked, Failed, Healthy, or Bootstrap needed
+- current state: Running, Idle, Paused, Blocked, Partial Success, Foundation Sprint, Failed, Healthy, or Bootstrap needed
 - provider availability and missing keys
-- last run, last bootstrap run, current operation, and next scheduled estimate
-- progress against bootstrap targets
+- last run, last bootstrap/foundation run, current operation, current/next mission, and next scheduled estimate
+- progress against bootstrap and Foundation Sprint targets
 - last activity messages from `radar_autopilot_activity`
 - owner controls to run Bootstrap, run Autopilot, pause, resume, or request
   stop after the current step
+- Foundation Sprint controls to start, pause, resume, and run the next mission
+- paste-based Taste Seed dry-run and commit controls
 
 The control room reads `radar_autopilot_runs`,
 `radar_autopilot_activity`, and `radar_autopilot_settings`. These tables are

@@ -31,11 +31,18 @@ import {
   normalizeAutopilotMode,
 } from "../lib/radar/autopilotControlPolicy";
 import {
+  commitTasteSeedImport,
   dryRunTasteSeedImport,
 } from "../lib/tasteSeed/importer";
 import {
   parseTasteSeedMarkdown,
 } from "../lib/tasteSeed/parser";
+import {
+  assessFoundationSprint,
+  FOUNDATION_SPRINT_TARGETS,
+  foundationWorkDone,
+  selectFoundationMissions,
+} from "../lib/radar/foundationSprint";
 import { planRadarCampaigns } from "../lib/radar/campaigns";
 import { qualityTierFromScore } from "../lib/library/quality";
 import type { LibraryHealth } from "../lib/library/types";
@@ -454,10 +461,76 @@ function testAutopilotModeAndPausePolicy() {
   assert.equal(normalizeAutopilotMode("cron"), "scheduled");
   assert.equal(normalizeAutopilotMode("scheduled"), "scheduled");
   assert.equal(normalizeAutopilotMode("bootstrap"), "bootstrap");
+  assert.equal(normalizeAutopilotMode("foundation_sprint"), "foundation_sprint");
   assert.equal(isPausedForMode({ mode: "scheduled", enabled: false }), true);
   assert.equal(isPausedForMode({ mode: "bootstrap", enabled: false }), false);
+  assert.equal(isPausedForMode({ mode: "foundation_sprint", enabled: false }), false);
   assert.equal(isPausedForMode({ mode: "owner_requested", enabled: false }), false);
   assert.equal(isPausedForMode({ mode: "scheduled", enabled: false, force: true }), false);
+}
+
+function testFoundationSprintPolicy() {
+  const thin = autopilotHealth({
+    candidateInboxCount: 10,
+    sourceCount: 5,
+    library: healthyLibrary({
+      places: 20,
+      events: 2,
+      tierA: 1,
+      tierB: 1,
+      depthScore: 0.1,
+    }),
+  });
+  assert.equal(assessFoundationSprint(thin).active, true);
+  const missions = selectFoundationMissions({
+    health: thin,
+    providerStatus: {
+      tavily: "available",
+      "google-places": "available",
+      ticketmaster: "available",
+      brave: "not_configured",
+      serpapi: "not_configured",
+    },
+    cursor: 0,
+  });
+  assert.ok(missions.length > 0);
+  assert.ok(missions.some((mission) => mission.type === "library_conversion"));
+  assert.equal(
+    selectFoundationMissions({
+      health: autopilotHealth({
+        candidateInboxCount: FOUNDATION_SPRINT_TARGETS.candidateInbox,
+        sourceCount: FOUNDATION_SPRINT_TARGETS.sources,
+        library: healthyLibrary({
+          places: FOUNDATION_SPRINT_TARGETS.places,
+          events: FOUNDATION_SPRINT_TARGETS.activeEvents,
+          tierA: FOUNDATION_SPRINT_TARGETS.tierAPlusB,
+          tierB: 0,
+          people: FOUNDATION_SPRINT_TARGETS.tastemakers,
+          organizations: FOUNDATION_SPRINT_TARGETS.organizations,
+          recurringSignals: FOUNDATION_SPRINT_TARGETS.recurringSignals,
+          pendingCandidates: FOUNDATION_SPRINT_TARGETS.candidateInbox,
+          depthScore: 1,
+        }),
+      }),
+      providerStatus: {
+        tavily: "available",
+        "google-places": "available",
+        ticketmaster: "available",
+        brave: "not_configured",
+        serpapi: "not_configured",
+      },
+    }).length,
+    0,
+  );
+  assert.equal(foundationWorkDone({
+    candidates: 3,
+    sources: 0,
+    library: 0,
+    events: 0,
+    held: 0,
+    promoted: 0,
+    checked: 0,
+  }), true);
 }
 
 function testFoundationOperationStackIsBoundedAndConservative() {
@@ -586,9 +659,13 @@ function testAutopilotCronWiring() {
   assert.ok(vercel.crons?.some((cron) =>
     cron.path === "/api/radar/autopilot" && cron.schedule === "0 */2 * * *"
   ));
+  assert.ok(vercel.crons?.some((cron) =>
+    cron.path === "/api/radar/autopilot?mode=foundation_sprint" &&
+    cron.schedule === "*/15 * * * *"
+  ));
   const route = readFileSync("app/api/radar/autopilot/route.ts", "utf8");
   assert.match(route, /CRON_SECRET/);
-  assert.match(route, /mode=bootstrap|searchParams\.get\("mode"\)/);
+  assert.match(route, /foundation_sprint/);
   assert.match(route, /requireOwner/);
   assert.match(route, /toAutopilotResponse/);
 }
@@ -615,9 +692,20 @@ function testAutopilotRunStateMigrationAndControls() {
 
   const actions = readFileSync("app/settings/library/ControlRoomActions.tsx", "utf8");
   assert.match(actions, /Run Bootstrap/);
+  assert.match(actions, /Start Sprint/);
+  assert.match(actions, /Run Next Mission/);
+  assert.match(actions, /Commit Import/);
   assert.match(actions, /Pause/);
   assert.match(actions, /Resume/);
   assert.match(actions, /Stop After Current Step/);
+
+  const foundationMigration = readFileSync(
+    "supabase/migrations/0014_foundation_sprint_mode.sql",
+    "utf8",
+  );
+  assert.match(foundationMigration, /foundation_sprint_enabled/);
+  assert.match(foundationMigration, /partial_success/);
+  assert.match(foundationMigration, /foundation_sprint/);
 }
 
 const tasteSeedFixture = `
@@ -737,6 +825,178 @@ function testTasteSeedRouteAndDocsWiring() {
   assert.match(pkg.scripts?.["import:taste-seed"] ?? "", /scripts\/import-taste-seed\.ts/);
 }
 
+async function testTasteSeedCommitWritesCirclePeople() {
+  const supabase = new MemorySupabase({
+    circle_people: [],
+    circle_updates: [],
+    intelligence_sources: [],
+    places_library: [],
+    taste_signals: [],
+    memory_items: [],
+    founder_profile: [],
+    intelligence_traces: [],
+  });
+  const first = await commitTasteSeedImport({
+    userId: "user_test",
+    markdown: tasteSeedFixture,
+    fileName: "JARVIS TASTE SEED.md",
+    importedAt: now,
+    supabase: supabase as never,
+  });
+  assert.equal(first.summary.created.people, 4);
+  assert.ok(supabase.rows("circle_people").some((row) => row.name === "Kamila"));
+  assert.ok(supabase.rows("circle_people").some((row) => row.name === "Sophia Ramos"));
+  assert.ok(supabase.rows("circle_people")
+    .find((row) => row.name === "Kamila")?.notes?.some((note: string) => /Spelled with a K/.test(note)));
+  const second = await commitTasteSeedImport({
+    userId: "user_test",
+    markdown: tasteSeedFixture,
+    fileName: "JARVIS TASTE SEED.md",
+    importedAt: now,
+    supabase: supabase as never,
+  });
+  assert.equal(second.summary.created.people, 0);
+  assert.equal(second.summary.updated.people, 4);
+  assert.equal(supabase.rows("circle_people").filter((row) => row.name === "Kamila").length, 1);
+}
+
+function testCandidateInboxConversionContract() {
+  const source = readFileSync("lib/radar/candidateConversion.ts", "utf8");
+  assert.match(source, /from\("radar_candidate_inbox"\)/);
+  assert.match(source, /from\("places_library"\)/);
+  assert.match(source, /from\("current_events"\)/);
+  assert.match(source, /status: "library"/);
+  assert.match(source, /no fake event date was created/);
+  assert.doesNotMatch(source, /from\("surfaced_items"\)\.insert/);
+}
+
+type Row = Record<string, any>;
+
+class MemorySupabase {
+  private data: Record<string, Row[]>;
+  private id = 0;
+
+  constructor(seed: Record<string, Row[]>) {
+    this.data = Object.fromEntries(Object.entries(seed).map(([key, rows]) => [key, rows.map((row) => ({ ...row }))]));
+  }
+
+  from(table: string) {
+    if (!this.data[table]) this.data[table] = [];
+    return new MemoryQuery(this, table);
+  }
+
+  rows(table: string): Row[] {
+    return this.data[table] ?? [];
+  }
+
+  nextId(table: string): string {
+    this.id++;
+    return `${table}_${this.id}`;
+  }
+}
+
+class MemoryQuery {
+  private filters: Array<{ key: string; value: unknown; op: "eq" | "in" }> = [];
+  private pending: { type: "insert" | "update" | "upsert"; value: Row | Row[]; conflict?: string } | null = null;
+  private limitValue: number | null = null;
+
+  constructor(private db: MemorySupabase, private table: string) {}
+
+  select() { return this; }
+  order() { return this; }
+  limit(value: number) { this.limitValue = value; return this; }
+  eq(key: string, value: unknown) { this.filters.push({ key, value, op: "eq" }); return this; }
+  in(key: string, value: unknown[]) { this.filters.push({ key, value, op: "in" }); return this; }
+  like() { return this; }
+
+  insert(value: Row | Row[]) {
+    this.pending = { type: "insert", value };
+    return this;
+  }
+
+  update(value: Row) {
+    this.pending = { type: "update", value };
+    return this;
+  }
+
+  upsert(value: Row | Row[], options?: { onConflict?: string }) {
+    this.pending = { type: "upsert", value, conflict: options?.onConflict };
+    return this;
+  }
+
+  async maybeSingle() {
+    const rows = this.readRows();
+    return { data: rows[0] ?? null, error: null };
+  }
+
+  async single() {
+    if (this.pending) {
+      const rows = this.applyPending();
+      return { data: rows[0] ?? null, error: null };
+    }
+    const rows = this.readRows();
+    return { data: rows[0] ?? null, error: null };
+  }
+
+  then(resolve: (value: { data?: Row[] | null; error: null }) => void) {
+    if (this.pending) {
+      const rows = this.applyPending();
+      resolve({ data: rows, error: null });
+      return;
+    }
+    resolve({ data: this.readRows(), error: null });
+  }
+
+  private readRows(): Row[] {
+    let rows = this.db.rows(this.table).filter((row) => this.matches(row));
+    if (this.limitValue != null) rows = rows.slice(0, this.limitValue);
+    return rows;
+  }
+
+  private applyPending(): Row[] {
+    const pending = this.pending;
+    if (!pending) return [];
+    if (pending.type === "insert") {
+      const rows = asRows(pending.value).map((row) => ({ id: row.id ?? this.db.nextId(this.table), ...row }));
+      this.db.rows(this.table).push(...rows);
+      return rows;
+    }
+    if (pending.type === "update") {
+      const rows = this.db.rows(this.table).filter((row) => this.matches(row));
+      for (const row of rows) Object.assign(row, pending.value);
+      return rows;
+    }
+    const conflict = (pending.conflict ?? "id").split(",").map((key) => key.trim());
+    const out: Row[] = [];
+    for (const row of asRows(pending.value)) {
+      const existing = this.db.rows(this.table).find((candidate) =>
+        conflict.every((key) => candidate[key] === row[key])
+      );
+      if (existing) {
+        Object.assign(existing, row);
+        out.push(existing);
+      } else {
+        const inserted = { id: row.id ?? this.db.nextId(this.table), ...row };
+        this.db.rows(this.table).push(inserted);
+        out.push(inserted);
+      }
+    }
+    return out;
+  }
+
+  private matches(row: Row): boolean {
+    return this.filters.every((filter) => {
+      if (filter.op === "eq") return row[filter.key] === filter.value;
+      if (filter.op === "in") return Array.isArray(filter.value) && filter.value.includes(row[filter.key]);
+      return true;
+    });
+  }
+}
+
+function asRows(value: Row | Row[]): Row[] {
+  return Array.isArray(value) ? value : [value];
+}
+
 async function main() {
   testEmptyContextDoesNotInventData();
   testBehaviorPatterns();
@@ -755,6 +1015,7 @@ async function main() {
   testAutopilotOperationSelection();
   testBootstrapPolicy();
   testAutopilotModeAndPausePolicy();
+  testFoundationSprintPolicy();
   testFoundationOperationStackIsBoundedAndConservative();
   testProviderMissingSummaryAndSourceIdentity();
   testSourceGraphScoringAndCadence();
@@ -767,6 +1028,8 @@ async function main() {
   testTasteSeedIdempotentKeys();
   testNegativeTasteFiltersAffectScoring();
   testTasteSeedRouteAndDocsWiring();
+  await testTasteSeedCommitWritesCirclePeople();
+  testCandidateInboxConversionContract();
 
   console.log("brain coherence tests passed");
 }

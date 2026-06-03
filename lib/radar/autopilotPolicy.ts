@@ -30,7 +30,8 @@ export type RadarAutopilotMode =
   | "cron"
   | "manual_force"
   | "owner_requested"
-  | "bootstrap";
+  | "bootstrap"
+  | "foundation_sprint";
 
 export type RadarAutopilotHealth = {
   activeCount: number;
@@ -53,7 +54,7 @@ export function chooseRadarAutopilotOperation(input: {
 }): RadarAutopilotOperation {
   const { health, campaigns } = input;
   const bootstrap = assessBootstrapNeed(health);
-  if (input.mode === "bootstrap" || bootstrap.needed) {
+  if (input.mode === "bootstrap" || input.mode === "foundation_sprint" || bootstrap.needed) {
     return "foundation_build_mode";
   }
   if (input.mode === "manual_force" && health.activeCount < RADAR_ACTIVE_ITEM_LIMIT) {
