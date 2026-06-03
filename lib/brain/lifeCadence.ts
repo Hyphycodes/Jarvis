@@ -70,14 +70,15 @@ export function evaluateLifeCadence(
     const signalTouch = context.recentSignals.find((signal) =>
       signal.signal_type.includes(cadence.key),
     );
+    const hasEvidence = Boolean(signalTouch || matched);
     const daysSince = signalTouch
       ? daysBetween(signalTouch.created_at, context.now)
       : matched
         ? cadence.cooldownDays
-        : cadence.desiredFrequencyDays + 2;
+        : 0;
     const overdueScore = Math.max(
       0,
-      Math.min(1, daysSince / cadence.desiredFrequencyDays),
+      Math.min(1, hasEvidence ? daysSince / cadence.desiredFrequencyDays : 0),
     );
     const coolingDown = context.recentSignals.some((signal) =>
       signal.signal_type.includes(cadence.key) &&
@@ -92,7 +93,7 @@ export function evaluateLifeCadence(
       cooldownDays: cadence.cooldownDays,
       overdueScore,
       lastTouchedAt: signalTouch?.created_at ?? (matched ? context.now : undefined),
-      shouldSuggestNow: overdueScore >= 0.72 && !coolingDown,
+      shouldSuggestNow: hasEvidence && overdueScore >= 0.72 && !coolingDown,
     };
   }).sort((a, b) => b.overdueScore - a.overdueScore);
 }

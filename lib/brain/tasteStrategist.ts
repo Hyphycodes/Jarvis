@@ -91,9 +91,9 @@ CORE PRINCIPLES
 - Preserve a masculine, refined, cinematic, grounded taste.
 - Avoid: basic tourist/clickbait/listicle energy, random novelty, shopping noise,
   constant paid recommendations.
-- Workday weeknights (Mon–Thu) are limited energy. The founder leaves for work around
-  6:20 AM, leaves Schaumburg around 3:30 PM, is usually home around 4:30 PM. Workday
-  suggestions should be practical or lightweight unless very strong.
+- Use the founder's saved weekly rhythm when it is present. If schedule context is
+  missing, do not invent commute/work hours. Workday suggestions should be practical
+  or lightweight unless very strong.
 - Strong but non-urgent ideas → suggested_destination: "holding".
 - Long-term / direction-oriented ideas → "north".
 - High-confidence and timely → "radar".
@@ -235,20 +235,21 @@ function renderPrompt(input: StrategistInput): string {
         dealbreakers: context.founder.dealbreakers,
         principles: context.founder.pinnedPrinciples,
       },
-      schedule_hints: {
-        leaves_for_work: context.weeklyRhythm?.leaveHome ?? "06:20",
-        work_start: context.weeklyRhythm?.workStart ?? "07:00",
-        leaves_schaumburg: context.weeklyRhythm?.leaveWork ?? "15:30",
-        home_by: context.weeklyRhythm?.arriveHome ?? "16:30",
-        workdays: context.weeklyRhythm?.workdays ?? [
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-        ],
-        weeknight_energy: isWeeknight ? "limited" : "wider_aperture",
-      },
+      schedule_hints: context.weeklyRhythm
+        ? {
+            enabled: context.weeklyRhythm.enabled,
+            leaves_for_work: context.weeklyRhythm.leaveHome,
+            work_start: context.weeklyRhythm.workStart,
+            leaves_work: context.weeklyRhythm.leaveWork,
+            home_by: context.weeklyRhythm.arriveHome,
+            workdays: context.weeklyRhythm.workdays,
+            work_location: context.weeklyRhythm.workLocation,
+            weeknight_energy:
+              context.weeklyRhythm.enabled && isWeeknight
+                ? "limited"
+                : "use_item_timing",
+          }
+        : null,
       interest_graph: graphSummary,
       memory_summary: context.memory.slice(0, 10).map((m) => m.content),
       recent_actions: context.recentActions,
@@ -327,7 +328,8 @@ function laneFromInterest(
   mode: ExplorationLane["mode"],
   input: StrategistInput,
 ): ExplorationLane {
-  const city = input.context.homeCity ?? "Chicago";
+  const city = input.context.homeCity;
+  const year = new Date(input.context.now).getFullYear();
   const subLabels = interest.subinterests
     .map((id) => input.graph.byId[id]?.label)
     .filter((x): x is string => Boolean(x))
@@ -335,11 +337,11 @@ function laneFromInterest(
 
   const queries: string[] = [];
   if (subLabels.length > 0) {
-    queries.push(`${subLabels[0]} ${city}`);
-    if (subLabels[1]) queries.push(`${subLabels[1]} ${city}`);
+    queries.push(city ? `${subLabels[0]} ${city}` : subLabels[0]);
+    if (subLabels[1]) queries.push(city ? `${subLabels[1]} ${city}` : subLabels[1]);
     if (mode === "wildcard") queries.push(`${interest.label} unexpected angle`);
   } else {
-    queries.push(`${interest.label} ${city} 2025`);
+    queries.push(city ? `${interest.label} ${city} ${year}` : `${interest.label} ${year}`);
   }
 
   const destination: ExplorationLane["suggested_destination"] =

@@ -32,7 +32,7 @@ export type ResearcherOutput = {
   uncertainties: string[];
 };
 
-const SYSTEM_PROMPT = `You are Jarvis's RESEARCHER. You build a structured dossier for a single Chicago place by synthesizing canonical data and editorial sources.
+const SYSTEM_PROMPT = `You are Jarvis's RESEARCHER. You build a structured dossier for a single place by synthesizing canonical data and editorial sources.
 
 You are not a critic. You are not a marketer. You are a thorough analyst. Your job is accuracy and depth.
 
@@ -89,15 +89,15 @@ export async function researchPlace(
 ): Promise<ResearcherOutput> {
   const home = (() => {
     try { return getDefaultLocation(); }
-    catch { return { lat: 41.85, lng: -87.65 }; }
+    catch { return null; }
   })();
 
   // 1. Google Places: canonical location data
   let googleData: Record<string, unknown> | null = null;
-  if (hasGooglePlaces()) {
+  if (hasGooglePlaces() && home) {
     try {
       const results = await searchPlaces({
-        query: `${name} Chicago`,
+        query: home.city ? `${name} ${home.city}` : name,
         lat: home.lat,
         lng: home.lng,
         maxResults: 3,
@@ -126,14 +126,16 @@ export async function researchPlace(
   const editorialSources: Array<{ url: string; title: string; content: string }> = [];
   if (hasTavily()) {
     try {
+      const city = home?.city;
+      const queryName = city ? `"${name}" ${city}` : `"${name}"`;
       const [trusted, broad] = await Promise.allSettled([
         searchWeb({
-          query: `"${name}" Chicago`,
+          query: queryName,
           maxResults: 5,
           includeDomains: HIGH_TRUST_DOMAINS,
         }),
         searchWeb({
-          query: `"${name}" Chicago restaurant review`,
+          query: `${queryName} restaurant review`,
           maxResults: 3,
         }),
       ]);

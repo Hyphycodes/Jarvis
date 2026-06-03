@@ -84,14 +84,6 @@ export type DefaultLocation = {
   state?: string;
 };
 
-// Chicago fallback. Matches the founder seed home_city.
-const FALLBACK_LOCATION: DefaultLocation = {
-  lat: 41.85003,
-  lng: -87.65005,
-  city: "Chicago",
-  state: "IL",
-};
-
 export function getDefaultLocation(): DefaultLocation {
   const env = getEnv();
   if (env.DEFAULT_HOME_LAT != null && env.DEFAULT_HOME_LNG != null) {
@@ -102,7 +94,7 @@ export function getDefaultLocation(): DefaultLocation {
       state: env.DEFAULT_STATE,
     };
   }
-  return FALLBACK_LOCATION;
+  throw new Error("DEFAULT_HOME_LAT and DEFAULT_HOME_LNG are required for location-based source queries.");
 }
 
 export function getWhiteSoxTeamId(): number {

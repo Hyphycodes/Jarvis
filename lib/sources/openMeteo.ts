@@ -2,7 +2,7 @@ import { fetchJson } from "@/lib/http";
 import { cached, TTL } from "@/lib/cache";
 
 /**
- * Open-Meteo — no key required. Imperial units, Chicago timezone defaults.
+ * Open-Meteo — no key required. Imperial units, timezone derived from coordinates.
  * https://open-meteo.com/en/docs
  */
 
@@ -33,7 +33,7 @@ export type DailyForecast = {
 const DEFAULTS = {
   temperature_unit: "fahrenheit",
   wind_speed_unit: "mph",
-  timezone: "America/Chicago",
+  timezone: "auto",
 } as const;
 
 export async function getCurrentWeather(input: {

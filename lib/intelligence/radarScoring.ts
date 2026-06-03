@@ -1,5 +1,6 @@
 import "server-only";
 
+import { computeNorthAlignment } from "@/lib/context/types";
 import type {
   JarvisContext,
   JarvisJudgment,
@@ -18,8 +19,24 @@ export function scoreRadarCandidate(input: {
   currentBoard?: RadarItem[];
   context?: JarvisContext;
 }): RadarScore {
-  const { signal, judgment, truth, currentBoard = [] } = input;
+  const { signal, judgment, truth, currentBoard = [], context } = input;
   const redundancyPenalty = redundancyFor(signal.diversityGroup, currentBoard);
+  const northAlignment = computeNorthAlignment({
+    itemTags: [
+      signal.category,
+      signal.type,
+      signal.vibe,
+      signal.purposeLabel,
+      ...signal.positiveSignals,
+    ],
+    itemText: [
+      signal.moveTitle,
+      signal.reasonSurfaced,
+      signal.strongestAngle,
+      judgment.reason,
+    ].join(" "),
+    northTags: context?.northTags,
+  });
   const energyCost = signal.effort === "high" ? 0.7 : signal.effort === "medium" ? 0.4 : 0.18;
   const moneyCost =
     signal.spend === "high" ? 0.75 : signal.spend === "paid" ? 0.48 : signal.spend === "low" ? 0.24 : 0.08;
@@ -53,7 +70,8 @@ export function scoreRadarCandidate(input: {
       longTermValue * 0.04 -
       energyCost * 0.035 -
       moneyCost * 0.035 -
-      redundancyPenalty,
+      redundancyPenalty +
+      northAlignment.score * 0.045,
   );
 
   return {
@@ -71,6 +89,7 @@ export function scoreRadarCandidate(input: {
     energyCost,
     moneyCost,
     redundancyPenalty,
+    northAlignment,
   };
 }
 

@@ -7,6 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "pnpm exec tsc --noEmit",
+    "test:brain": "pnpm exec tsx scripts/brain-coherence.test.ts",
     "smoke": "pnpm exec tsx scripts/smoke.ts"
   },
   "dependencies": {

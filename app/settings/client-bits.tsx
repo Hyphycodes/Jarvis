@@ -127,7 +127,7 @@ export function WeeklyRhythmForm({
         <TimeField label="Leave home" name="leave_home" value={rhythm.leave_home} />
         <TimeField label="Work start" name="work_start" value={rhythm.work_start} />
         <TimeField
-          label="Leave Schaumburg"
+          label="Leave work"
           name="leave_work"
           value={rhythm.leave_work}
         />

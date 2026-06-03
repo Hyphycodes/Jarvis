@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAnthropicClient, hasAnthropic, DEFAULT_MODEL } from "@/lib/ai/anthropic";
+import { buildBrainContext } from "@/lib/brain/context";
 import {
   hasGooglePlaces,
   searchPlaces,
@@ -22,8 +23,6 @@ export type BriefData = BriefFields & {
   brief_generated_at: string;
 };
 
-const USER_PROFILE = `User profile: Man in his 30s, Bolingbrook IL. Interests: fine dining, omakase, jazz, cigars, menswear, watches, golf, tailgating, design, craft. Follows animal-based diet. Aesthetic: dark, understated luxury. Directional aspiration toward Umbria Italy — values artisan quality and cultural depth over hype.`;
-
 /**
  * Generate the four brief fields in a single structured call. One round-trip
  * (cheaper than four parallel calls) returning strict JSON, parsed defensively.
@@ -35,15 +34,16 @@ export async function generateBriefFields(
 ): Promise<BriefFields> {
   const fallback = fallbackFields(item);
   if (!hasAnthropic()) return fallback;
+  const brainContext = await buildBrainContext({ includeWeather: false }).catch(() => null);
 
   const context = [
     `Name: ${item.title}`,
     `Category: ${item.category ?? item.type ?? "unknown"}`,
-    `Neighborhood: ${item.locationName ?? item.address ?? "Chicago"}`,
+    `Location: ${item.locationName ?? item.address ?? "unknown"}`,
     `Description: ${item.description ?? "No description available"}`,
     `Tags: ${item.tags.length ? item.tags.join(", ") : "none"}`,
     "",
-    USER_PROFILE,
+    renderUserContext(brainContext),
   ].join("\n");
 
   const prompt = `${context}
@@ -90,8 +90,9 @@ export async function getBriefHeroImage(
 ): Promise<string | null> {
   if (item.imageUrl) return item.imageUrl;
   if (!hasGooglePlaces()) return null;
+  if (item.lat == null || item.lng == null) return null;
   try {
-    const query = `${item.title} ${item.locationName ?? item.address ?? "Chicago"}`.trim();
+    const query = `${item.title} ${item.locationName ?? item.address ?? ""}`.trim();
     const places = await searchPlaces({
       query,
       lat: item.lat,
@@ -108,6 +109,34 @@ export async function getBriefHeroImage(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function renderUserContext(context: Awaited<ReturnType<typeof buildBrainContext>> | null): string {
+  if (!context) return "User context: no saved profile context available.";
+  const lines = [
+    context.founder.currentFocus ? `Current focus: ${context.founder.currentFocus}` : null,
+    context.founder.lifeDirection ? `Long arc: ${context.founder.lifeDirection}` : null,
+    context.founder.vibeKeywords.length
+      ? `Taste words: ${context.founder.vibeKeywords.slice(0, 10).join(", ")}`
+      : null,
+    context.founder.avoidKeywords.length
+      ? `Avoid: ${context.founder.avoidKeywords.slice(0, 10).join(", ")}`
+      : null,
+    context.founder.dealbreakers.length
+      ? `Dealbreakers: ${context.founder.dealbreakers.slice(0, 8).join(" | ")}`
+      : null,
+    context.northTags.length ? `North tags: ${context.northTags.slice(0, 12).join(", ")}` : null,
+    context.memory.length
+      ? `Memory: ${context.memory.slice(0, 8).map((m) => m.content).join(" | ")}`
+      : null,
+    context.recentActions.length
+      ? `Recent actions: ${context.recentActions
+          .slice(0, 8)
+          .map((a) => `${a.status}: ${a.title}`)
+          .join(" | ")}`
+      : null,
+  ].filter(Boolean);
+  return lines.length ? `User context:\n${lines.join("\n")}` : "User context: no saved profile context available.";
+}
 
 function fallbackFields(item: IndexedItem): BriefFields {
   return {

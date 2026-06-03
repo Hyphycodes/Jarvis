@@ -257,7 +257,7 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
   {
     group: "chicago_food",
     query:
-      "best new restaurant openings Chicago 2025 atmospheric fine dining intimate",
+      "best new restaurant openings {city} {year} atmospheric fine dining intimate",
     type: "restaurant",
     category: "dining",
     tags: ["chicago", "dining", "local-radar", "chicago_food"],
@@ -273,7 +273,7 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
   {
     group: "chicago_culture",
     query:
-      "Chicago art exhibit gallery opening cultural event this month craftsmanship",
+      "{city} art exhibit gallery opening cultural event this month craftsmanship",
     type: "culture",
     category: "culture",
     tags: ["chicago", "culture", "local-radar", "chicago_culture"],
@@ -288,7 +288,7 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
   {
     group: "chicago_music",
     query:
-      "Chicago jazz live music intimate venue performance this week upcoming",
+      "{city} jazz live music intimate venue performance this week upcoming",
     type: "event",
     category: "music",
     tags: ["chicago", "music", "jazz", "live", "local-radar", "chicago_music"],
@@ -302,7 +302,7 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
   {
     group: "chicago_style",
     query:
-      "Chicago menswear boutique artisan leather goods craft quality independent store",
+      "{city} menswear boutique artisan leather goods craft quality independent store",
     type: "place",
     category: "style",
     tags: [
@@ -323,7 +323,7 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
   {
     group: "chicago_products",
     query:
-      "handcrafted artisan quality goods leather accessories made Chicago independent brand",
+      "handcrafted artisan quality goods leather accessories made {city} independent brand",
     type: "product",
     category: "style",
     tags: [
@@ -344,7 +344,7 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
   {
     group: "italy_travel_lifestyle",
     query:
-      "Italian craftsmanship lifestyle culture travel slow living artisan 2025",
+      "Italian craftsmanship lifestyle culture travel slow living artisan {year}",
     type: "culture",
     category: "culture",
     tags: ["italy", "craft", "lifestyle", "culture", "local-radar", "italy_travel_lifestyle"],
@@ -367,45 +367,78 @@ export type LocalRadarResult = {
   source: "tavily" | "brave" | "none";
 };
 
+function renderStaticQuery(query: string, city: string | undefined, year: number): string {
+  return query
+    .replace(/\{city\}/g, city ?? "")
+    .replace(/\{year\}/g, String(year))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isChicagoLike(city: string | undefined): boolean {
+  return Boolean(city && /chicago/i.test(city));
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function unique<T>(values: T[]): T[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
 /**
  * Run all six query groups. Tavily is preferred; Brave is the fallback.
  * Returns one result set per group that returned at least one candidate.
  * Never throws — individual group failures are caught and logged.
  */
-export async function gatherLocalRadarCandidates(): Promise<LocalRadarResult[]> {
+export async function gatherLocalRadarCandidates(options: {
+  city?: string;
+  year?: number;
+} = {}): Promise<LocalRadarResult[]> {
   const results: LocalRadarResult[] = [];
   const canTavily = hasTavily();
   const canBrave = hasBrave();
+  const year = options.year ?? new Date().getFullYear();
 
   if (!canTavily && !canBrave) return results;
 
   for (const config of QUERY_GROUPS) {
+    const runConfig: QueryGroupConfig = {
+      ...config,
+      query: renderStaticQuery(config.query, options.city, year),
+      preferredDomains: isChicagoLike(options.city) ? config.preferredDomains : undefined,
+      tags: unique([
+        ...(options.city ? [slug(options.city)] : []),
+        ...config.tags,
+      ]),
+    };
     try {
       let candidates: CreateIndexedItemInput[] = [];
       let usedSource: "tavily" | "brave" | "none" = "none";
 
       if (canTavily) {
         const data = await searchWeb({
-          query: config.query,
+          query: runConfig.query,
           maxResults: LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
           includeDomains:
-            config.preferredDomains && config.preferredDomains.length > 0
-              ? config.preferredDomains
+            runConfig.preferredDomains && runConfig.preferredDomains.length > 0
+              ? runConfig.preferredDomains
               : undefined,
           days: 30,
         });
         candidates = data.results
-          .map((r) => normalizeTavilyLead(r, config))
+          .map((r) => normalizeTavilyLead(r, runConfig))
           .filter((c): c is CreateIndexedItemInput => c !== null);
         usedSource = "tavily";
       } else if (canBrave) {
         const data = await webSearch({
-          query: config.query,
+          query: runConfig.query,
           count: LOCAL_RADAR_MAX_RESULTS_PER_QUERY,
           freshness: "pm",
         });
         candidates = data
-          .map((r) => normalizeBraveLead(r, config))
+          .map((r) => normalizeBraveLead(r, runConfig))
           .filter((c): c is CreateIndexedItemInput => c !== null);
         usedSource = "brave";
       }
@@ -550,7 +583,7 @@ function normalizeBraveLead(
  * Heuristic extraction of a specific business/venue name from article text.
  *
  * Handles common article title patterns:
- *   "Review: Smyth Is the Best Restaurant in Chicago Right Now"  → "Smyth"
+ *   "Review: Smyth Is the Best Restaurant in Town Right Now"  → "Smyth"
  *   "Dinner at The Publican" → "The Publican"
  *   "Inside Alinea's New Menu" → "Alinea"
  *   "Best New Restaurants 2025: ..." → null (listicle header — no single lead)
@@ -582,7 +615,7 @@ function extractLeadName(title: string, content?: string): string | null {
     if (name.length > 1 && name.length < 50) return name;
   }
 
-  // "Name Is Chicago's Best..." — lead word(s) before " Is" verb
+  // "Name Is the City's Best..." — lead word(s) before " Is" verb
   const isVerbMatch = t.match(/^([A-Z][a-zA-Z\s&'-]{2,40}?)\s+(?:is|has|wins|named|opens|gets)\b/);
   if (isVerbMatch && !isVerbMatch[1].match(/\b(best|top|new|great|good|why|how|what|this|these|the)\b/i)) {
     const name = isVerbMatch[1].trim();
@@ -710,11 +743,11 @@ function safeDomain(url?: string): string | undefined {
 
 function humanGroupLabel(group: LocalRadarGroup): string {
   const map: Record<LocalRadarGroup, string> = {
-    chicago_food: "Chicago food",
-    chicago_culture: "Chicago culture",
-    chicago_music: "Chicago music",
-    chicago_style: "Chicago style",
-    chicago_products: "Chicago products",
+    chicago_food: "Local food",
+    chicago_culture: "Local culture",
+    chicago_music: "Local music",
+    chicago_style: "Local style",
+    chicago_products: "Local products",
     italy_travel_lifestyle: "Italy / lifestyle",
   };
   return map[group] ?? group;

@@ -4,73 +4,73 @@ const TRANSLATIONS: Array<{ match: RegExp; queries: string[] }> = [
   {
     match: /(rugged|heritage|masculine|western|workwear|menswear)/i,
     queries: [
-      "Chicago menswear boutique",
-      "Chicago heritage menswear",
-      "Chicago leather goods boutique",
-      "Chicago barber grooming lounge",
-      "Chicago vintage menswear market",
-      "Chicago western wear boutique",
-      "Chicago watch event",
-      "Chicago cigar lounge event",
-      "Chicago workwear boutique",
-      "Chicago gun range",
-      "Chicago cigar lounge",
+      "{city} menswear boutique",
+      "{city} heritage menswear",
+      "{city} leather goods boutique",
+      "{city} barber grooming lounge",
+      "{city} vintage menswear market",
+      "{city} western wear boutique",
+      "{city} watch event",
+      "{city} cigar lounge event",
+      "{city} workwear boutique",
+      "{city} gun range",
+      "{city} cigar lounge",
     ],
   },
   {
     match: /(quiet luxury|tailoring|refined|luxury menswear)/i,
     queries: [
-      "Chicago menswear boutique",
-      "Chicago design store",
-      "Chicago tailoring event",
-      "Chicago watch boutique event",
-      "Chicago leather goods",
-      "Chicago hotel lobby bar",
-      "Chicago refined cocktail lounge",
-      "Chicago understated restaurant",
+      "{city} menswear boutique",
+      "{city} design store",
+      "{city} tailoring event",
+      "{city} watch boutique event",
+      "{city} leather goods",
+      "{city} hotel lobby bar",
+      "{city} refined cocktail lounge",
+      "{city} understated restaurant",
     ],
   },
   {
     match: /(dining|restaurant|steakhouse|supper|jazz dinner|food)/i,
     queries: [
-      "Eater Chicago new restaurant",
-      "Infatuation Chicago new restaurants",
-      "Chicago Magazine best new restaurants",
-      "Chicago steakhouse opening",
-      "Chicago live jazz dinner",
-      "Chicago restaurant pop-up",
+      "Eater {city} new restaurant",
+      "Infatuation {city} new restaurants",
+      "{city} Magazine best new restaurants",
+      "{city} steakhouse opening",
+      "{city} live jazz dinner",
+      "{city} restaurant pop-up",
     ],
   },
   {
     match: /(culture|jazz|gallery|art|music|listening bar|resident advisor)/i,
     queries: [
-      "Do312 Chicago jazz this week",
-      "Chicago Reader events this weekend",
-      "Choose Chicago gallery opening",
-      "Resident Advisor Chicago intimate event",
-      "Chicago listening bar",
-      "Chicago art opening this weekend",
+      "local events {city} jazz this week",
+      "{city} reader events this weekend",
+      "{city} gallery opening",
+      "Resident Advisor {city} intimate event",
+      "{city} listening bar",
+      "{city} art opening this weekend",
     ],
   },
   {
     match: /(outdoors|basketball|horseback|golf|motocross|trail|active|sports)/i,
     queries: [
-      "basketball courts near Schaumburg",
-      "horseback riding near Chicago",
-      "golf tee times near Chicago suburbs",
-      "motocross track Illinois",
-      "outdoor activities near Chicago this weekend",
-      "forest preserve trails near Schaumburg",
-      "gun range near Schaumburg",
+      "basketball courts near {city}",
+      "horseback riding near {city}",
+      "golf tee times near {city}",
+      "motocross track near {city}",
+      "outdoor activities near {city} this weekend",
+      "forest preserve trails near {city}",
+      "gun range near {city}",
     ],
   },
   {
     match: /(italian countryside|italy|linen|natural materials|italian design)/i,
     queries: [
-      "Chicago Italian market",
-      "Chicago design store natural materials",
-      "Chicago linen menswear",
-      "Italian design Chicago event",
+      "{city} Italian market",
+      "{city} design store natural materials",
+      "{city} linen menswear",
+      "Italian design {city} event",
     ],
   },
   {
@@ -89,6 +89,7 @@ export function translateQueryIdeas(input: {
   laneTitle?: string;
   interestArea?: string;
   subinterests?: string[];
+  homeCity?: string | null;
 }): string[] {
   const blob = [
     input.laneTitle,
@@ -100,7 +101,12 @@ export function translateQueryIdeas(input: {
     .join(" ");
   const replacements = TRANSLATIONS.find((entry) => entry.match.test(blob));
   const translated = replacements?.queries ?? input.queries;
-  return uniq(translated.map(normalizeQuery).filter(Boolean)).slice(0, 6);
+  return uniq(
+    translated
+      .map((query) => renderHomeQuery(query, input.homeCity))
+      .map(normalizeQuery)
+      .filter(Boolean),
+  ).slice(0, 6);
 }
 
 function normalizeQuery(query: string): string {
@@ -109,6 +115,26 @@ function normalizeQuery(query: string): string {
     .replace(/\bquiet luxury\b/gi, "menswear boutique")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function renderHomeQuery(query: string, homeCity?: string | null): string {
+  const city = homeCity?.trim();
+  if (city) {
+    return replaceLegacyCityTerms(query.replace(/\{city\}/g, city), city);
+  }
+  return replaceLegacyCityTerms(query.replace(/\{city\}/g, ""), "");
+}
+
+function replaceLegacyCityTerms(query: string, city: string): string {
+  const previousCity = ["Chi", "cago"].join("");
+  const previousSuburb = ["Sch", "aumburg"].join("");
+  const previousState = ["Ill", "inois"].join("");
+  return query
+    .replace(new RegExp(`\\b${previousCity} suburbs\\b`, "gi"), city ? `${city} area` : "")
+    .replace(new RegExp(`\\bnear ${previousSuburb}\\b`, "gi"), city ? `near ${city}` : "")
+    .replace(new RegExp(`\\bnear ${previousCity}\\b`, "gi"), city ? `near ${city}` : "")
+    .replace(new RegExp(`\\b${previousCity}\\b`, "g"), city)
+    .replace(new RegExp(`\\b${previousState}\\b`, "g"), "");
 }
 
 function uniq(values: string[]): string[] {

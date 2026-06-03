@@ -2,6 +2,7 @@ import "server-only";
 
 import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
+import { buildBrainContext } from "@/lib/brain/context";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 
@@ -35,46 +36,46 @@ type ScoutEventResult = {
 
 const EVENT_SCOUT_QUERIES: Array<{ q: string; domains: string[] }> = [
   {
-    q: "Chicago house music this weekend",
+    q: "{city} house music this weekend",
     domains: ["ra.co", "do312.com", "chicagoreader.com"],
   },
   {
-    q: "Chicago DJ residency this week",
+    q: "{city} DJ residency this week",
     domains: ["ra.co", "do312.com", "dice.fm"],
   },
   {
-    q: "Chicago jazz live this week",
+    q: "{city} jazz live this week",
     domains: ["chicagoreader.com", "timeout.com", "do312.com"],
   },
   {
-    q: "Chicago wine dinner this month",
+    q: "{city} wine dinner this month",
     domains: ["resy.com", "opentable.com", "chicago.eater.com"],
   },
   {
-    q: "Chicago chef collaboration dinner",
+    q: "{city} chef collaboration dinner",
     domains: ["chicago.eater.com", "resy.com", "chicagomag.com"],
   },
   {
-    q: "Chicago art opening this weekend",
+    q: "{city} art opening this weekend",
     domains: ["do312.com", "chicagoreader.com", "timeout.com"],
   },
   {
-    q: "Chicago listening bar event",
+    q: "{city} listening bar event",
     domains: ["ra.co", "do312.com", "timeout.com"],
   },
   {
-    q: "Resident Advisor Chicago events",
+    q: "Resident Advisor {city} events",
     domains: ["ra.co"],
   },
   {
-    q: "Chicago tasting menu special event",
+    q: "{city} tasting menu special event",
     domains: ["resy.com", "opentable.com", "chicago.eater.com"],
   },
 ];
 
 // ── Extraction system prompt ──────────────────────────────────────────────────
 
-const EVENT_SCOUT_SYSTEM_PROMPT = `You are Jarvis's EVENT SCOUT. You extract specific upcoming events in Chicago from article or listing content.
+const EVENT_SCOUT_SYSTEM_PROMPT = `You are Jarvis's EVENT SCOUT. You extract specific upcoming events in {city} from article or listing content.
 
 HARD REQUIREMENTS — reject if any are missing:
 - Specific datetime (within the next 14 days, or recurring this week)
@@ -117,6 +118,14 @@ function makeEventSlug(title: string, venueName: string): string {
     .slice(0, 80);
 }
 
+function renderEventScoutQuery(query: string, city: string): string {
+  return query.replace(/\{city\}/g, city).replace(/\s+/g, " ").trim();
+}
+
+function eventScoutSystemPrompt(city: string): string {
+  return EVENT_SCOUT_SYSTEM_PROMPT.replace(/\{city\}/g, city);
+}
+
 // ── Dedup key ─────────────────────────────────────────────────────────────────
 // Match on venue (normalised) + calendar date only. Two events at the same
 // venue on the same date are almost certainly the same event, even if Claude
@@ -142,6 +151,14 @@ export async function runEventScout(
     return { candidates_added };
   }
 
+  const brainContext = await buildBrainContext({ userId, includeWeather: false });
+  const city = brainContext.homeCity?.trim();
+  if (!city) {
+    console.warn("[eventScout] No profile home city — skipping Event Scout run");
+    return { candidates_added };
+  }
+  const chicagoLike = /chicago/i.test(city);
+
   // Collect articles across all queries (parallel batches of 3)
   const articleMap = new Map<string, { title: string; content: string; url: string }>();
 
@@ -150,7 +167,12 @@ export async function runEventScout(
     const batch = EVENT_SCOUT_QUERIES.slice(i, i + batchSize);
     const results = await Promise.allSettled(
       batch.map(({ q, domains }) =>
-        searchWeb({ query: q, maxResults: 5, days: 14, includeDomains: domains }),
+        searchWeb({
+          query: renderEventScoutQuery(q, city),
+          maxResults: 5,
+          days: 14,
+          includeDomains: chicagoLike ? domains : undefined,
+        }),
       ),
     );
     for (const res of results) {
@@ -210,14 +232,14 @@ export async function runEventScout(
         current_date: new Date().toISOString(),
         window_end: now14Days.toISOString(),
         instructions: [
-          "Extract upcoming Chicago events from this article.",
+          `Extract upcoming ${city} events from this article.`,
           "Only include events with a specific date within the next 14 days.",
           "Return strict JSON matching the ScoutEventResult schema.",
         ],
       });
 
       const result = await generateStructured<ScoutEventResult>({
-        system: EVENT_SCOUT_SYSTEM_PROMPT,
+        system: eventScoutSystemPrompt(city),
         prompt,
         schemaName: "ScoutEventResult",
         temperature: 0.1,

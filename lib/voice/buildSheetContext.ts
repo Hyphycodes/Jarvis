@@ -41,11 +41,16 @@ export function buildSheetContext(params: {
   } else if (currentRoute.startsWith("/plan/")) {
     const slug = currentRoute.replace("/plan/", "").split("/")[0];
     if (slug) {
-      parts.push(`User is viewing an active plan (${slug}).`);
+      parts.push(`User is viewing an active plan (${slug}). Current plan slug: ${slug}.`);
     }
   } else if (currentRoute.startsWith("/item/")) {
+    const itemId = currentRoute.replace("/item/", "").split("/")[0];
     if (visibleItem) {
-      parts.push(`User is on the detail page for ${visibleItem.name} (${visibleItem.type}).`);
+      parts.push(
+        `User is on the detail page for ${visibleItem.name} (${visibleItem.type}). Current item id: ${itemId}.`,
+      );
+    } else if (itemId) {
+      parts.push(`User is on an item detail page. Current item id: ${itemId}.`);
     }
   } else if (currentRoute.startsWith("/circle")) {
     parts.push("User is on the Circle tab, reviewing inner circle updates.");

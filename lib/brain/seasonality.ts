@@ -19,7 +19,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-// Chicago-specific seasonal context keyed by 0-indexed month.
+// Broad seasonal context keyed by 0-indexed month.
 // Feb (1) and Dec (11) are covered by the winter block.
 const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
   // January — deep winter
@@ -34,8 +34,8 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
     ],
     notableWindows: [
       "restaurant week (late Jan)",
-      "NBA / Blackhawks home games",
-      "Art Institute programming",
+      "basketball and hockey season",
+      "museum and gallery programming",
     ],
     weatherPosture: "deep cold — outdoor plans need strong motivation",
   },
@@ -49,8 +49,8 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "cabin fever energy",
     ],
     notableWindows: [
-      "Chicago Restaurant Week (early Feb)",
-      "NBA All-Star / trade deadline energy",
+      "restaurant week energy",
+      "basketball trade deadline energy",
       "craft spirits events",
     ],
     weatherPosture: "still cold, occasional mild break — layers required",
@@ -65,7 +65,7 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "St. Patrick's weekend energy",
     ],
     notableWindows: [
-      "St. Patrick's Day dyeing of the river",
+      "St. Patrick's weekend",
       "NCAA tournament watch parties",
       "spring menu launches",
     ],
@@ -82,10 +82,10 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "neighborhood walks returning",
     ],
     notableWindows: [
-      "White Sox / Cubs opening day",
+      "baseball opening day",
       "spring menu rollouts",
       "gallery openings (post-Expo)",
-      "Whalon Lake season opening",
+      "trail season opening",
     ],
     weatherPosture: "jacket weather — patio season cautiously opening",
   },
@@ -96,13 +96,13 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "patio season opening in earnest",
       "warm evenings emerging",
       "outdoor markets and fairs",
-      "Chicago Marathon training energy",
+      "race training energy",
     ],
     notableWindows: [
       "Memorial Day weekend",
-      "Chicago-area food festivals starting",
+      "food festivals starting",
       "rooftop season opening",
-      "lakefront bike paths active",
+      "bike paths active",
     ],
     weatherPosture: "warm enough for outdoor — light layers for evening",
   },
@@ -117,10 +117,10 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "cigar-weather evenings",
     ],
     notableWindows: [
-      "Chicago Pride",
-      "Taste of Chicago (early June)",
+      "Pride month programming",
+      "early summer food festivals",
       "outdoor concert season opening",
-      "Sox home stands",
+      "baseball home stands",
     ],
     weatherPosture: "warm and comfortable — full outdoor activation",
   },
@@ -136,9 +136,9 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
     ],
     notableWindows: [
       "Lollapalooza (early August)",
-      "Chicago Blues Festival",
-      "4th of July lakefront",
-      "Sox All-Star energy",
+      "blues and outdoor music festivals",
+      "4th of July lakefront or park plans",
+      "baseball all-star energy",
     ],
     weatherPosture: "hot — patio and rooftop preferred, lakefront breezes",
   },
@@ -149,13 +149,13 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "last call patio energy",
       "end-of-summer urgency",
       "outdoor music closing acts",
-      "White Sox late-season",
+      "late-season baseball",
       "golden-hour evenings",
     ],
     notableWindows: [
       "Lollapalooza (early Aug)",
-      "Chicago Air and Water Show",
-      "White Sox late-season home games",
+      "air and water show season",
+      "late-season baseball home games",
       "restaurant summer menus ending",
     ],
     weatherPosture: "warm fading to comfortable — enjoy outdoor while it lasts",
@@ -171,9 +171,9 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "fall menu launches",
     ],
     notableWindows: [
-      "EXPO Chicago (mid-Sept)",
-      "Chicago Jazz Festival (Labor Day weekend)",
-      "Bears home games starting",
+      "major design and art fairs",
+      "jazz festival season",
+      "football home games starting",
       "fall menu launches across the city",
     ],
     weatherPosture: "jacket evenings — outdoor still viable, especially midday",
@@ -189,8 +189,8 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "Bears / college football Saturdays",
     ],
     notableWindows: [
-      "Chicago Marathon (mid-Oct)",
-      "Frieze Chicago possibility",
+      "marathon season",
+      "fall art fair possibility",
       "halloween-adjacent programming",
       "end-of-patio-season farewell dinners",
     ],
@@ -207,7 +207,7 @@ const SEASON_MAP: Record<number, Omit<SeasonalContext, "monthName">> = {
       "NBA / Blackhawks home season in full swing",
     ],
     notableWindows: [
-      "Chicago Restaurant Week preview deals",
+      "restaurant week preview deals",
       "holiday market openings (Christkindlmarket late Nov)",
       "Thanksgiving weekend restaurant programs",
     ],

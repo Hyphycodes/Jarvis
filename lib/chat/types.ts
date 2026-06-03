@@ -37,9 +37,12 @@ export type PlanBuildStatus =
 export type ChatActionType =
   | "send_message"
   | "save_to_radar"
+  | "save_item"
+  | "pass_item"
   | "monitor_source"
   | "build_plan"
   | "stop_planning"
+  | "remember"
   | "find_similar"
   | "compare"
   | "dismiss"

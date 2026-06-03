@@ -1,5 +1,6 @@
 import type { RadarDecision } from "@/lib/brain/decisionCouncilTypes";
 import type { BrainContextPacket } from "@/lib/brain/types";
+import type { NorthAlignment } from "@/lib/context/types";
 import type { IndexedItem } from "@/lib/index/types";
 
 export type RadarVibe =
@@ -104,6 +105,7 @@ export type RadarScore = {
   energyCost: number;
   moneyCost: number;
   redundancyPenalty: number;
+  northAlignment: NorthAlignment;
 };
 
 export type PlanReadiness = {
@@ -151,6 +153,7 @@ export type RadarItem = {
   canGeneratePlan: boolean;
   diversityGroup: string;
   decision: RadarDecision;
+  northAlignment: NorthAlignment;
 };
 
 export type RadarDiversityReport = {

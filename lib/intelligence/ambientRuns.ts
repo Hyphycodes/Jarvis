@@ -179,6 +179,7 @@ export async function runAmbientIntelligence(input: {
     graph,
     availableSources: describeAvailableSources(),
     recentLaneIds,
+    homeCity: context.homeCity,
   });
   summary.source_plan_entries = curiosity.sourcePlan.length;
 
@@ -186,7 +187,7 @@ export async function runAmbientIntelligence(input: {
   const useStaticFallback =
     curiosity.sourcePlan.length === 0 && strategist.output.lanes.length === 0;
   let lanes =
-    policy.heavyDiscovery && runType !== "north_reflection"
+    policy.heavyDiscovery && runType !== "north_reflection" && home
       ? useStaticFallback
         ? await gatherRadarCandidates({
             userId: owner.id,
@@ -206,6 +207,9 @@ export async function runAmbientIntelligence(input: {
             curiosity,
           )
       : [];
+  if (policy.heavyDiscovery && runType !== "north_reflection" && !home) {
+    summary.errors.push("Location-based discovery skipped: DEFAULT_HOME_LAT/DEFAULT_HOME_LNG are not configured.");
+  }
   workingBudget = recordBudgetUsage(workingBudget, {
     sourceCalls: curiosity.sourcePlan.length,
     candidates: lanes.reduce((sum, lane) => sum + lane.candidates.length, 0),
@@ -431,6 +435,6 @@ function safeHome() {
   try {
     return getDefaultLocation();
   } catch {
-    return { lat: 41.85, lng: -87.65, city: "Chicago", state: "IL" };
+    return null;
   }
 }

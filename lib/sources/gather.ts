@@ -121,7 +121,7 @@ export async function gatherFromCuriosityPlan(
     for (const query of entry.queries) {
       try {
         const found = await searchPlaces({
-          query: `${query} near ${ctx.city ?? "Chicago"}`,
+          query: withCity(query, ctx.city),
           lat: ctx.homeLat,
           lng: ctx.homeLng,
           radiusMeters: 24_000,
@@ -269,7 +269,7 @@ export async function gatherRadarCandidates(
       if (capReached()) break;
       try {
         const found = await searchPlaces({
-          query: `${q.query} near ${ctx.city ?? "Chicago"}`,
+          query: withCity(q.query, ctx.city),
           lat: ctx.homeLat,
           lng: ctx.homeLng,
           radiusMeters: 24_000,
@@ -313,11 +313,11 @@ export async function gatherRadarCandidates(
     if (hasTavily()) {
       const queries: { query: string; category: string }[] = [
         {
-          query: `cultural events ${ctx.city ?? "Chicago"} this week craftsmanship architecture`,
+          query: withCity("cultural events this week craftsmanship architecture", ctx.city),
           category: "culture",
         },
         {
-          query: `quiet refined dining new openings ${ctx.city ?? "Chicago"}`,
+          query: withCity("quiet refined dining new openings", ctx.city),
           category: "dining",
         },
       ];
@@ -341,8 +341,8 @@ export async function gatherRadarCandidates(
       addLane("tavily", research);
     } else if (hasBrave()) {
       const queries = [
-        { query: `cultural events ${ctx.city ?? "Chicago"} this week`, category: "culture" },
-        { query: `new restaurant openings ${ctx.city ?? "Chicago"} 2025`, category: "dining" },
+        { query: withCity("cultural events this week", ctx.city), category: "culture" },
+        { query: withCity(`new restaurant openings ${new Date().getFullYear()}`, ctx.city), category: "dining" },
       ];
       const braveResults: CreateIndexedItemInput[] = [];
       for (const q of queries) {
@@ -363,7 +363,7 @@ export async function gatherRadarCandidates(
 
   if (!capReached()) {
     try {
-      const localLanes = await gatherLocalRadarCandidates();
+      const localLanes = await gatherLocalRadarCandidates({ city: ctx.city });
       for (const lane of localLanes) {
         if (capReached()) break;
         addLane(`local-radar:${lane.group}`, lane.candidates);
@@ -374,6 +374,10 @@ export async function gatherRadarCandidates(
   }
 
   return results;
+}
+
+function withCity(query: string, city?: string): string {
+  return city ? `${query} near ${city}` : query;
 }
 
 // ── Source availability snapshot ────────────────────────────────────────────

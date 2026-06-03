@@ -5,7 +5,7 @@ import { listTasteGraphEdges } from "@/lib/directory/tasteGraph";
 
 export const ownerProfile: OwnerProfile = {
   displayName: "J.",
-  homeRegion: "Chicago",
+  homeRegion: "",
   productMode: "private_single_user",
 };
 

@@ -167,7 +167,7 @@ const SUBS: SeedInterest[] = [
   sub("steak", "Steak & red meat", "dining", 0.95, { spendingPosture: "paid" }),
   sub("low_lit_dining", "Low-lit, atmospheric rooms", "dining", 0.92),
   sub("real_food", "Real food, animal-based friendly", "dining", 0.85),
-  sub("chicago_dining", "Chicago dining (West Loop, city energy)", "dining", 0.9),
+  sub("local_dining", "Local dining with city energy", "dining", 0.9),
   sub("refined_not_tryhard", "Refined but not try-hard", "dining", 0.88),
   sub("cocktail_lounges", "Cocktail lounges & bar dining", "dining", 0.75),
 

@@ -3,6 +3,7 @@ import type { BriefingMeta, ItemBriefing } from "@/lib/brain/briefingTypes";
 import type { RadarDecision } from "@/lib/brain/decisionCouncilTypes";
 import type { RadarItem } from "@/lib/intelligence/types";
 import type { PlacesLibraryRow } from "@/lib/types/database";
+import type { NorthAlignment } from "@/lib/context/types";
 
 export type PersonContext = {
   name: string;
@@ -112,6 +113,7 @@ export type ScoredItem = {
   item: IndexedItem;
   score: number;
   reasons: string[];
+  northAlignment?: NorthAlignment;
 };
 
 export type CurationInput = {

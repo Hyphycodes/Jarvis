@@ -2,6 +2,7 @@ import "server-only";
 
 import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
+import { buildBrainContext } from "@/lib/brain/context";
 import { hasTavily, searchWeb, extractUrls } from "@/lib/sources/tavily";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 
@@ -29,56 +30,56 @@ type ScoutExtractionResult = {
 
 // ── Query pool ────────────────────────────────────────────────────────────────
 
-const SCOUT_QUERIES: Array<{ q: string; domains: string[] }> = [
+const SCOUT_QUERIES: Array<{ q: string; domains: string[]; chicagoOnly?: boolean }> = [
   // Food & Dining
-  { q: "best new restaurants Chicago 2025 2026", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
-  { q: "best steakhouses Chicago", domains: ["theinfatuation.com", "chicago.eater.com", "chicagomag.com"] },
-  { q: "best omakase Chicago", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
-  { q: "best chef table private dining Chicago", domains: ["chicago.eater.com", "chicagomag.com", "theinfatuation.com"] },
-  { q: "best Korean BBQ Chicago", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
-  { q: "best Italian restaurants Chicago", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
-  { q: "best sushi Chicago", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
-  { q: "best late night food Chicago", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
-  { q: "best brunch Chicago", domains: ["theinfatuation.com", "chicago.eater.com", "timeout.com"] },
-  { q: "best tasting menu Chicago", domains: ["chicago.eater.com", "chicagomag.com", "theinfatuation.com"] },
-  { q: "Michelin starred restaurants Chicago", domains: ["chicago.eater.com", "chicagomag.com", "timeout.com"] },
-  { q: "James Beard nominated chefs Chicago", domains: ["chicago.eater.com", "chicagomag.com"] },
-  { q: "Chicago heatmap dining", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
-  { q: "Chicago chef collaboration dinner", domains: ["chicago.eater.com", "chicagomag.com"] },
-  { q: "Chicago hotel restaurant new", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
+  { q: "best new restaurants {city} {year}", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
+  { q: "best steakhouses {city}", domains: ["theinfatuation.com", "chicago.eater.com", "chicagomag.com"] },
+  { q: "best omakase {city}", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
+  { q: "best chef table private dining {city}", domains: ["chicago.eater.com", "chicagomag.com", "theinfatuation.com"] },
+  { q: "best Korean BBQ {city}", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
+  { q: "best Italian restaurants {city}", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
+  { q: "best sushi {city}", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
+  { q: "best late night food {city}", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
+  { q: "best brunch {city}", domains: ["theinfatuation.com", "chicago.eater.com", "timeout.com"] },
+  { q: "best tasting menu {city}", domains: ["chicago.eater.com", "chicagomag.com", "theinfatuation.com"] },
+  { q: "Michelin starred restaurants {city}", domains: ["chicago.eater.com", "chicagomag.com", "timeout.com"] },
+  { q: "James Beard nominated chefs {city}", domains: ["chicago.eater.com", "chicagomag.com"] },
+  { q: "{city} heatmap dining", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
+  { q: "{city} chef collaboration dinner", domains: ["chicago.eater.com", "chicagomag.com"] },
+  { q: "{city} hotel restaurant new", domains: ["chicago.eater.com", "theinfatuation.com", "chicagomag.com"] },
   // Bars & Nightlife
-  { q: "best cigar lounges cigar bars Chicago", domains: ["chicagomag.com", "timeout.com", "chicago.eater.com"] },
-  { q: "best speakeasy hidden bars Chicago", domains: ["theinfatuation.com", "chicagomag.com", "timeout.com"] },
-  { q: "best rooftop bars Chicago", domains: ["timeout.com", "theinfatuation.com", "chicagomag.com"] },
-  { q: "best jazz clubs live music Chicago", domains: ["chicagoreader.com", "timeout.com", "chicagomag.com"] },
-  { q: "best mezcal tequila bars Chicago", domains: ["theinfatuation.com", "chicago.eater.com", "timeout.com"] },
-  { q: "best whiskey bars Chicago", domains: ["theinfatuation.com", "chicagomag.com", "timeout.com"] },
-  { q: "best wine bars Chicago", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
-  { q: "best cocktail bars Chicago", domains: ["theinfatuation.com", "timeout.com", "chicagomag.com"] },
-  { q: "best supper clubs Chicago", domains: ["chicagomag.com", "timeout.com", "chicagoreader.com"] },
-  { q: "best late night bars Chicago", domains: ["theinfatuation.com", "timeout.com", "chicagoreader.com"] },
-  { q: "best listening bars Chicago", domains: ["ra.co", "chicagoreader.com", "timeout.com"] },
-  { q: "Chicago natural wine bar", domains: ["chicago.eater.com", "theinfatuation.com"] },
-  { q: "Chicago hidden gem bar", domains: ["chicagomag.com", "chicagoreader.com", "theinfatuation.com"] },
+  { q: "best cigar lounges cigar bars {city}", domains: ["chicagomag.com", "timeout.com", "chicago.eater.com"] },
+  { q: "best speakeasy hidden bars {city}", domains: ["theinfatuation.com", "chicagomag.com", "timeout.com"] },
+  { q: "best rooftop bars {city}", domains: ["timeout.com", "theinfatuation.com", "chicagomag.com"] },
+  { q: "best jazz clubs live music {city}", domains: ["chicagoreader.com", "timeout.com", "chicagomag.com"] },
+  { q: "best mezcal tequila bars {city}", domains: ["theinfatuation.com", "chicago.eater.com", "timeout.com"] },
+  { q: "best whiskey bars {city}", domains: ["theinfatuation.com", "chicagomag.com", "timeout.com"] },
+  { q: "best wine bars {city}", domains: ["chicago.eater.com", "theinfatuation.com", "timeout.com"] },
+  { q: "best cocktail bars {city}", domains: ["theinfatuation.com", "timeout.com", "chicagomag.com"] },
+  { q: "best supper clubs {city}", domains: ["chicagomag.com", "timeout.com", "chicagoreader.com"] },
+  { q: "best late night bars {city}", domains: ["theinfatuation.com", "timeout.com", "chicagoreader.com"] },
+  { q: "best listening bars {city}", domains: ["ra.co", "chicagoreader.com", "timeout.com"] },
+  { q: "{city} natural wine bar", domains: ["chicago.eater.com", "theinfatuation.com"] },
+  { q: "{city} hidden gem bar", domains: ["chicagomag.com", "chicagoreader.com", "theinfatuation.com"] },
   // Experiences & Culture
-  { q: "best live music venues Chicago", domains: ["chicagoreader.com", "timeout.com", "ra.co"] },
-  { q: "best art galleries Chicago", domains: ["timeout.com", "chicagomag.com", "choosechicago.com"] },
-  { q: "best barbershops grooming Chicago", domains: ["timeout.com", "chicagomag.com"] },
-  { q: "best menswear boutiques Chicago", domains: ["timeout.com", "gq.com", "monocle.com"] },
-  { q: "best sneaker shops Chicago", domains: ["timeout.com", "chicagomag.com"] },
-  { q: "best record stores Chicago", domains: ["chicagoreader.com", "timeout.com"] },
-  { q: "best hotel bars Chicago", domains: ["theinfatuation.com", "timeout.com", "chicagomag.com"] },
-  { q: "best rooftop experiences Chicago", domains: ["timeout.com", "theinfatuation.com"] },
-  { q: "unique experiences Chicago hidden gems", domains: ["timeout.com", "chicagomag.com", "choosechicago.com"] },
-  { q: "Chicago house music venue", domains: ["ra.co", "chicagoreader.com"] },
-  { q: "Chicago jazz residency", domains: ["chicagoreader.com", "ra.co", "timeout.com"] },
-  { q: "Chicago listening bar", domains: ["ra.co", "chicagoreader.com", "timeout.com"] },
-  { q: "Chicago design boutique store", domains: ["timeout.com", "choosechicago.com", "monocle.com"] },
+  { q: "best live music venues {city}", domains: ["chicagoreader.com", "timeout.com", "ra.co"] },
+  { q: "best art galleries {city}", domains: ["timeout.com", "chicagomag.com", "choosechicago.com"] },
+  { q: "best barbershops grooming {city}", domains: ["timeout.com", "chicagomag.com"] },
+  { q: "best menswear boutiques {city}", domains: ["timeout.com", "gq.com", "monocle.com"] },
+  { q: "best sneaker shops {city}", domains: ["timeout.com", "chicagomag.com"] },
+  { q: "best record stores {city}", domains: ["chicagoreader.com", "timeout.com"] },
+  { q: "best hotel bars {city}", domains: ["theinfatuation.com", "timeout.com", "chicagomag.com"] },
+  { q: "best rooftop experiences {city}", domains: ["timeout.com", "theinfatuation.com"] },
+  { q: "unique experiences {city} hidden gems", domains: ["timeout.com", "chicagomag.com", "choosechicago.com"] },
+  { q: "{city} house music venue", domains: ["ra.co", "chicagoreader.com"] },
+  { q: "{city} jazz residency", domains: ["chicagoreader.com", "ra.co", "timeout.com"] },
+  { q: "{city} listening bar", domains: ["ra.co", "chicagoreader.com", "timeout.com"] },
+  { q: "{city} design boutique store", domains: ["timeout.com", "choosechicago.com", "monocle.com"] },
   // Sports & Tailgate
-  { q: "best sports bars Chicago", domains: ["timeout.com", "chicagomag.com", "theinfatuation.com"] },
-  { q: "best tailgate spots Guaranteed Rate Field White Sox", domains: ["chicagomag.com", "timeout.com"] },
-  { q: "best wings Chicago", domains: ["theinfatuation.com", "timeout.com", "chicago.eater.com"] },
-  { q: "best BBQ Chicago", domains: ["theinfatuation.com", "chicago.eater.com", "timeout.com"] },
+  { q: "best sports bars {city}", domains: ["timeout.com", "chicagomag.com", "theinfatuation.com"] },
+  { q: "best tailgate spots Guaranteed Rate Field White Sox", domains: ["chicagomag.com", "timeout.com"], chicagoOnly: true },
+  { q: "best wings {city}", domains: ["theinfatuation.com", "timeout.com", "chicago.eater.com"] },
+  { q: "best BBQ {city}", domains: ["theinfatuation.com", "chicago.eater.com", "timeout.com"] },
 ];
 
 // ── Curated list URLs ─────────────────────────────────────────────────────────
@@ -104,13 +105,13 @@ const SCOUT_URLS: string[] = [
 
 // ── Extraction system prompt ──────────────────────────────────────────────────
 
-const SCOUT_SYSTEM_PROMPT = `You are Jarvis's SCOUT. Your job is to extract named places (restaurants, bars, lounges, venues, shops, hotels, cultural spaces) from an article about Chicago.
+const SCOUT_SYSTEM_PROMPT = `You are Jarvis's SCOUT. Your job is to extract named places (restaurants, bars, lounges, venues, shops, hotels, cultural spaces) from an article about {city}.
 
 RULES
 - Only extract specific named entities — actual venue names. Not "the West Loop" or "the new Korean spot" (unnamed).
 - Skip chains, hotel restaurants only mentioned in passing, and places mentioned only to be dismissed.
 - For each place, include the one-sentence quote/snippet that describes it from the article.
-- Skip places that aren't physically in or adjacent to Chicago.
+- Skip places that aren't physically in or adjacent to {city}.
 
 Return strict JSON:
 {
@@ -135,14 +136,30 @@ function makeSlug(name: string): string {
 
 // ── Random selection ──────────────────────────────────────────────────────────
 
-function pickQueries(count: number): Array<{ q: string; domains: string[] }> {
-  const shuffled = [...SCOUT_QUERIES].sort(() => Math.random() - 0.5);
+function pickQueries(
+  count: number,
+  chicagoLike: boolean,
+): Array<{ q: string; domains: string[]; chicagoOnly?: boolean }> {
+  const eligible = SCOUT_QUERIES.filter((query) => chicagoLike || !query.chicagoOnly);
+  const shuffled = [...eligible].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 }
 
 function pickUrls(count: number): string[] {
   const shuffled = [...SCOUT_URLS].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
+}
+
+function renderScoutQuery(query: string, city: string, year: number): string {
+  return query
+    .replace(/\{city\}/g, city)
+    .replace(/\{year\}/g, String(year))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoutSystemPrompt(city: string): string {
+  return SCOUT_SYSTEM_PROMPT.replace(/\{city\}/g, city);
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -165,21 +182,31 @@ export async function runScout(
     return { articles_processed, candidates_added, duplicates_skipped };
   }
 
+  const brainContext = await buildBrainContext({ userId, includeWeather: false });
+  const city = brainContext.homeCity?.trim();
+  if (!city) {
+    console.warn("[scout] No profile home city — skipping Scout run");
+    return { articles_processed, candidates_added, duplicates_skipped };
+  }
+  const year = new Date(brainContext.now).getFullYear();
+  const chicagoLike = /chicago/i.test(city);
+
   // Pick 6-8 random queries + 2 curated list URLs for this run
   const queryCount = 6 + Math.floor(Math.random() * 3); // 6, 7, or 8
-  const queries = pickQueries(queryCount);
-  const urls = pickUrls(2);
+  const queries = pickQueries(queryCount, chicagoLike);
+  const urls = chicagoLike ? pickUrls(2) : [];
 
   // Collect all articles from all queries
   const articleMap = new Map<string, { title: string; content: string; url: string }>();
 
   for (const { q, domains } of queries) {
+    const query = renderScoutQuery(q, city, year);
     try {
       const res = await searchWeb({
-        query: q,
+        query,
         maxResults: 5,
         days: 90,
-        includeDomains: domains,
+        includeDomains: chicagoLike ? domains : undefined,
       });
       for (const r of res.results) {
         if (!articleMap.has(r.url)) {
@@ -187,7 +214,7 @@ export async function runScout(
         }
       }
     } catch (err) {
-      console.warn("[scout] Tavily query failed", { q, err });
+      console.warn("[scout] Tavily query failed", { q: query, err });
     }
   }
 
@@ -245,13 +272,13 @@ export async function runScout(
         article_url: article.url,
         article_content: article.content.slice(0, 1500),
         instructions: [
-          "Extract all named Chicago places from this article.",
+          `Extract all named ${city} places from this article.`,
           "Return strict JSON matching the ScoutExtractionResult schema.",
         ],
       });
 
       const result = await generateStructured<ScoutExtractionResult>({
-        system: SCOUT_SYSTEM_PROMPT,
+        system: scoutSystemPrompt(city),
         prompt,
         schemaName: "ScoutExtractionResult",
         temperature: 0.1,

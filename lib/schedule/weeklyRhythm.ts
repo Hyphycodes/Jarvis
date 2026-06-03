@@ -52,8 +52,8 @@ export const DEFAULT_WEEKLY_RHYTHM: WeeklyRhythm = {
   work_start: "07:00",
   leave_work: "15:30",
   arrive_home: "16:30",
-  work_location: "Schaumburg",
-  timezone: "America/Chicago",
+  work_location: "",
+  timezone: "UTC",
 };
 
 const WEEKDAYS: Weekday[] = [

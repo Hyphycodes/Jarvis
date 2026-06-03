@@ -52,6 +52,8 @@ export function evaluateBehaviorForMemory(
       return noProposal("Generation is system-driven; user signal arrives later via start/complete.");
     case "plan.started":
       return planProposal("event_history", 0.7, "strong", signal.planId, signal.type);
+    case "plan.scheduled":
+      return planProposal("event_history", 0.72, "strong", signal.planId, signal.type);
     case "plan.completed":
       return planProposal("confirmed_behavior", 0.85, "strongest", signal.planId, signal.type);
     case "plan.cancelled":

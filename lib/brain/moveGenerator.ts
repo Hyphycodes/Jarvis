@@ -35,86 +35,8 @@ export function generateSyntheticMoves(input: {
   mode: "radar_discovery" | "weekend_preview" | "north_reflection";
   activeRadarCount: number;
 }): SyntheticMove[] {
-  const now = new Date(input.context.now);
-  const day = now.getDay();
-  const hour = now.getHours();
-  const workday = day >= 1 && day <= 5;
-  const weekend = day === 0 || day === 6;
   const cadence = evaluateLifeCadence(input.context).filter((entry) => entry.shouldSuggestNow);
   const moves: SyntheticMove[] = [];
-
-  if (input.mode === "north_reflection") {
-    moves.push(cadenceMove(
-      "Land listing to review",
-      "Ownership lane",
-      "ownership",
-      "A quiet north-facing review, not an urgent move.",
-      "Keeps the land and independence thread alive without turning it into a fake emergency.",
-      "Weekend morning or a low-noise evening.",
-      "low",
-      "free",
-      "holding",
-      0.64,
-    ));
-    return moves;
-  }
-
-  if (workday && hour < 16) {
-    moves.push(cadenceMove(
-      "Recovery block after work",
-      "Recovery",
-      "health",
-      "Low-cost reset after the Schaumburg window closes.",
-      "It respects the work rhythm and keeps the evening useful without forcing a production.",
-      "After 4:30 PM.",
-      "low",
-      "free",
-      "holding",
-      0.62,
-    ));
-  }
-
-  if (workday && hour >= 15 && input.activeRadarCount < 3) {
-    moves.push(cadenceMove(
-      "Quiet coffee reset",
-      "Social room",
-      "general",
-      "A clean after-work reset if the day needs a second gear.",
-      "Low friction, low spend, and useful without pretending the whole night needs a plan.",
-      "After getting home.",
-      "low",
-      "low",
-      "radar",
-      0.72,
-    ));
-  }
-
-  if (weekend || input.mode === "weekend_preview") {
-    moves.push(cadenceMove(
-      "Horseback riding experience",
-      "Outdoor reset",
-      "outdoors",
-      "A stronger weekend idea than another passive feed scroll.",
-      "Outdoor, cinematic, and different enough to be worth holding for the right window.",
-      "Weekend daylight.",
-      "medium",
-      "paid",
-      "holding",
-      0.66,
-    ));
-    moves.push(cadenceMove(
-      "Weekend golf window",
-      "Outdoor reset",
-      "outdoors",
-      "A simple active block if the weather and tee time line up.",
-      "Clear, physical, and easy to either act on or ignore without clutter.",
-      "Saturday or Sunday morning.",
-      "medium",
-      "paid",
-      "holding",
-      0.64,
-    ));
-  }
 
   for (const signal of cadence.slice(0, 2)) {
     const move = moveForCadence(signal.key);

@@ -24,7 +24,7 @@ export type TasteConstitutionScore = {
 
 const CONSTITUTION: TasteConstitution = {
   identityFrame:
-    "Chicago-based owner, creator, and operator building Hyphy through tech, cinematic production, ownership, health, faith, taste, precision, and control.",
+    "Owner, creator, and operator building Hyphy through tech, cinematic production, ownership, health, faith, taste, precision, and control.",
   coreLanes: [
     "Health / body",
     "Skill / competence",

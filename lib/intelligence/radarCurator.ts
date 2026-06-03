@@ -315,6 +315,7 @@ export function mergeRadarIntelligencePayload(
     strongest_angle: item.strongestAngle,
     missing_info: item.missingInfo,
     score_breakdown: item.scoreBreakdown,
+    north_alignment: item.northAlignment,
     plan_readiness: item.planReadiness,
     intelligence: {
       ...(isRecord(current.intelligence) ? current.intelligence : {}),
@@ -326,6 +327,7 @@ export function mergeRadarIntelligencePayload(
       confidence: item.confidence,
       score: item.score,
       score_breakdown: item.scoreBreakdown,
+      north_alignment: item.northAlignment,
       evidence: item.evidence,
       missing_info: item.missingInfo,
       suggested_action: item.suggestedAction,

@@ -29,7 +29,7 @@ export function shortlistByScore(
         northTags: context.northTags,
         recentPassCategories: context.recentPassCategories,
       });
-      return { item, score: s.total, reasons: s.reasons };
+      return { item, score: s.total, reasons: s.reasons, northAlignment: s.northAlignment };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, max);

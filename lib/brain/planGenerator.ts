@@ -38,9 +38,9 @@ CORE PRINCIPLES
 - A plan is NOT a generic itinerary. It is the move. The single best version of this.
 - No filler. No fake certainty. If a reservation, ticket, or link is unknown,
   say "confirm" — never pretend booking is done.
-- Respect the founder's schedule: leaves for work ~06:20, home ~16:30. Weeknights
-  have limited energy. Higher-effort outings belong on weekends unless explicitly
-  worth a weeknight.
+- Respect the founder's saved schedule when it is provided. If schedule context is
+  missing, do not invent commute or work hours. Higher-effort outings need a clear
+  timing reason.
 - Refined, masculine, cinematic, understated. Avoid corny, basic, touristy, trend-chasing.
 - Paid plans need stronger justification — say why the spend is or isn't worth it.
 
@@ -167,20 +167,21 @@ function renderPrompt(
       now: now.toISOString(),
       day_of_week: now.toLocaleDateString("en-US", { weekday: "long" }),
       is_weeknight: isWeeknight,
-      schedule_hints: {
-        leaves_for_work: context.weeklyRhythm?.leaveHome ?? "06:20",
-        work_start: context.weeklyRhythm?.workStart ?? "07:00",
-        leaves_schaumburg: context.weeklyRhythm?.leaveWork ?? "15:30",
-        home_by: context.weeklyRhythm?.arriveHome ?? "16:30",
-        workdays: context.weeklyRhythm?.workdays ?? [
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-        ],
-        weeknight_energy: isWeeknight ? "limited" : "wider_aperture",
-      },
+      schedule_hints: context.weeklyRhythm
+        ? {
+            enabled: context.weeklyRhythm.enabled,
+            leaves_for_work: context.weeklyRhythm.leaveHome,
+            work_start: context.weeklyRhythm.workStart,
+            leaves_work: context.weeklyRhythm.leaveWork,
+            home_by: context.weeklyRhythm.arriveHome,
+            workdays: context.weeklyRhythm.workdays,
+            work_location: context.weeklyRhythm.workLocation,
+            weeknight_energy:
+              context.weeklyRhythm.enabled && isWeeknight
+                ? "limited"
+                : "use_item_timing",
+          }
+        : null,
       item: {
         id: item.id,
         title: item.title,
@@ -281,8 +282,7 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
       section_type: "timing",
       body: item.startsAt
         ? `Scheduled for ${formatWhen(item.startsAt)}. Confirm before leaving.`
-        : bestWindow ??
-          "No date confirmed yet. Pick a window that fits — weeknight evenings are limited.",
+        : bestWindow ?? "No date confirmed yet. Pick a real window before acting.",
       sort_order: 20,
     },
     {

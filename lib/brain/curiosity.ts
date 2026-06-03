@@ -59,6 +59,8 @@ export type CuriosityInput = {
   availableSources: Partial<Record<SourceName, boolean>>;
   /** Lane ids that were used in the previous refresh — penalize to rotate. */
   recentLaneIds?: string[];
+  /** Saved home/local context, used only when already known. */
+  homeCity?: string | null;
 };
 
 // ── Hard caps ────────────────────────────────────────────────────────────────
@@ -126,6 +128,7 @@ export function buildCuriosityPlan(input: CuriosityInput): CuriosityPlan {
       laneTitle: lane.title,
       interestArea: lane.interest_area,
       subinterests: lane.subinterests,
+      homeCity: input.homeCity,
     });
     const queries = translated.slice(0, queryCount);
 

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getViewableProfileId } from "@/lib/auth";
+import { buildBrainContext } from "@/lib/brain/context";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
@@ -27,9 +28,7 @@ import {
 import type {
   CirclePersonRow,
   CircleUpdateRow,
-  BehaviorSignalRow,
   CurrentEventRow,
-  FounderProfileRow,
   NorthPillarRow,
   NorthSignalRow,
   PlanRow,
@@ -52,7 +51,6 @@ import type {
   TodayPayload,
   TodayTimelineItem,
 } from "@/lib/ai/types";
-import type { BrainContextPacket } from "@/lib/brain/types";
 import type { IndexedItem } from "@/lib/index/types";
 
 type Loader<T> = () => Promise<T>;
@@ -63,7 +61,17 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     if (!id) return emptyTodayPayload();
 
     const supabase = await getServerSupabase();
-    const [timelineRes, primaryPlanRes, todayItemsRes, upcomingItemsRes, upcomingCountRes, dayOf, rhythmRes, tonightEventsRes] =
+    const [
+      timelineRes,
+      primaryPlanRes,
+      todayItemsRes,
+      upcomingItemsRes,
+      upcomingCountRes,
+      dayOf,
+      rhythmRes,
+      tonightEventsRes,
+      circleUpdatesRes,
+    ] =
       await Promise.all([
         supabase
           .from("today_timeline_items")
@@ -113,6 +121,12 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .lte("starts_at", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
           .order("starts_at", { ascending: true })
           .limit(5),
+        supabase
+          .from("circle_updates")
+          .select("*")
+          .eq("user_id", id)
+          .order("created_at", { ascending: false })
+          .limit(8),
       ]);
 
     logQueryError("today.timeline", timelineRes.error);
@@ -120,6 +134,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     logQueryError("today.items", todayItemsRes.error);
     logQueryError("today.rhythm", rhythmRes.error);
     logQueryError("today.tonightEvents", tonightEventsRes.error);
+    logQueryError("today.circleUpdates", circleUpdatesRes.error);
 
     const tonightEventRows = (tonightEventsRes.data ?? []) as CurrentEventRow[];
     const tonightEvents: TodayCommandItem[] = tonightEventRows.map((ev) => ({
@@ -136,13 +151,17 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       locationName: ev.venue_name,
       reason: ev.verdict ?? undefined,
     }));
+    const circleTodayItems = ((circleUpdatesRes.data ?? []) as CircleUpdateRow[])
+      .filter(shouldSurfaceCircleMoment)
+      .slice(0, 3)
+      .map(rowToCircleTodayItem);
 
     const timelineRows = (timelineRes.data ?? []) as TodayTimelineItemRow[];
     const planRow = (primaryPlanRes.data?.[0] ?? null) as PlanRow | null;
     const planKeyStats = isRecord(planRow?.key_stats) ? planRow.key_stats : {};
-    const weeklyRhythm = normalizeWeeklyRhythm(
-      rhythmRes.data?.weekly_rhythm ?? DEFAULT_WEEKLY_RHYTHM,
-    );
+    const weeklyRhythm = rhythmRes.data?.weekly_rhythm
+      ? normalizeWeeklyRhythm(rhythmRes.data.weekly_rhythm)
+      : { ...DEFAULT_WEEKLY_RHYTHM, enabled: false };
     const planSlug = planRow ? readSlugFromKeyStats(planRow.key_stats) : undefined;
     const activePlanId = planRow?.id;
     const todayRows = (todayItemsRes.data ?? []) as SurfacedItemRow[];
@@ -246,9 +265,10 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const topTodayItem = todayItems[0];
     const firstUpcomingWithTime = upcomingItems.find((item) => item.startsAt);
     const nextMove = topTodayItem ?? (!planRow ? firstUpcomingWithTime : undefined);
-    const todayStack = todayItems
-      .filter((item) => item.id !== nextMove?.id)
-      .slice(0, 6);
+    const todayStack = [
+      ...circleTodayItems,
+      ...todayItems.filter((item) => item.id !== nextMove?.id),
+    ].slice(0, 6);
     const hero = buildTodayHero(planRow, planKeyStats, activePlanDisplay, weeklyRhythm);
 
     return {
@@ -334,7 +354,7 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
     if (!id) return emptyNorthPayload();
 
     const supabase = await getServerSupabase();
-    const [pillarsRes, signalsRes, founderRes, behaviorRes, actionsRes] = await Promise.all([
+    const [pillarsRes, signalsRes] = await Promise.all([
       supabase
         .from("north_pillars")
         .select("*")
@@ -345,31 +365,10 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
         .select("*")
         .eq("user_id", id)
         .order("created_at", { ascending: false }),
-      supabase
-        .from("founder_profile")
-        .select("*")
-        .eq("user_id", id)
-        .maybeSingle(),
-      supabase
-        .from("behavior_signals")
-        .select("*")
-        .eq("user_id", id)
-        .order("created_at", { ascending: false })
-        .limit(50),
-      supabase
-        .from("surfaced_items")
-        .select("title,status,category")
-        .eq("user_id", id)
-        .in("status", ["saved", "passed", "planned", "completed"])
-        .order("updated_at", { ascending: false })
-        .limit(30),
     ]);
 
     logQueryError("north.pillars", pillarsRes.error);
     logQueryError("north.signals", signalsRes.error);
-    logQueryError("north.founder", founderRes.error);
-    logQueryError("north.behavior", behaviorRes.error);
-    logQueryError("north.actions", actionsRes.error);
 
     const pillars: NorthPillar[] = ((pillarsRes.data ?? []) as NorthPillarRow[]).map(
       (row) => ({
@@ -391,22 +390,9 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
         source: (row.source as NorthSignal["source"]) ?? "manual",
       }),
     );
-    const founder = (founderRes.data ?? null) as FounderProfileRow | null;
-    const rhythm = normalizeWeeklyRhythm(founder?.weekly_rhythm);
-    const behavior = (behaviorRes.data ?? []) as BehaviorSignalRow[];
-    const actions = (actionsRes.data ?? []) as Pick<
-      SurfacedItemRow,
-      "title" | "status" | "category"
-    >[];
-    const brainContext = buildNorthContext({
-      founder,
-      rhythm,
-      behavior,
-      actions,
-      northTags: pillars.flatMap((pillar) => [
-        pillar.title,
-        ...pillar.activeSignals,
-      ]),
+    const brainContext = await buildBrainContext({
+      userId: id,
+      includeWeather: false,
     });
 
     return {
@@ -687,6 +673,44 @@ function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
   };
 }
 
+function shouldSurfaceCircleMoment(row: CircleUpdateRow): boolean {
+  const urgency = row.urgency?.toLowerCase() ?? "";
+  return Boolean(
+    row.suggested_action ||
+      urgency === "high" ||
+      urgency === "urgent" ||
+      urgency === "medium",
+  );
+}
+
+function rowToCircleTodayItem(row: CircleUpdateRow): TodayCommandItem {
+  return {
+    id: row.id,
+    title: row.title,
+    subtitle: "Circle",
+    summary: row.suggested_action ?? row.summary,
+    source: "circle",
+    type: "relationship_update",
+    category: "circle",
+    destination: "circle",
+    status: "shown",
+    reason: row.suggested_action ?? row.summary,
+    score: scoreCircleUrgency(row.urgency),
+  };
+}
+
+function scoreCircleUrgency(urgency: string | null): number {
+  switch ((urgency ?? "").toLowerCase()) {
+    case "urgent":
+    case "high":
+      return 0.82;
+    case "medium":
+      return 0.68;
+    default:
+      return 0.55;
+  }
+}
+
 function fallbackTimelineForPlan(
   plan: PlanRow,
   keyStats: Record<string, unknown>,
@@ -827,54 +851,6 @@ function buildPlanDisplay(
     cleanDisplayText(typeof keyStats.hero_angle === "string" ? keyStats.hero_angle : undefined) ??
     cleanDisplayText(plan.summary ?? undefined);
   return { title, summary };
-}
-
-function buildNorthContext(input: {
-  founder: FounderProfileRow | null;
-  rhythm: WeeklyRhythm;
-  behavior: BehaviorSignalRow[];
-  actions: Pick<SurfacedItemRow, "title" | "status" | "category">[];
-  northTags: string[];
-}): BrainContextPacket {
-  return {
-    now: new Date().toISOString(),
-    founder: {
-      displayName: null,
-      homeCity: null,
-      timezone: input.rhythm.timezone,
-      lifeDirection: input.founder?.life_direction ?? null,
-      currentFocus: input.founder?.current_focus ?? null,
-      vibeKeywords: input.founder?.vibe_keywords ?? [],
-      avoidKeywords: input.founder?.avoid_keywords ?? [],
-      dealbreakers: input.founder?.dealbreakers ?? [],
-      pinnedPrinciples: input.founder?.pinned_principles ?? [],
-    },
-    memory: [],
-    recentSignals: input.behavior.map((signal) => ({
-      signal_type: signal.signal_type,
-      subject_id: signal.subject_id,
-      created_at: signal.created_at,
-    })),
-    recentActions: input.actions.map((action) => ({
-      title: action.title ?? "(untitled)",
-      status: action.status,
-      category: action.category,
-    })),
-    northTags: Array.from(new Set(input.northTags.filter(Boolean))),
-    weather: null,
-    activePlan: null,
-    weeklyRhythm: {
-      enabled: input.rhythm.enabled,
-      workdays: input.rhythm.workdays,
-      leaveHome: input.rhythm.leave_home,
-      workStart: input.rhythm.work_start,
-      leaveWork: input.rhythm.leave_work,
-      arriveHome: input.rhythm.arrive_home,
-      workLocation: input.rhythm.work_location,
-      timezone: input.rhythm.timezone,
-    },
-    people: [],
-  };
 }
 
 async function listUpcomingBridgeItems(userId: string): Promise<TodayCommandItem[]> {

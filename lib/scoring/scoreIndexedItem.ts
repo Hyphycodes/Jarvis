@@ -1,8 +1,8 @@
 import { scoreCandidate } from "@/lib/scoring/scoreCandidate";
+import { computeNorthAlignment, type NorthAlignment } from "@/lib/context/types";
 import type { ScoreBreakdown, ScoringContext } from "@/lib/scoring/types";
 import type { IndexedItem } from "@/lib/index/types";
 import type { NormalizedCandidate } from "@/lib/ai/types";
-import { getDefaultLocation } from "@/lib/env";
 
 export type IndexedItemScoringContext = ScoringContext & {
   homeLat?: number;
@@ -17,6 +17,7 @@ export type IndexedItemScore = {
   total: number;
   breakdown: ScoreBreakdown;
   reasons: string[];
+  northAlignment: NorthAlignment;
 };
 
 const RADAR_RECENCY_HOURS = 7 * 24;
@@ -30,6 +31,17 @@ export function scoreIndexedItem(
   const now = context.now ? new Date(context.now) : new Date();
   const reasons: string[] = [];
   let modifier = 0;
+  const northAlignment = computeNorthAlignment({
+    itemTags: item.tags,
+    itemText: [
+      item.title,
+      item.subtitle,
+      item.description,
+      item.category,
+      item.type,
+    ].filter(Boolean).join(" "),
+    northTags: context.northTags,
+  });
 
   // Distance from home.
   if (item.lat != null && item.lng != null && home) {
@@ -129,11 +141,13 @@ export function scoreIndexedItem(
   }
 
   // North alignment.
-  if (context.northTags?.length && item.tags.length) {
-    const overlap = context.northTags.filter((t) => item.tags.includes(t));
-    if (overlap.length) {
-      modifier += 0.05;
-      reasons.push(`Aligned with North: ${overlap[0]}`);
+  if (context.northTags?.length) {
+    if (northAlignment.score > 0) {
+      modifier += 0.06 * northAlignment.score;
+      reasons.push(northAlignment.reason);
+    } else if (item.status !== "saved" && item.status !== "planned") {
+      modifier -= 0.03;
+      reasons.push("No North alignment");
     }
   }
 
@@ -161,6 +175,7 @@ export function scoreIndexedItem(
     total,
     breakdown,
     reasons: uniqueReasons,
+    northAlignment,
   };
 }
 
@@ -170,12 +185,7 @@ function resolveHome(
   if (context.homeLat != null && context.homeLng != null) {
     return { lat: context.homeLat, lng: context.homeLng };
   }
-  try {
-    const home = getDefaultLocation();
-    return { lat: home.lat, lng: home.lng };
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 function toCandidate(item: IndexedItem): NormalizedCandidate {

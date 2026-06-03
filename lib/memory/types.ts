@@ -70,6 +70,7 @@ export type UserBehaviorSignal =
   // Sprint 3.1 — plan as first-class object
   | { type: "plan.generated"; planId: string; itemId?: string; fallbackUsed?: boolean }
   | { type: "plan.started"; planId: string }
+  | { type: "plan.scheduled"; planId: string; scheduledDate: string; scheduledTime: string }
   | { type: "plan.completed"; planId: string }
   | { type: "plan.cancelled"; planId: string }
   | { type: "plan.viewed"; planId: string }

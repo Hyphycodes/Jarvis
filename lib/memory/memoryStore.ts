@@ -33,20 +33,25 @@ export async function createCanonicalMemory(input: {
   source: MemoryItem["source"];
   tags?: string[];
   metadata?: Record<string, unknown>;
-}): Promise<void> {
+}): Promise<string> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
-  const { error } = await supabase.from("memory_items").insert({
-    user_id: owner.id,
-    content: input.content,
-    kind: input.type,
-    status: "active",
-    confidence: input.confidence,
-    source: input.source,
-    tags: input.tags ?? [],
-    metadata: input.metadata ?? {},
-  });
+  const { data, error } = await supabase
+    .from("memory_items")
+    .insert({
+      user_id: owner.id,
+      content: input.content,
+      kind: input.type,
+      status: "active",
+      confidence: input.confidence,
+      source: input.source,
+      tags: input.tags ?? [],
+      metadata: input.metadata ?? {},
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(error.message);
+  return data.id;
 }
 
 export function toMemoryItem(row: MemoryItemRow): MemoryItem {

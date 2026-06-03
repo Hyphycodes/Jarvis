@@ -3,7 +3,7 @@ import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthro
 import { buildChatContext } from "@/lib/chat/context/buildChatContext";
 import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPrompt";
 import { buildChatMessages } from "@/lib/chat/buildChatMessages";
-import { routeChatIntent } from "@/lib/chat/routeChatIntent";
+import { buildCommandActionChips, routeChatIntent } from "@/lib/chat/routeChatIntent";
 import { handleImageDrop } from "@/lib/chat/handlers/handleImageDrop";
 import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
 import type { ConversationMessage } from "@/lib/brain/intentClassifier";
@@ -95,6 +95,7 @@ export async function POST(req: Request) {
       : [];
 
     const routed = routeChatIntent({ message, history, attachments });
+    const commandChips = buildCommandActionChips({ message, sheetContext });
     const context = await buildChatContext({ userId: owner.id, includeWeather: false });
     const imageAttachment = attachments.find((a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image");
     let intakeResult: ChatIntakeResult | null = null;
@@ -115,7 +116,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const actionChips = mergeChips(routed.chips, intakeResult?.chips);
+    const actionChips = mergeChips(commandChips, routed.chips, intakeResult?.chips);
 
     const client = getAnthropicClient();
 

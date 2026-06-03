@@ -39,10 +39,12 @@ export async function refreshLibraryEntry(
     return { updated: false, changes: [] };
   }
 
+  const brainContext = await buildBrainContext({ includeWeather: false });
+  const query = [entry.name, brainContext.homeCity].filter(Boolean).join(" ");
   let freshResults: Array<{ url: string; content: string; title: string; published_date?: string }> = [];
   try {
     const res = await searchWeb({
-      query: `"${entry.name}" Chicago`,
+      query: `"${query || entry.name}"`,
       topic: "news",
       maxResults: 5,
       days: 60,
@@ -89,7 +91,6 @@ export async function refreshLibraryEntry(
 
   try {
     const dossier = await researchPlace(entry.name);
-    const brainContext = await buildBrainContext({ includeWeather: false });
     const verdict = await writeVerdict(dossier, brainContext);
 
     const now = new Date().toISOString();

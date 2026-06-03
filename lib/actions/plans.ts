@@ -447,6 +447,13 @@ export async function schedulePlan(input: {
     revalidatePath(`/item/${sourceItemId}`);
   }
 
+  await recordBehaviorSignal({
+    type: "plan.scheduled",
+    planId: input.planId,
+    scheduledDate: input.scheduledDate,
+    scheduledTime: input.scheduledTime,
+  });
+
   const slug = readSlugFromKeyStats(plan.key_stats);
   revalidatePath(`/`);
   revalidatePath(`/upcoming`);

@@ -34,7 +34,7 @@ RULES
   Base it on dossier.confidence AND the quality/clarity of editorial sources. A Michelin-recognized, Infatuation-reviewed place with strong vibes = 0.85+. A place with sparse coverage and no editorial voice = 0.3.
 - \`best_for\` is concrete occasion types: "refined dinner", "date night", "guys night", "ritual/maintenance", "cultural anchor", "weekend day move", "casual weekday", "celebration", "big night out", "low-key drink".
 - \`not_for\` lists occasions where surfacing this would be wrong.
-- \`compared_to\` only when a meaningful reference adds clarity. Use other Chicago places when possible.
+- \`compared_to\` only when a meaningful reference adds clarity. Use other known or local places when possible.
 - \`surface_priority\` reflects how often this should appear in Radar: "high" = strong fit, surface readily; "medium" = surface when relevant occasion comes up; "low" = surface rarely, mostly Holding; "skip" = library entry kept for reference but not for surfacing.
   - "high" requires verdict_strength ≥ 0.75.
   - "skip" implies verdict_strength ≤ 0.40.

@@ -44,11 +44,13 @@ export function getConstraintContext(input: {
     }
   }
 
-  constraints.push({
-    type: "location",
-    summary: `Home base: ${input.today.homeCity ?? "Chicago"}`,
-    source: "profile",
-  });
+  if (input.today.homeCity) {
+    constraints.push({
+      type: "location",
+      summary: `Home base: ${input.today.homeCity}`,
+      source: "profile",
+    });
+  }
 
   return constraints.slice(0, 18);
 }

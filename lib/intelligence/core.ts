@@ -101,6 +101,7 @@ export function enrichRadarItem(input: {
     canGeneratePlan: !readPlanSlug(input.item.rawPayload),
     diversityGroup: decision.signal.diversityGroup,
     decision: decision.judgment.decision,
+    northAlignment: decision.score.northAlignment,
   };
 }
 

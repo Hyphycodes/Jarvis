@@ -8,12 +8,12 @@ export async function getTodayContext(
   profile: { home_city?: string | null; timezone?: string | null },
   options: { includeWeather?: boolean } = {},
 ): Promise<TodayContext> {
-  const timezone = profile.timezone ?? "America/Chicago";
+  const timezone = profile.timezone ?? "UTC";
   const now = new Date();
   const home = safeHome();
 
   let weather: TodayContext["weather"] = null;
-  if (options.includeWeather) {
+  if (options.includeWeather && home) {
     try {
       const w = await getCurrentWeather({ lat: home.lat, lng: home.lng });
       weather = {
@@ -33,7 +33,7 @@ export async function getTodayContext(
       timeZone: timezone,
     }).format(now),
     timezone,
-    homeCity: profile.home_city ?? home.city ?? null,
+    homeCity: profile.home_city ?? home?.city ?? null,
     weather,
   };
 }
@@ -42,6 +42,6 @@ function safeHome() {
   try {
     return getDefaultLocation();
   } catch {
-    return { lat: 41.85, lng: -87.65, city: "Chicago" };
+    return null;
   }
 }

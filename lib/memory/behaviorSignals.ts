@@ -10,12 +10,19 @@ export async function recordBehaviorSignal(
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
   const subjectId = subjectFromSignal(signal);
+  const canonical = canonicalBehavior(signal, subjectId);
 
   const { error } = await supabase.from("behavior_signals").insert({
     user_id: owner.id,
     signal_type: signal.type,
     subject_id: subjectId,
-    payload: signal,
+    object_type: canonical.entityType,
+    object_id: canonical.entityId,
+    metadata: canonical.metadata,
+    payload: {
+      ...signal,
+      canonical,
+    },
   });
   if (error) throw new Error(error.message);
 
@@ -32,6 +39,50 @@ export async function recordBehaviorSignal(
     evidence: decision.evidence,
     requiresUserApproval: true,
   });
+}
+
+function canonicalBehavior(
+  signal: UserBehaviorSignal,
+  subjectId: string,
+): {
+  source: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  metadata: Record<string, unknown>;
+} {
+  const [source, actionRaw] = signal.type.split(".");
+  const action = actionRaw ?? signal.type;
+  const entityType =
+    signal.type.startsWith("plan.") && "planId" in signal
+      ? "plan"
+      : "itemId" in signal
+        ? "radar_item"
+        : "planId" in signal
+          ? "plan"
+          : "memoryProposalId" in signal
+            ? "memory"
+            : "event";
+  const entityId = subjectId === "unknown" ? null : subjectId;
+  const metadata: Record<string, unknown> = {
+    source,
+    action,
+    entity_type: entityType,
+  };
+  if ("category" in signal && signal.category) metadata.category = signal.category;
+  if ("planId" in signal && signal.planId) metadata.plan_id = signal.planId;
+  if ("itemId" in signal && signal.itemId) metadata.item_id = signal.itemId;
+  if ("scheduledDate" in signal) metadata.scheduled_date = signal.scheduledDate;
+  if ("scheduledTime" in signal) metadata.scheduled_time = signal.scheduledTime;
+  if ("fallbackUsed" in signal) metadata.fallback_used = signal.fallbackUsed ?? false;
+  if ("learning" in signal && signal.learning) metadata.learning = signal.learning;
+  return {
+    source,
+    action,
+    entityType,
+    entityId,
+    metadata,
+  };
 }
 
 function subjectFromSignal(signal: UserBehaviorSignal): string {
@@ -84,6 +135,8 @@ function proposalContent(signal: UserBehaviorSignal, subjectId: string) {
       return `Generated plan: ${subjectId}`;
     case "plan.started":
       return `Started plan: ${subjectId}`;
+    case "plan.scheduled":
+      return `Scheduled plan: ${subjectId}`;
     case "plan.completed":
       return `Completed plan: ${subjectId}`;
     case "plan.cancelled":

@@ -7,7 +7,8 @@ import {
   createStubPlan,
   fillPlan,
 } from "@/lib/actions/plans";
-import { passItem } from "@/lib/actions/items";
+import { passItem, saveItem } from "@/lib/actions/items";
+import { createCanonicalMemory } from "@/lib/memory/memoryStore";
 import { recordAiAction } from "@/lib/chat/aiActions";
 import { addToRadarFromObservation } from "@/lib/chat/actions/addToRadarFromObservation";
 import { stopPlanningChip } from "@/lib/chat/actions/chatActionResponses";
@@ -25,9 +26,12 @@ const actionSchema = z.object({
   action_type: z.enum([
     "send_message",
     "save_to_radar",
+    "save_item",
+    "pass_item",
     "monitor_source",
     "build_plan",
     "stop_planning",
+    "remember",
     "find_similar",
     "compare",
     "dismiss",
@@ -45,12 +49,18 @@ export async function POST(request: Request) {
     switch (body.action_type satisfies ChatActionType) {
       case "save_to_radar":
         return NextResponse.json(await saveToRadar(owner.id, body.payload));
+      case "save_item":
+        return NextResponse.json(await saveCurrentItem(owner.id, body.payload));
+      case "pass_item":
+        return NextResponse.json(await passCurrentItem(owner.id, body.payload));
       case "monitor_source":
         return NextResponse.json(await monitorSource(owner.id, body.payload));
       case "build_plan":
         return NextResponse.json(await buildPlan(owner.id, body.payload));
       case "stop_planning":
         return NextResponse.json(await stopPlanning(owner.id, body.payload));
+      case "remember":
+        return NextResponse.json(await rememberFromChat(owner.id, body.payload));
       case "not_my_vibe":
         return NextResponse.json(await notMyVibe(owner.id, body.payload));
       case "dismiss":
@@ -101,7 +111,7 @@ async function saveToRadar(
 
   await recordChatBehaviorSignal({
     userId,
-    signalType: "saved",
+    signalType: "item.save",
     objectType: "radar_item",
     objectId: itemId,
     metadata: { source: "chat_chip", observation_id: observationId ?? null },
@@ -130,6 +140,63 @@ async function saveToRadar(
         payload: { item_id: itemId, observation_id: observationId },
       },
     ] satisfies ChatChip[],
+  };
+}
+
+async function saveCurrentItem(
+  userId: string,
+  payload: Record<string, unknown> | undefined,
+) {
+  const itemId = stringValue(payload?.item_id);
+  if (!itemId) throw new Error("No item to save.");
+
+  await saveItem({ itemId });
+  await recordChatBehaviorSignal({
+    userId,
+    signalType: "item.save",
+    objectType: "radar_item",
+    objectId: itemId,
+    metadata: { source: "chat_command" },
+  });
+  clearChatContextCache(userId);
+
+  return {
+    ok: true,
+    message: "Saved.",
+    item_id: itemId,
+    chips: [
+      {
+        label: "Plan It",
+        message: "Plan it.",
+        action_type: "build_plan",
+        payload: { item_id: itemId },
+      },
+    ] satisfies ChatChip[],
+  };
+}
+
+async function passCurrentItem(
+  userId: string,
+  payload: Record<string, unknown> | undefined,
+) {
+  const itemId = stringValue(payload?.item_id);
+  if (!itemId) throw new Error("No item to pass.");
+
+  await passItem({ itemId });
+  await recordChatBehaviorSignal({
+    userId,
+    signalType: "item.pass",
+    objectType: "radar_item",
+    objectId: itemId,
+    metadata: { source: "chat_command" },
+  });
+  clearChatContextCache(userId);
+
+  return {
+    ok: true,
+    message: "Passed. I will steer away from that lane.",
+    item_id: itemId,
+    chips: [],
   };
 }
 
@@ -219,7 +286,7 @@ async function buildPlan(
   });
   await recordChatBehaviorSignal({
     userId,
-    signalType: "planned",
+    signalType: "item.plan",
     objectType: "radar_item",
     objectId: itemId,
     metadata: { plan_id: stub.planId, observation_id: observationId ?? null },
@@ -262,6 +329,47 @@ async function stopPlanning(
   };
 }
 
+async function rememberFromChat(
+  userId: string,
+  payload: Record<string, unknown> | undefined,
+) {
+  const content = stringValue(payload?.memory_content);
+  if (!content) throw new Error("No memory content to save.");
+  const memoryType = normalizeMemoryType(stringValue(payload?.memory_type));
+  const itemId = stringValue(payload?.item_id);
+
+  const memoryId = await createCanonicalMemory({
+    type: memoryType,
+    content,
+    confidence: 0.72,
+    source: "explicit",
+    tags: itemId ? ["chat", "item_context"] : ["chat"],
+    metadata: {
+      source: "chat_command",
+      item_id: itemId,
+    },
+  });
+  await recordChatBehaviorSignal({
+    userId,
+    signalType: memoryType === "north_goal" ? "memory.north" : "memory.accept",
+    objectType: "memory",
+    objectId: memoryId,
+    metadata: {
+      source: "chat_command",
+      memory_type: memoryType,
+      content,
+      item_id: itemId,
+    },
+  });
+  clearChatContextCache(userId);
+
+  return {
+    ok: true,
+    message: memoryType === "north_goal" ? "Saved to North memory." : "Remembered.",
+    chips: [],
+  };
+}
+
 async function notMyVibe(
   userId: string,
   payload: Record<string, unknown> | undefined,
@@ -282,7 +390,7 @@ async function notMyVibe(
   }
   await recordChatBehaviorSignal({
     userId,
-    signalType: "not_my_vibe",
+    signalType: itemId ? "item.pass" : "chat.not_my_vibe",
     objectType: itemId ? "radar_item" : "observation",
     objectId: itemId ?? observationId ?? null,
     metadata: { source: "chat_chip" },
@@ -293,6 +401,22 @@ async function notMyVibe(
     message: "Noted. I will steer away from that lane.",
     chips: [],
   };
+}
+
+function normalizeMemoryType(value: string | null) {
+  switch (value) {
+    case "taste":
+    case "avoidance":
+    case "decision_rule":
+    case "relationship":
+    case "north_goal":
+    case "place_history":
+    case "event_history":
+    case "confirmed_behavior":
+      return value;
+    default:
+      return "confirmed_behavior";
+  }
 }
 
 function stringValue(value: unknown): string | null {
