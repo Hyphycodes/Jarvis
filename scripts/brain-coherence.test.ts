@@ -695,6 +695,29 @@ function testAutopilotCronWiring() {
   assert.match(route, /toAutopilotResponse/);
 }
 
+function testCronMiddlewareBypass() {
+  const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {
+    crons?: Array<{ path?: string; schedule?: string }>;
+  };
+  const middleware = readFileSync("middleware.ts", "utf8");
+  const cronPathnames = new Set(
+    (vercel.crons ?? []).map((cron) => new URL(cron.path ?? "/", "https://jarvis.local").pathname),
+  );
+  for (const pathname of cronPathnames) {
+    assert.match(
+      middleware,
+      new RegExp(pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `${pathname} should bypass login middleware and rely on route-level cron auth`,
+    );
+  }
+  assert.match(middleware, /isCronApiPath\(request\.nextUrl\.pathname\)/);
+  assert.match(middleware, /NextResponse\.next\(\)/);
+  assert.ok(
+    middleware.indexOf("isCronApiPath(request.nextUrl.pathname)") <
+      middleware.indexOf("updateSupabaseSession(request)"),
+  );
+}
+
 function testAutopilotRunStateMigrationAndControls() {
   const migration = readFileSync(
     "supabase/migrations/0013_radar_autopilot_control_room.sql",
@@ -1065,6 +1088,7 @@ async function main() {
   testCampaignPlannerUsesContext();
   testCandidateAndLibraryBoundaries();
   testAutopilotCronWiring();
+  testCronMiddlewareBypass();
   testAutopilotRunStateMigrationAndControls();
   testTasteSeedParserExtractsOwnerContext();
   testTasteSeedDryRunAndBoundaries();
