@@ -115,6 +115,12 @@ export type PlanBrief = {
   timeLabel?: string;
   areaLabel?: string;
   locationLabel?: string;
+  /** Scheduled date in YYYY-MM-DD (from the date picker), when set. */
+  scheduledDate?: string;
+  /** Scheduled time in HH:MM 24h, when set. */
+  scheduledTime?: string;
+  /** "building" while the background generator is still filling sections. */
+  buildStatus?: string;
   heroImage?: string;
   /** Short editorial summary — never a raw DB description. */
   summary: string;

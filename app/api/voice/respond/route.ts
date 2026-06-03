@@ -1,15 +1,13 @@
 import { requireOwner } from "@/lib/auth";
 import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthropic";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
-import { buildBrainContext } from "@/lib/brain/context";
-import {
-  CONVERSATION_SYSTEM_PROMPT,
-  buildConversationMessages,
-  extractMentionedPlaceNames,
-  type ConversationMessage,
-} from "@/lib/brain/conversationBrain";
-import { classifyIntent } from "@/lib/brain/intentClassifier";
-import type { PlacesLibraryRow } from "@/lib/types/database";
+import { buildChatContext } from "@/lib/chat/context/buildChatContext";
+import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPrompt";
+import { buildChatMessages } from "@/lib/chat/buildChatMessages";
+import { routeChatIntent } from "@/lib/chat/routeChatIntent";
+import { handleImageDrop } from "@/lib/chat/handlers/handleImageDrop";
+import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
+import type { ConversationMessage } from "@/lib/brain/intentClassifier";
+import type { ChatAttachment, ChatChip, ChatIntakeResult } from "@/lib/chat/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,31 +15,49 @@ export const maxDuration = 60;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+function normalizeAttachments(value: unknown): ChatAttachment[] {
+  if (!Array.isArray(value)) return [];
+  const attachments: ChatAttachment[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.type !== "string") continue;
+    if (entry.type === "image" && typeof entry.image_base64 === "string") {
+      attachments.push({
+        type: "image" as const,
+        label: typeof entry.label === "string" ? entry.label : undefined,
+        image_base64: entry.image_base64,
+        image_media_type: typeof entry.image_media_type === "string" ? entry.image_media_type : undefined,
+        preview_url: typeof entry.preview_url === "string" ? entry.preview_url : undefined,
+      });
+      continue;
+    }
+    if (entry.type === "link" || entry.type === "place" || entry.type === "text") {
+      attachments.push({
+        type: entry.type,
+        label: typeof entry.label === "string" ? entry.label : undefined,
+        context: typeof entry.context === "string" ? entry.context : undefined,
+        url: typeof entry.url === "string" ? entry.url : undefined,
+      });
+    }
+  }
+  return attachments;
 }
 
-async function fetchLibraryEntriesForNames(
-  userId: string,
-  names: string[],
-): Promise<PlacesLibraryRow[]> {
-  if (!names.length) return [];
-  try {
-    const supabase = await getServerSupabase();
-    const slugs = names.map(makeSlug);
-    const { data } = await supabase
-      .from("places_library")
-      .select("*")
-      .eq("user_id", userId)
-      .in("slug", slugs)
-      .limit(6);
-    return (data ?? []) as PlacesLibraryRow[];
-  } catch {
-    return [];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeChips(...groups: Array<ChatChip[] | undefined>): ChatChip[] {
+  const seen = new Set<string>();
+  const chips: ChatChip[] = [];
+  for (const group of groups) {
+    for (const chip of group ?? []) {
+      const key = `${chip.action_type}:${chip.label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      chips.push(chip);
+    }
   }
+  return chips.slice(0, 5);
 }
 
 // ── Route ─────────────────────────────────────────────────────────────────────
@@ -61,10 +77,12 @@ export async function POST(req: Request) {
       text?: string;
       history?: ConversationMessage[];
       sheet_context?: string;
+      attachments?: unknown;
     };
 
     const message = typeof body.text === "string" ? body.text.trim() : "";
     const sheetContext = typeof body.sheet_context === "string" ? body.sheet_context.trim() : "";
+    const attachments = normalizeAttachments(body.attachments);
     if (!message) {
       return new Response(
         `data: ${JSON.stringify({ type: "error", message: "text is required" })}\n\n`,
@@ -76,34 +94,45 @@ export async function POST(req: Request) {
       ? body.history.slice(-16)
       : [];
 
-    // Start intent classification immediately (runs in parallel with everything else)
-    const intentResultPromise = classifyIntent(message, history);
+    const routed = routeChatIntent({ message, history, attachments });
+    const context = await buildChatContext({ userId: owner.id, includeWeather: false });
+    const imageAttachment = attachments.find((a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image");
+    let intakeResult: ChatIntakeResult | null = null;
 
-    // Fetch brain context
-    const context = await buildBrainContext({ includeWeather: false });
+    if (imageAttachment) {
+      intakeResult = await handleImageDrop({
+        userId: owner.id,
+        message,
+        attachment: imageAttachment,
+        context,
+        commitmentMode: routed.commitmentMode,
+      });
+    } else {
+      intakeResult = await handleTextObservation({
+        userId: owner.id,
+        message,
+        intent: routed.intent,
+      });
+    }
 
-    // Fetch library entries for any named places
-    const mentionedNames = extractMentionedPlaceNames(message, history);
-    const libraryEntries = await fetchLibraryEntriesForNames(owner.id, mentionedNames);
-
-    // Build Anthropic messages
-    const messages = buildConversationMessages({
-      message,
-      history,
-      context,
-      libraryEntries,
-    });
+    const actionChips = mergeChips(routed.chips, intakeResult?.chips);
 
     const client = getAnthropicClient();
 
-    // Prepend sheet context silently to system message if available
-    const systemPrompt = sheetContext
-      ? `[Context]\n${sheetContext}\n\n${CONVERSATION_SYSTEM_PROMPT}`
-      : CONVERSATION_SYSTEM_PROMPT;
+    const systemPrompt = renderChatSystemPrompt(context, {
+      intent: routed.intent,
+      sheetContext: sheetContext || undefined,
+      intakeSummary: intakeResult?.contextBlock,
+    });
+    const messages = buildChatMessages({
+      message,
+      history,
+      intakeContext: intakeResult?.contextBlock,
+    });
 
     // ── Streaming SSE response ────────────────────────────────────────────────
     // Format:
-    //   data: {"type":"intent", "intent":"...", "ask_about_plan":bool, "plan_context":...}
+    //   data: {"type":"intent", "intent":"...", "chips":[...]}
     //   data: {"type":"token", "text":"..."}
     //   data: {"type":"done"}
 
@@ -119,6 +148,19 @@ export async function POST(req: Request) {
           }
         };
 
+        send({
+          type: "intent",
+          intent: routed.intent,
+          recognition_mode: routed.recognitionMode,
+          commitment_mode: routed.commitmentMode,
+          ask_about_plan: false,
+          plan_context: null,
+          chips: actionChips,
+          observation_id: intakeResult?.observationId,
+          radar_item_id: intakeResult?.radarItemId,
+          planning_state: intakeResult?.state,
+        });
+
         // Start streaming from Anthropic
         const stream = client.messages.stream({
           model: DEFAULT_MODEL,
@@ -127,15 +169,6 @@ export async function POST(req: Request) {
           system: systemPrompt,
           messages,
         });
-
-        // Send intent as soon as it resolves (may arrive mid-stream)
-        intentResultPromise
-          .then((intent) => {
-            send({ type: "intent", ...intent });
-          })
-          .catch(() => {
-            send({ type: "intent", intent: "explore", ask_about_plan: false, plan_context: null });
-          });
 
         // Stream text tokens
         try {
@@ -153,9 +186,6 @@ export async function POST(req: Request) {
             message: err instanceof Error ? err.message : "Stream failed",
           });
         }
-
-        // Ensure intent was sent before closing
-        await intentResultPromise.catch(() => {});
 
         send({ type: "done" });
         controller.close();

@@ -40,8 +40,11 @@ export type LoadedPlan = {
   slug: string;
   planType: string;
   status: "draft" | "active" | "completed" | "cancelled" | string;
+  buildStatus: string;
   liveEnabled: boolean;
   liveLabel: string;
+  scheduledDate?: string;
+  scheduledTime?: string;
   dateLabel?: string;
   locationLine?: string;
   summary?: string;
@@ -185,8 +188,11 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
         ? keyStats.plan_type
         : planRow.category ?? "general",
     status: planRow.status,
+    buildStatus: planRow.build_status ?? "ready",
     liveEnabled: planRow.live_enabled,
     liveLabel: planRow.live_label,
+    scheduledDate: planRow.scheduled_date ?? undefined,
+    scheduledTime: planRow.scheduled_time ?? undefined,
     dateLabel: planRow.date ?? undefined,
     locationLine: planRow.location_line ?? undefined,
     summary: planRow.summary ?? undefined,

@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { recordBehaviorSignal } from "@/lib/memory/behaviorSignals";
-import { getIndexItem } from "@/lib/index/repo";
+import { getIndexItem, rowToIndexedItem } from "@/lib/index/repo";
 import { generatePlanFromItem } from "@/lib/brain/planGenerator";
 import { slugify, type GeneratedPlan } from "@/lib/brain/planTypes";
-import type { Json, PlanRow } from "@/lib/types/database";
+import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
 
 // ── Existing actions (preserved) ────────────────────────────────────────────
 
@@ -103,64 +104,156 @@ export type GeneratePlanForItemResult = {
   planSlug: string;
   status: "draft" | "active" | "completed" | "cancelled" | string;
   fallbackUsed: boolean;
+  cancelled?: boolean;
   reused?: boolean;
 };
 
+export type CreateStubResult = {
+  planId: string;
+  planSlug: string;
+  userId: string;
+  reused: boolean;
+};
+
 /**
- * Generate a plan from a source IndexedItem.
- *
- * - If item already has `payload.plan_id` and the plan still exists,
- *   returns it without regenerating (unless `force=true`).
- * - Writes plans row + plan_sections rows + optional timeline items.
- * - Updates source item: status="planned", destination inferred from date,
- *   payload.plan_id / plan_slug / plan_status="draft".
- * - Records plan.generated behavior signal.
+ * Create a plan shell immediately and return its id/slug. When the source item
+ * already has a plan it is reused (unless `force`). Heavy generation is deferred
+ * to fillPlan(), which can run in a background `after()` task.
  */
-export async function generatePlanForItem(input: {
+export async function createStubPlan(input: {
   itemId: string;
   force?: boolean;
-}): Promise<GeneratePlanForItemResult> {
+  sourceObservationId?: string;
+}): Promise<CreateStubResult> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
 
   const item = await getIndexItem(input.itemId);
   if (!item) throw new Error("Item not found.");
 
-  // Reuse existing plan unless force=true
   if (!input.force) {
     const existing = readExistingPlan(item);
     if (existing?.planId) {
       const { data: existingRow } = await supabase
         .from("plans")
-        .select("id,status,key_stats")
+        .select("id,key_stats")
         .eq("id", existing.planId)
         .eq("user_id", owner.id)
         .maybeSingle();
       if (existingRow) {
-        const planRow = existingRow as { id: string; status: string; key_stats: Json };
+        const planRow = existingRow as { id: string; key_stats: Json };
         const slug =
-          existing.planSlug ?? readSlugFromKeyStats(planRow.key_stats) ?? slugify(item.title);
+          existing.planSlug ??
+          readSlugFromKeyStats(planRow.key_stats) ??
+          slugify(item.title);
         return {
-          ok: true,
           planId: planRow.id,
           planSlug: slug,
-          status: planRow.status,
-          fallbackUsed: false,
+          userId: owner.id,
           reused: true,
         };
       }
     }
   }
 
-  // Run generator
+  const slug = await ensureUniqueSlug(owner.id, slugify(item.title), item.id);
+
+  const { data: planInsert, error: planError } = await supabase
+    .from("plans")
+    .insert({
+      user_id: owner.id,
+      title: item.title,
+      category: item.category ?? null,
+      location_line: item.locationName ?? item.address ?? null,
+      live_enabled: false,
+      live_label: "BEGIN",
+      key_stats: {
+        slug,
+        source_item_id: item.id,
+        source_item_type: item.type,
+        source_item_category: item.category,
+        source_observation_id: input.sourceObservationId ?? null,
+      } as Json,
+      quote_card: {} as Json,
+      status: "draft",
+      build_status: "building",
+      source_observation_id: input.sourceObservationId ?? null,
+    })
+    .select("id")
+    .single();
+  if (planError || !planInsert) {
+    throw new Error(planError?.message ?? "Plan insert failed");
+  }
+  const planId = (planInsert as { id: string }).id;
+
+  // Point the source item at the new plan (date/destination set on schedule).
+  const currentPayload = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const nextPayload: Json = {
+    ...currentPayload,
+    plan_id: planId,
+    plan_slug: slug,
+    plan_status: "draft",
+    planning_state: "planning_in_progress",
+    source_observation_id: input.sourceObservationId ?? currentPayload.source_observation_id ?? null,
+  } as Json;
+  await supabase
+    .from("surfaced_items")
+    .update({
+      status: "planned",
+      payload: nextPayload,
+      planning_state: "planning_in_progress",
+      source_observation_id: input.sourceObservationId ?? null,
+    })
+    .eq("id", item.id)
+    .eq("user_id", owner.id);
+
+  return { planId, planSlug: slug, userId: owner.id, reused: false };
+}
+
+/**
+ * Fill a previously-created stub plan with generated sections. Uses the
+ * service-role client so it is safe to run in a background `after()` task where
+ * request cookies are no longer available. Sets build_status='ready' when done.
+ */
+export async function fillPlan(input: {
+  planId: string;
+  userId: string;
+  itemId: string;
+}): Promise<{ ok: true; fallbackUsed: boolean; cancelled?: boolean }> {
+  const supabase = getSupabaseServiceClient();
+
+  const before = await readPlanBuildState(supabase, input.planId, input.userId);
+  if (isPlanBuildCancelled(before)) {
+    return { ok: true, fallbackUsed: false, cancelled: true };
+  }
+
+  const { data: itemRow } = await supabase
+    .from("surfaced_items")
+    .select("*")
+    .eq("id", input.itemId)
+    .maybeSingle();
+  if (!itemRow) throw new Error("Item not found.");
+  const item = rowToIndexedItem(itemRow as SurfacedItemRow);
+
   const { plan, fallbackUsed } = await generatePlanFromItem({ item });
 
-  // Ensure slug uniqueness per-user — append item id suffix if needed
-  const uniqueSlug = await ensureUniqueSlug(owner.id, plan.slug, item.id);
+  const afterGeneration = await readPlanBuildState(supabase, input.planId, input.userId);
+  if (isPlanBuildCancelled(afterGeneration)) {
+    return { ok: true, fallbackUsed, cancelled: true };
+  }
 
-  // Insert plan row
+  // Preserve the slug chosen at stub time.
+  const { data: stubRow } = await supabase
+    .from("plans")
+    .select("key_stats")
+    .eq("id", input.planId)
+    .maybeSingle();
+  const stubSlug = readSlugFromKeyStats(
+    (stubRow as { key_stats: Json } | null)?.key_stats ?? ({} as Json),
+  );
+
   const keyStats: Record<string, unknown> = {
-    slug: uniqueSlug,
+    slug: stubSlug ?? plan.slug,
     starts_at: plan.starts_at,
     ends_at: plan.ends_at,
     effort_level: plan.effort_level,
@@ -181,15 +274,12 @@ export async function generatePlanForItem(input: {
     grab_list: plan.grab_list ?? [],
   };
 
-  const dateLabel = formatDateLabel(plan.starts_at);
-
-  const { data: planInsert, error: planError } = await supabase
+  const { error: updateError } = await supabase
     .from("plans")
-    .insert({
-      user_id: owner.id,
+    .update({
       title: plan.title,
       category: plan.plan_type,
-      date: dateLabel,
+      date: formatDateLabel(plan.starts_at),
       location_line:
         plan.location_name ??
         item.locationName ??
@@ -197,112 +287,172 @@ export async function generatePlanForItem(input: {
         item.address ??
         null,
       summary: plan.hero_angle,
-      live_enabled: false,
-      live_label: plan.starts_at && isFutureOrToday(plan.starts_at)
-        ? "UPCOMING"
-        : "BEGIN",
+      live_label:
+        plan.starts_at && isFutureOrToday(plan.starts_at) ? "UPCOMING" : "BEGIN",
       key_stats: keyStats as Json,
-      quote_card: {} as Json,
-      status: "draft",
+      build_status: "ready",
     })
-    .select("id")
-    .single();
-  if (planError || !planInsert) {
-    throw new Error(planError?.message ?? "Plan insert failed");
-  }
-  const planId = (planInsert as { id: string }).id;
+    .eq("id", input.planId)
+    .eq("user_id", input.userId);
+  if (updateError) console.error("[fillPlan] plan update", updateError);
 
-  // Insert sections
+  // Sections
   const sections = plan.sections.map((s, idx) => ({
-    user_id: owner.id,
-    plan_id: planId,
+    user_id: input.userId,
+    plan_id: input.planId,
     section_id: s.section_type,
     title: s.title,
     subtitle: s.subtitle ?? null,
     icon: null as string | null,
-    content: {
-      key: s.key,
-      body: s.body,
-      bullets: s.bullets ?? [],
-    } as Json,
+    content: { key: s.key, body: s.body, bullets: s.bullets ?? [] } as Json,
     sort_order: s.sort_order ?? idx * 10,
   }));
-
   if (sections.length > 0) {
-    const { error: sectionsError } = await supabase
-      .from("plan_sections")
-      .insert(sections);
-    if (sectionsError) {
-      console.error("[plan.generate] sections insert", sectionsError);
-    }
+    const { error } = await supabase.from("plan_sections").insert(sections);
+    if (error) console.error("[fillPlan] sections insert", error);
   }
 
-  // Insert timeline items if any
+  // Timeline
   if (plan.timeline.length > 0) {
     const timelineRows = plan.timeline.map((t, idx) => ({
-      user_id: owner.id,
-      plan_id: planId,
-      time: t.starts_at
-        ? formatTimeLabel(t.starts_at)
-        : t.time_label ?? "—",
+      user_id: input.userId,
+      plan_id: input.planId,
+      time: t.starts_at ? formatTimeLabel(t.starts_at) : t.time_label ?? "—",
       title: t.title,
       status: "pending",
       expandable: Boolean(t.description),
       details: t.description ?? null,
       sort_order: t.sort_order ?? idx * 10,
     }));
-    const { error: timelineError } = await supabase
+    const { error } = await supabase
       .from("today_timeline_items")
       .insert(timelineRows);
-    if (timelineError) {
-      console.error("[plan.generate] timeline insert", timelineError);
-    }
+    if (error) console.error("[fillPlan] timeline insert", error);
   }
 
-  // Update source item: status=planned, destination inferred, payload patched
-  const currentPayload = isRecord(item.rawPayload) ? item.rawPayload : {};
-  const nextDestination = inferItemDestination(plan.starts_at);
-  const nextPayload: Json = {
-    ...currentPayload,
-    plan_id: planId,
-    plan_slug: uniqueSlug,
-    plan_status: "draft",
-    plan_type: plan.plan_type,
-    plan_primary_move: plan.primary_move,
-  } as Json;
-
-  const { error: itemError } = await supabase
+  // Mirror an inferred destination onto the source item (parity with legacy).
+  await supabase
     .from("surfaced_items")
     .update({
-      status: "planned",
-      destination: nextDestination,
-      payload: nextPayload,
+      destination: inferItemDestination(plan.starts_at),
+      planning_state: "planned",
     })
-    .eq("id", item.id)
-    .eq("user_id", owner.id);
-  if (itemError) {
-    console.error("[plan.generate] item update", itemError);
+    .eq("id", input.itemId)
+    .eq("user_id", input.userId);
+
+  return { ok: true, fallbackUsed };
+}
+
+/**
+ * Legacy synchronous path used by /api/items/[id]/generate-plan and radar
+ * cards. Creates the stub and fills it inline.
+ */
+export async function generatePlanForItem(input: {
+  itemId: string;
+  force?: boolean;
+}): Promise<GeneratePlanForItemResult> {
+  const stub = await createStubPlan({
+    itemId: input.itemId,
+    force: input.force,
+  });
+  if (stub.reused) {
+    return {
+      ok: true,
+      planId: stub.planId,
+      planSlug: stub.planSlug,
+      status: "draft",
+      fallbackUsed: false,
+      reused: true,
+    };
   }
+
+  const filled = await fillPlan({
+    planId: stub.planId,
+    userId: stub.userId,
+    itemId: input.itemId,
+  });
 
   await recordBehaviorSignal({
     type: "plan.generated",
-    planId,
-    itemId: item.id,
-    fallbackUsed,
+    planId: stub.planId,
+    itemId: input.itemId,
+    fallbackUsed: filled.fallbackUsed,
   });
 
-  revalidatePath(`/item/${item.id}`);
-  revalidatePath(`/plan/${uniqueSlug}`);
+  revalidatePath(`/item/${input.itemId}`);
+  revalidatePath(`/plan/${stub.planSlug}`);
   revalidatePath(`/upcoming`);
   revalidatePath(`/`);
 
   return {
     ok: true,
-    planId,
-    planSlug: uniqueSlug,
+    planId: stub.planId,
+    planSlug: stub.planSlug,
     status: "draft",
-    fallbackUsed,
+    fallbackUsed: filled.fallbackUsed,
   };
+}
+
+/**
+ * Persist the chosen schedule for a plan (from the date picker). Mirrors the
+ * label/start time into key_stats + plans.date and moves the source item to the
+ * right surface (today/upcoming/holding).
+ */
+export async function schedulePlan(input: {
+  planId: string;
+  scheduledDate: string; // YYYY-MM-DD
+  scheduledTime: string; // HH:MM (24h)
+}): Promise<{ ok: true; startsAt: string }> {
+  const owner = await requireOwner();
+  const supabase = await getServerSupabase();
+
+  const { data: planData } = await supabase
+    .from("plans")
+    .select("*")
+    .eq("id", input.planId)
+    .eq("user_id", owner.id)
+    .maybeSingle();
+  const plan = planData as PlanRow | null;
+  if (!plan) throw new Error("Plan not found.");
+
+  const startsAt = new Date(
+    `${input.scheduledDate}T${input.scheduledTime}:00`,
+  ).toISOString();
+
+  const nextKeyStats: Json = {
+    ...(isRecord(plan.key_stats) ? plan.key_stats : {}),
+    starts_at: startsAt,
+  } as Json;
+
+  const { error: planError } = await supabase
+    .from("plans")
+    .update({
+      scheduled_date: input.scheduledDate,
+      scheduled_time: input.scheduledTime,
+      date: formatDateLabel(startsAt),
+      live_label: isFutureOrToday(startsAt) ? "UPCOMING" : "BEGIN",
+      key_stats: nextKeyStats,
+    })
+    .eq("id", input.planId)
+    .eq("user_id", owner.id);
+  if (planError) throw new Error(planError.message);
+
+  const sourceItemId = readSourceItemId(plan.key_stats);
+  if (sourceItemId) {
+    await supabase
+      .from("surfaced_items")
+      .update({ destination: inferItemDestination(startsAt) })
+      .eq("id", sourceItemId)
+      .eq("user_id", owner.id);
+    revalidatePath(`/item/${sourceItemId}`);
+  }
+
+  const slug = readSlugFromKeyStats(plan.key_stats);
+  revalidatePath(`/`);
+  revalidatePath(`/upcoming`);
+  if (slug) revalidatePath(`/plan/${slug}`);
+
+  return { ok: true, startsAt };
 }
 
 // ── Lifecycle actions ───────────────────────────────────────────────────────
@@ -443,6 +593,8 @@ export async function cancelPlan(input: {
       status: "cancelled",
       live_enabled: false,
       live_label: "BEGIN",
+      build_status: "cancelled",
+      cancelled_at: new Date().toISOString(),
     })
     .eq("id", input.planId)
     .eq("user_id", owner.id);
@@ -450,19 +602,20 @@ export async function cancelPlan(input: {
 
   const sourceItemId = readSourceItemId(plan.key_stats);
   if (sourceItemId) {
-    const startsAt = readStartsAt(plan.key_stats);
     const item = await getIndexItem(sourceItemId);
     const currentPayload = item && isRecord(item.rawPayload) ? item.rawPayload : {};
     const nextPayload: Json = {
       ...currentPayload,
       plan_status: "cancelled",
+      planning_state: "cancelled",
     } as Json;
-    // Item drops back to the appropriate non-live surface after cancellation.
+    // Cancellation stops the build but keeps the source as a Radar maybe.
     await supabase
       .from("surfaced_items")
       .update({
-        status: "discovered",
-        destination: inferItemDestination(startsAt),
+        status: "shown",
+        destination: "radar",
+        planning_state: "cancelled",
         payload: nextPayload,
       })
       .eq("id", sourceItemId)
@@ -485,6 +638,35 @@ export async function cancelPlan(input: {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+type PlanBuildState = {
+  status: string;
+  build_status?: string | null;
+  cancelled_at?: string | null;
+} | null;
+
+async function readPlanBuildState(
+  supabase: ReturnType<typeof getSupabaseServiceClient>,
+  planId: string,
+  userId: string,
+): Promise<PlanBuildState> {
+  const { data } = await supabase
+    .from("plans")
+    .select("status,build_status,cancelled_at")
+    .eq("id", planId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data as PlanBuildState) ?? null;
+}
+
+function isPlanBuildCancelled(state: PlanBuildState): boolean {
+  return Boolean(
+    state &&
+      (state.status === "cancelled" ||
+        state.build_status === "cancelled" ||
+        state.cancelled_at),
+  );
+}
 
 async function ensureUniqueSlug(
   userId: string,

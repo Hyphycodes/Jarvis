@@ -449,6 +449,9 @@ export interface Database {
           user_id: string;
           signal_type: string;
           subject_id: string | null;
+          object_type: string | null;
+          object_id: string | null;
+          metadata: Json;
           payload: Json;
           created_at: string;
         };
@@ -457,6 +460,9 @@ export interface Database {
           user_id: string;
           signal_type: string;
           subject_id?: string | null;
+          object_type?: string | null;
+          object_id?: string | null;
+          metadata?: Json;
           payload?: Json;
           created_at?: string;
         };
@@ -465,7 +471,163 @@ export interface Database {
           user_id?: string;
           signal_type?: string;
           subject_id?: string | null;
+          object_type?: string | null;
+          object_id?: string | null;
+          metadata?: Json;
           payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      observations: {
+        Row: {
+          id: string;
+          user_id: string;
+          source_type: "image" | "voice" | "text" | "manual" | "link";
+          raw_input_url: string | null;
+          extracted_text: string | null;
+          interpreted_type: string | null;
+          entities_json: Json;
+          confidence: number;
+          state: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          source_type: "image" | "voice" | "text" | "manual" | "link";
+          raw_input_url?: string | null;
+          extracted_text?: string | null;
+          interpreted_type?: string | null;
+          entities_json?: Json;
+          confidence?: number;
+          state?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          source_type?: "image" | "voice" | "text" | "manual" | "link";
+          raw_input_url?: string | null;
+          extracted_text?: string | null;
+          interpreted_type?: string | null;
+          entities_json?: Json;
+          confidence?: number;
+          state?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      entities: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: string;
+          name: string;
+          canonical_name: string;
+          metadata: Json;
+          confidence: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: string;
+          name: string;
+          canonical_name: string;
+          metadata?: Json;
+          confidence?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          type?: string;
+          name?: string;
+          canonical_name?: string;
+          metadata?: Json;
+          confidence?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      observation_entities: {
+        Row: {
+          observation_id: string;
+          entity_id: string;
+          user_id: string;
+          role: string;
+          created_at: string;
+        };
+        Insert: {
+          observation_id: string;
+          entity_id: string;
+          user_id: string;
+          role?: string;
+          created_at?: string;
+        };
+        Update: {
+          observation_id?: string;
+          entity_id?: string;
+          user_id?: string;
+          role?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      ai_actions: {
+        Row: {
+          id: string;
+          user_id: string;
+          action_type: string;
+          input_observation_id: string | null;
+          target_table: string | null;
+          target_id: string | null;
+          confidence: number | null;
+          reasoning_summary: string | null;
+          was_user_confirmed: boolean;
+          state_before: string | null;
+          state_after: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          action_type: string;
+          input_observation_id?: string | null;
+          target_table?: string | null;
+          target_id?: string | null;
+          confidence?: number | null;
+          reasoning_summary?: string | null;
+          was_user_confirmed?: boolean;
+          state_before?: string | null;
+          state_after?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          action_type?: string;
+          input_observation_id?: string | null;
+          target_table?: string | null;
+          target_id?: string | null;
+          confidence?: number | null;
+          reasoning_summary?: string | null;
+          was_user_confirmed?: boolean;
+          state_before?: string | null;
+          state_after?: string | null;
+          metadata?: Json;
           created_at?: string;
         };
         Relationships: [];
@@ -495,6 +657,10 @@ export interface Database {
           url: string | null;
           image_url: string | null;
           occasion_type: string | null;
+          source_observation_id: string | null;
+          confidence: number | null;
+          taste_fit_summary: string | null;
+          planning_state: string;
           reasons: string[];
           tags: string[];
           created_at: string;
@@ -524,6 +690,10 @@ export interface Database {
           url?: string | null;
           image_url?: string | null;
           occasion_type?: string | null;
+          source_observation_id?: string | null;
+          confidence?: number | null;
+          taste_fit_summary?: string | null;
+          planning_state?: string;
           reasons?: string[];
           tags?: string[];
           created_at?: string;
@@ -553,6 +723,10 @@ export interface Database {
           url?: string | null;
           image_url?: string | null;
           occasion_type?: string | null;
+          source_observation_id?: string | null;
+          confidence?: number | null;
+          taste_fit_summary?: string | null;
+          planning_state?: string;
           reasons?: string[];
           tags?: string[];
           created_at?: string;
@@ -574,6 +748,11 @@ export interface Database {
           key_stats: Json;
           quote_card: Json;
           status: string;
+          scheduled_date: string | null;
+          scheduled_time: string | null;
+          build_status: string;
+          cancelled_at: string | null;
+          source_observation_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -590,6 +769,11 @@ export interface Database {
           key_stats?: Json;
           quote_card?: Json;
           status?: string;
+          scheduled_date?: string | null;
+          scheduled_time?: string | null;
+          build_status?: string;
+          cancelled_at?: string | null;
+          source_observation_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -606,6 +790,11 @@ export interface Database {
           key_stats?: Json;
           quote_card?: Json;
           status?: string;
+          scheduled_date?: string | null;
+          scheduled_time?: string | null;
+          build_status?: string;
+          cancelled_at?: string | null;
+          source_observation_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -706,6 +895,7 @@ export interface Database {
           last_interaction: string | null;
           next_action: string | null;
           current_thread: string | null;
+          neighborhood: string | null;
           notes: string[];
           created_at: string;
           updated_at: string;
@@ -720,6 +910,7 @@ export interface Database {
           last_interaction?: string | null;
           next_action?: string | null;
           current_thread?: string | null;
+          neighborhood?: string | null;
           notes?: string[];
           created_at?: string;
           updated_at?: string;
@@ -734,6 +925,7 @@ export interface Database {
           last_interaction?: string | null;
           next_action?: string | null;
           current_thread?: string | null;
+          neighborhood?: string | null;
           notes?: string[];
           created_at?: string;
           updated_at?: string;
@@ -922,6 +1114,14 @@ export type SurfacedItemInsert =
   Database["public"]["Tables"]["surfaced_items"]["Insert"];
 export type BehaviorSignalRow =
   Database["public"]["Tables"]["behavior_signals"]["Row"];
+export type ObservationRow =
+  Database["public"]["Tables"]["observations"]["Row"];
+export type EntityRow =
+  Database["public"]["Tables"]["entities"]["Row"];
+export type ObservationEntityRow =
+  Database["public"]["Tables"]["observation_entities"]["Row"];
+export type AiActionRow =
+  Database["public"]["Tables"]["ai_actions"]["Row"];
 export type PlanRow = Database["public"]["Tables"]["plans"]["Row"];
 export type PlanSectionRow =
   Database["public"]["Tables"]["plan_sections"]["Row"];

@@ -395,6 +395,28 @@ begin
     where u.user_id = p_user_id and u.title = cu.title
   );
 
+  -- 9.5. Seed trusted discovery sources (idempotent on user + handle)
+  insert into public.tastemakers (
+    user_id,
+    name,
+    role,
+    notes,
+    instagram_handle,
+    website_url
+  )
+  select
+    p_user_id,
+    'Chicago Explore',
+    'curator',
+    'Quality Chicago discovery account — restaurants, culture, hidden spots.',
+    'chicagoexplore',
+    'https://www.instagram.com/chicagoexplore/'
+  where not exists (
+    select 1 from public.tastemakers t
+    where t.user_id = p_user_id
+      and lower(coalesce(t.instagram_handle, '')) = 'chicagoexplore'
+  );
+
   -- 10. Seed surfaced_items for Radar (idempotent on (user_id, destination, title))
   insert into public.surfaced_items (
     user_id, destination, source, source_id, type, category,

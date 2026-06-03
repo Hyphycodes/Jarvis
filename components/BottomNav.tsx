@@ -47,6 +47,10 @@ export function BottomNav({
   onTabSelect?: (index: number, href: string) => void;
 }) {
   const pathname = usePathname() ?? "/";
+  const openMic = () => {
+    onMicDown?.();
+    onMic?.();
+  };
   const routeActive: TabLabel =
     active ??
     (TABS.find((t) =>
@@ -128,8 +132,12 @@ export function BottomNav({
         <button
           type="button"
           aria-label="Voice"
-          onClick={onMic}
-          onPointerDown={(e) => { e.preventDefault(); onMicDown?.(); }}
+          data-jarvis-mic-button="true"
+          onClick={openMic}
+          onClickCapture={openMic}
+          onMouseDown={openMic}
+          onPointerDown={openMic}
+          onTouchStart={openMic}
           onPointerUp={onMicUp}
           onPointerLeave={onMicUp}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-atmospheric active:scale-95"

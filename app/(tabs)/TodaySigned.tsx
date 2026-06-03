@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useMemo, useState, useTransition } from "react";
+import { Calendar as CalendarIcon } from "lucide-react";
 import {
   AppFrame,
   Checkbox,
@@ -11,6 +12,7 @@ import {
   type TimelineItem,
 } from "@/components";
 import { Arrow, ArrowRight, Chevron } from "@/components/icons";
+import { CalendarView } from "@/components/calendar/CalendarView";
 import type { TodayCommandItem, TodayPayload } from "@/lib/ai/types";
 
 /**
@@ -30,17 +32,29 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
   const signals = payload?.todayStack ?? [];
   const tonightEvents = payload?.tonightEvents ?? [];
   const planSlug = payload?.livePlan?.slug;
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   return (
     <AppFrame>
+      <CalendarView open={calendarOpen} onClose={() => setCalendarOpen(false)} />
       <header className="flex flex-col pt-6">
         <div className="flex items-start justify-between gap-4">
           <span className="text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
             {payload?.hero.eyebrow ?? "Today"}
           </span>
-          <span className="text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
-            {payload?.hero.date ?? formatToday()}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
+              {payload?.hero.date ?? formatToday()}
+            </span>
+            <button
+              type="button"
+              aria-label="Open calendar"
+              onClick={() => setCalendarOpen(true)}
+              className="inline-flex h-7 w-7 items-center justify-center text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
+            >
+              <CalendarIcon size={17} strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
         <h1 className="mt-3 font-serif text-[44px] italic leading-[1.05] tracking-[-0.005em] text-warm-ivory">
           {payload?.hero.greeting ?? "Quiet day."}

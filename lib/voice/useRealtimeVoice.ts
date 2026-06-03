@@ -21,6 +21,22 @@ class PCM16Processor extends AudioWorkletProcessor {
 registerProcessor("pcm16-processor", PCM16Processor);
 `;
 
+function getSupportedMimeType() {
+  const types = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  return types.find((type) => MediaRecorder.isTypeSupported(type)) || "audio/mp4";
+}
+
+function audioExtensionForMime(mimeType: string): "webm" | "ogg" | "mp4" {
+  if (mimeType.includes("webm")) return "webm";
+  if (mimeType.includes("ogg")) return "ogg";
+  return "mp4";
+}
+
 type SessionResponse = {
   ok: boolean;
   client_secret?: string;
@@ -79,8 +95,10 @@ export function useRealtimeVoice(
 
   const runFallbackTranscription = useCallback(async (blob: Blob) => {
     try {
+      const mimeType = blob.type || "audio/mp4";
+      const file = new File([blob], `audio.${audioExtensionForMime(mimeType)}`, { type: mimeType });
       const form = new FormData();
-      form.append("audio", blob);
+      form.append("audio", file);
       const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string };
       if (data.ok && data.text) {
@@ -108,9 +126,7 @@ export function useRealtimeVoice(
     }
 
     // Always capture fallback blob in parallel
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : "audio/webm";
+    const mimeType = getSupportedMimeType();
     const fallbackRecorder = new MediaRecorder(stream, { mimeType });
     fallbackBlobRef.current = [];
     fallbackRecorder.ondataavailable = (e) => {

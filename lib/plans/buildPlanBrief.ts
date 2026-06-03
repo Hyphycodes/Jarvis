@@ -109,9 +109,12 @@ export function buildPlanBrief(input: BuildPlanBriefInput): PlanBrief {
     title: cleanText(loaded.title) ?? "Plan",
     category,
     dateLabel,
-    timeLabel,
+    timeLabel: timeLabel ?? scheduledTimeLabel(loaded),
     areaLabel,
     locationLabel,
+    scheduledDate: loaded.scheduledDate,
+    scheduledTime: loaded.scheduledTime,
+    buildStatus: loaded.buildStatus,
     heroImage: undefined,
     summary,
     state,
@@ -206,6 +209,16 @@ function shapeTimeLabel(loaded: LoadedPlan, assumed: string[]): string | undefin
     }
   }
   return undefined;
+}
+
+/** Fallback time label from a scheduled_time (HH:MM 24h) when no window exists. */
+function scheduledTimeLabel(loaded: LoadedPlan): string | undefined {
+  if (!loaded.scheduledTime) return undefined;
+  const [h, m] = loaded.scheduledTime.split(":").map(Number);
+  if (Number.isNaN(h)) return undefined;
+  const meridiem = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${meridiem}`;
 }
 
 function shapeArea(loaded: LoadedPlan): string | undefined {

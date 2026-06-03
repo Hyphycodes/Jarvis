@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Mic } from "@/components/icons";
 import type { IntentResult } from "@/lib/brain/intentClassifier";
+import type { ChatAttachment, ChatChip } from "@/lib/chat/types";
 import { useRealtimeVoice } from "@/lib/voice/useRealtimeVoice";
 import { buildSheetContext } from "@/lib/voice/buildSheetContext";
 
@@ -15,7 +16,8 @@ type Message = {
   role: "user" | "jarvis";
   content: string;
   timestamp: number;
-  chips?: string[];
+  chips?: ChatChip[];
+  attachment?: AttachmentContext;
 };
 
 type PlanCard = {
@@ -25,8 +27,13 @@ type PlanCard = {
 };
 
 type AttachmentContext = {
+  type: "image" | "link" | "place" | "text";
   label: string;
-  context: string;
+  context?: string;
+  url?: string;
+  imageDataUrl?: string;
+  imageBase64?: string;
+  imageMediaType?: string;
 };
 
 type AttachmentTrayMode = "closed" | "place" | "link" | "photo";
@@ -77,6 +84,45 @@ function haptic(pattern?: number | number[]) {
   try { navigator.vibrate(pattern ?? 10); } catch { /* noop */ }
 }
 
+function normalizeChips(chips: Array<string | ChatChip> | undefined): ChatChip[] {
+  if (!Array.isArray(chips)) return [];
+  return chips.slice(0, 5).map((chip) => {
+    if (typeof chip === "string") {
+      return {
+        label: chip,
+        message: chip,
+        action_type: "send_message" as const,
+      };
+    }
+    return chip;
+  });
+}
+
+function attachmentForApi(attachment: AttachmentContext): ChatAttachment {
+  if (attachment.type === "image" && attachment.imageBase64) {
+    return {
+      type: "image",
+      label: attachment.label,
+      image_base64: attachment.imageBase64,
+      image_media_type: attachment.imageMediaType,
+      preview_url: attachment.imageDataUrl,
+    };
+  }
+  if (attachment.type === "image") {
+    return {
+      type: "text",
+      label: attachment.label,
+      context: "Image attachment selected, but image data was unavailable.",
+    };
+  }
+  return {
+    type: attachment.type,
+    label: attachment.label,
+    context: attachment.context,
+    url: attachment.url,
+  };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function MicSheet({
@@ -108,6 +154,7 @@ export function MicSheet({
   const [placeQuery, setPlaceQuery] = useState("");
   const [linkInput, setLinkInput] = useState("");
   const [trayLoading, setTrayLoading] = useState(false);
+  const [analyzingImage, setAnalyzingImage] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
@@ -201,13 +248,20 @@ export function MicSheet({
     if (!trimmed || state === "thinking" || state === "responding") return;
 
     haptic([10, 50, 10]);
-    const userMessage: Message = { role: "user", content: trimmed, timestamp: Date.now() };
+    const outgoingAttachment = attachment;
+    const userMessage: Message = {
+      role: "user",
+      content: trimmed,
+      timestamp: Date.now(),
+      attachment: outgoingAttachment ?? undefined,
+    };
     setMessages((prev) => [...prev, userMessage]);
     setTextInput("");
     setState("thinking");
     setCurrentResponse("");
     setPlanCard(null);
     setError(null);
+    setAnalyzingImage(outgoingAttachment?.type === "image");
 
     const historyForApi = [...messages, userMessage].map((m) => ({
       role: m.role as "user" | "jarvis",
@@ -218,9 +272,12 @@ export function MicSheet({
     const sheetContext = buildSheetContext({ currentRoute: pathname, visibleItem, tonightEvents });
 
     // Attachment context
-    const messageWithAttachment = attachment
-      ? `${trimmed}\n\n[Attached: ${attachment.label}]\n${attachment.context}`
+    const messageWithAttachment = outgoingAttachment && outgoingAttachment.type !== "image"
+      ? `${trimmed}\n\n[Attached: ${outgoingAttachment.label}]\n${outgoingAttachment.context ?? ""}`
       : trimmed;
+    const attachmentsForApi = outgoingAttachment
+      ? [attachmentForApi(outgoingAttachment)]
+      : [];
 
     setAttachment(null);
 
@@ -232,6 +289,7 @@ export function MicSheet({
           text: messageWithAttachment,
           history: historyForApi,
           sheet_context: sheetContext || undefined,
+          attachments: attachmentsForApi,
         }),
       });
 
@@ -242,7 +300,7 @@ export function MicSheet({
       const decoder = new TextDecoder();
       let accumulated = "";
       let buffer = "";
-      let intentChips: string[] = [];
+      let intentChips: ChatChip[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -262,7 +320,7 @@ export function MicSheet({
               text?: string;
               intent?: string;
               ask_about_plan?: boolean;
-              chips?: string[];
+              chips?: Array<string | ChatChip>;
               plan_context?: IntentResult["plan_context"];
               message?: string;
             };
@@ -271,7 +329,7 @@ export function MicSheet({
               accumulated += event.text;
               setCurrentResponse(accumulated);
             } else if (event.type === "intent") {
-              intentChips = Array.isArray(event.chips) ? event.chips : [];
+              intentChips = normalizeChips(event.chips);
               if (event.ask_about_plan && event.plan_context?.place_name) {
                 setPlanCard({
                   place_name: event.plan_context.place_name,
@@ -292,9 +350,11 @@ export function MicSheet({
                 if (voiceOn) void playJarvisVoice(accumulated);
               }
               setState("idle");
+              setAnalyzingImage(false);
             } else if (event.type === "error") {
               setError(event.message ?? "Something went wrong.");
               setState("idle");
+              setAnalyzingImage(false);
             }
           } catch { /* malformed SSE */ }
         }
@@ -307,19 +367,75 @@ export function MicSheet({
         });
         setCurrentResponse("");
         setState("idle");
+        setAnalyzingImage(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setState("idle");
+      setAnalyzingImage(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachment]);
+
+  const busy = state === "thinking" || state === "responding";
 
   const handleTextSubmit = useCallback(() => {
     const txt = textInput.trim();
     if (!txt) return;
     void handleSendMessage(txt);
   }, [textInput, handleSendMessage]);
+
+  const handleChipClick = useCallback(async (chip: ChatChip) => {
+    if (busy) return;
+    if (chip.action_type === "send_message" || chip.action_type === "find_similar" || chip.action_type === "compare") {
+      void handleSendMessage(chip.message);
+      return;
+    }
+
+    haptic(8);
+    const userMessage: Message = {
+      role: "user",
+      content: chip.message,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setState("thinking");
+    setError(null);
+
+    try {
+      const res = await fetch("/api/chat/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action_type: chip.action_type,
+          message: chip.message,
+          payload: chip.payload,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        chips?: Array<string | ChatChip>;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error ?? "Action failed");
+      }
+      if (data.message) {
+        const jarvisMsg: Message = {
+          role: "jarvis",
+          content: data.message,
+          timestamp: Date.now(),
+          chips: normalizeChips(data.chips),
+        };
+        setMessages((prev) => [...prev, jarvisMsg]);
+      }
+      setState("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed.");
+      setState("idle");
+    }
+  }, [busy, handleSendMessage]);
 
   // ── Voice playback ──────────────────────────────────────────────────────────
 
@@ -361,7 +477,7 @@ export function MicSheet({
       });
       const data = (await res.json()) as { ok?: boolean; title?: string; context?: string };
       if (data.ok && data.context) {
-        setAttachment({ label: data.title ?? url, context: data.context });
+        setAttachment({ type: "link", label: data.title ?? url, context: data.context, url });
       }
     } catch { /* noop */ }
     setLinkInput("");
@@ -372,21 +488,20 @@ export function MicSheet({
   const handlePhotoAttach = useCallback(async (file: File) => {
     setTrayLoading(true);
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+        reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const res = await fetch("/api/voice/analyze-photo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_base64: base64, image_media_type: file.type || "image/jpeg" }),
+      const base64 = dataUrl.split(",")[1] ?? "";
+      setAttachment({
+        type: "image",
+        label: file.name || "Photo",
+        imageDataUrl: dataUrl,
+        imageBase64: base64,
+        imageMediaType: file.type || "image/jpeg",
       });
-      const data = (await res.json()) as { ok?: boolean; description?: string; context?: string };
-      if (data.ok && data.context) {
-        setAttachment({ label: data.description ?? "Photo", context: data.context });
-      }
     } catch { /* noop */ }
     setTrayMode("closed");
     setTrayLoading(false);
@@ -415,6 +530,7 @@ export function MicSheet({
 
   const handlePlaceSelect = useCallback((place: { name: string; address: string }) => {
     setAttachment({
+      type: "place",
       label: place.name,
       context: `User attached place: ${place.name}, ${place.address}.`,
     });
@@ -425,10 +541,9 @@ export function MicSheet({
 
   // ── Status ──────────────────────────────────────────────────────────────────
 
-  const busy = state === "thinking" || state === "responding";
   const statusLabel =
     state === "listening" ? "Listening…" :
-    state === "thinking" ? "Thinking…" :
+    state === "thinking" ? (analyzingImage ? "Analyzing…" : "Thinking…") :
     null;
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -518,17 +633,20 @@ export function MicSheet({
                     <div className="mt-3 flex flex-wrap gap-2">
                       {msg.chips.map((chip) => (
                         <ChipButton
-                          key={chip}
-                          label={chip}
+                          key={`${chip.action_type}-${chip.label}`}
+                          label={chip.label}
                           disabled={busy}
-                          onClick={() => void handleSendMessage(chip)}
+                          onClick={() => void handleChipClick(chip)}
                         />
                       ))}
                     </div>
                   ) : null}
                 </div>
               ) : (
-                <span className="text-[15px] leading-[1.6] text-warm-ivory/45">{msg.content}</span>
+                <div className="inline-flex max-w-[85%] flex-col items-end gap-2">
+                  {msg.attachment ? <AttachmentPreview attachment={msg.attachment} compact /> : null}
+                  <span className="text-[15px] leading-[1.6] text-warm-ivory/45">{msg.content}</span>
+                </div>
               )}
             </div>
           ))}
@@ -578,8 +696,8 @@ export function MicSheet({
 
         {/* Attachment preview */}
         {attachment ? (
-          <div className="mx-5 mb-2 flex items-center justify-between rounded-[var(--radius-soft)] border border-white/[0.08] bg-white/[0.025] px-3 py-2">
-            <span className="text-[12px] text-warm-ivory/60 truncate">{attachment.label}</span>
+          <div className="mx-5 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-soft)] border border-white/[0.08] bg-white/[0.025] px-3 py-2">
+            <AttachmentPreview attachment={attachment} />
             <button type="button" onClick={() => setAttachment(null)} className="ml-2 shrink-0 text-[11px] text-warm-ivory/35 hover:text-warm-ivory/60">✕</button>
           </div>
         ) : null}
@@ -639,7 +757,6 @@ export function MicSheet({
                   ref={photoInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -652,7 +769,7 @@ export function MicSheet({
                   disabled={trayLoading}
                   className="text-[13px] text-warm-ivory/70 disabled:opacity-40"
                 >
-                  {trayLoading ? "Analyzing…" : "Choose photo"}
+                  {trayLoading ? "Loading…" : "Choose photo"}
                 </button>
               </div>
             ) : null}
@@ -735,6 +852,35 @@ export function MicSheet({
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
+
+function AttachmentPreview({
+  attachment,
+  compact = false,
+}: {
+  attachment: AttachmentContext;
+  compact?: boolean;
+}) {
+  if (attachment.type === "image" && attachment.imageDataUrl) {
+    return (
+      <div className={`flex items-center gap-2 ${compact ? "justify-end" : "min-w-0 flex-1"}`}>
+        <img
+          src={attachment.imageDataUrl}
+          alt=""
+          className={compact ? "h-28 w-28 rounded-md object-cover" : "h-10 w-10 rounded-md object-cover"}
+        />
+        {!compact ? (
+          <span className="truncate text-[12px] text-warm-ivory/60">{attachment.label}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <span className={`truncate text-[12px] text-warm-ivory/60 ${compact ? "max-w-[220px]" : "min-w-0 flex-1"}`}>
+      {attachment.label}
+    </span>
+  );
+}
 
 function ChipButton({
   label,

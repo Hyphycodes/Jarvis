@@ -59,6 +59,23 @@ export function TabShell({
 
   const [micOpen, setMicOpen] = useState(false);
 
+  useEffect(() => {
+    function openFromNativeMicEvent(event: MouseEvent | PointerEvent | TouchEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-jarvis-mic-button='true']")) {
+        setMicOpen(true);
+      }
+    }
+    document.addEventListener("click", openFromNativeMicEvent, true);
+    document.addEventListener("pointerdown", openFromNativeMicEvent, true);
+    document.addEventListener("touchstart", openFromNativeMicEvent, true);
+    return () => {
+      document.removeEventListener("click", openFromNativeMicEvent, true);
+      document.removeEventListener("pointerdown", openFromNativeMicEvent, true);
+      document.removeEventListener("touchstart", openFromNativeMicEvent, true);
+    };
+  }, []);
+
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,
     align: "start",

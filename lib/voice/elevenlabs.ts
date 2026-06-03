@@ -20,10 +20,11 @@ export function hasElevenLabs(): boolean {
 // ── Transcription (Scribe) ────────────────────────────────────────────────────
 
 export async function transcribeAudio(audioBlob: Blob): Promise<string> {
-  const isMp4 = audioBlob.type.includes("mp4");
-  const filename = isMp4 ? "audio.mp4" : "audio.webm";
+  const mimeType = audioBlob.type || "audio/mp4";
+  const extension = audioExtensionForMime(mimeType);
+  const audioFile = new File([audioBlob], `audio.${extension}`, { type: mimeType });
   const form = new FormData();
-  form.append("file", audioBlob, filename);
+  form.append("file", audioFile);
   form.append("model_id", "scribe_v1");
 
   const res = await fetch(`${BASE}/speech-to-text`, {
@@ -41,6 +42,12 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const text = data.text?.trim() ?? "";
   if (!text) throw new Error("ElevenLabs returned empty transcription");
   return text;
+}
+
+function audioExtensionForMime(mimeType: string): "webm" | "ogg" | "mp4" {
+  if (mimeType.includes("webm")) return "webm";
+  if (mimeType.includes("ogg")) return "ogg";
+  return "mp4";
 }
 
 // ── Text to speech ────────────────────────────────────────────────────────────
