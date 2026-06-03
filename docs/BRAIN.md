@@ -16,15 +16,16 @@
 │  3.  Source Graph             ← due source checks + cadence       │
 │  4.  Candidate Inbox          ← raw/evaluation discovery layer    │
 │  5.  Living Library           ← durable places/events/sources     │
-│  6.  buildInterestGraph()     ← seed + memory + behavior nudges  │
-│  7.  runTasteStrategist()     ← exploration lanes (Claude)       │
-│  8.  buildScoutMissions()     ← lanes → typed Scout missions     │
-│  9.  gatherFromCuriosityPlan()← real source calls, capped        │
-│ 10.  ingestCandidates()       ← upsert into surfaced_items       │
-│ 11.  runRadarCuration()       ← score, curator, critic, briefing │
-│ 12.  Intelligence Core        ← signal, truth, diversity, plan    │
-│ 13.  briefing/front-room gate ← keep weak output out of Radar     │
-│ 14.  IntelligenceTrace        ← compact durable decision trace    │
+│  6.  Taste Seed Importer      ← owner context into real tables     │
+│  7.  buildInterestGraph()     ← seed + memory + behavior nudges  │
+│  8.  runTasteStrategist()     ← exploration lanes (Claude)       │
+│  9.  buildScoutMissions()     ← lanes → typed Scout missions     │
+│ 10.  gatherFromCuriosityPlan()← real source calls, capped        │
+│ 11.  ingestCandidates()       ← upsert into surfaced_items       │
+│ 12.  runRadarCuration()       ← score, curator, critic, briefing │
+│ 13.  Intelligence Core        ← signal, truth, diversity, plan    │
+│ 14.  briefing/front-room gate ← keep weak output out of Radar     │
+│ 15.  IntelligenceTrace        ← compact durable decision trace    │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -70,6 +71,32 @@ to `radar_autopilot_activity`. `/settings/library` uses those rows plus
 blocked by missing providers, failed, healthy, or in need of bootstrap. Pause
 blocks scheduled cron only. Stop is cooperative and means stop after the
 current major operation.
+
+## Taste Seed Importer
+
+`lib/tasteSeed/parser.ts` parses owner-provided markdown with these sections:
+People / Circle, Upcoming Events, Places, Taste Signals, Discovery Sources, and
+Notes for Jarvis. `lib/tasteSeed/importer.ts` keeps dry-run parsing separate
+from commit writes.
+
+Commit mode routes data into existing tables:
+
+- Circle people into `circle_people`
+- ambiguous upcoming planning windows into `circle_updates`
+- owner-known places into `places_library`
+- positive and negative taste priors into `taste_signals`
+- negative filters into `founder_profile.avoid_keywords`
+- discovery sources into `intelligence_sources`
+- operating notes into `memory_items`
+- import audit into `intelligence_traces`
+
+Every row carries `taste_seed_import` provenance where the destination table
+supports source or metadata. The importer is idempotent by exact person name,
+place slug, source key, taste trait, memory content, and Circle update title.
+
+The seed is not a recommendation list. Names build the Library; reasons build
+the brain. Imported places are context anchors and similarity seeds only. They
+do not automatically become Candidate Inbox, Holding, or Active Radar rows.
 
 ## Intelligence Core (Sprint 7)
 

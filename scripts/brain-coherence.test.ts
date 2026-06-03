@@ -30,6 +30,12 @@ import {
   isPausedForMode,
   normalizeAutopilotMode,
 } from "../lib/radar/autopilotControlPolicy";
+import {
+  dryRunTasteSeedImport,
+} from "../lib/tasteSeed/importer";
+import {
+  parseTasteSeedMarkdown,
+} from "../lib/tasteSeed/parser";
 import { planRadarCampaigns } from "../lib/radar/campaigns";
 import { qualityTierFromScore } from "../lib/library/quality";
 import type { LibraryHealth } from "../lib/library/types";
@@ -614,6 +620,123 @@ function testAutopilotRunStateMigrationAndControls() {
   assert.match(actions, /Stop After Current Step/);
 }
 
+const tasteSeedFixture = `
+## PEOPLE / CIRCLE
+
+### Kamila
+- Best friend since age 4
+- Spelled with a K — Kamila
+- Active together: basketball, soccer, gym, pickleball
+
+### Sophia Ramos
+- Close friend, lives in Logan Square, Chicago
+- Sophia spelled with ph, not f
+
+### Kamila’s extended family
+- **Andres** — Kamila’s older brother
+- **Vu** — pickleball crew. Treat as family.
+
+## UPCOMING EVENTS
+
+### White Sox Tailgate + Game — ~June 11
+- Kamila’s birthday is June 12
+- Going with Kamila’s family: Andres, cousins, extended crew
+
+### Kamila birthday — June 12
+
+## PLACES
+
+### Eight Bar — Gold Coast, Chicago
+- Similar vibe to M&A but more accessible price point
+- **Why liked:** quality food, elevated feel without being pretentious, great service moment
+- **Use case:** date night, nice dinner
+- **Would return:** yes
+
+### Nobu — Chicago
+- **Why liked:** design, service, crowd, elevated feeling
+- **What not to misunderstand:** doesn’t mean Jerry wants clubby luxury restaurants regularly
+- **Would return:** occasionally / drink only for now
+
+## TASTE SIGNALS
+
+### Food
+- Animal-based diet — ribeye, steak, carnitas
+- Indian food: not really his thing
+
+### Negative Filters (what to avoid suggesting)
+- Too clubby
+- Too flashy / try-hard
+- Corny or generic
+
+## DISCOVERY SOURCES TO MONITOR
+
+- **Chicago Bucket List** — Instagram + blog. Jerry has acted on recommendations from here.
+- Walk-and-discover — proximity and neighborhood drift
+`;
+
+function testTasteSeedParserExtractsOwnerContext() {
+  const parsed = parseTasteSeedMarkdown(tasteSeedFixture);
+  assert.ok(parsed.people.some((person) => person.name === "Kamila"));
+  assert.ok(parsed.people.some((person) => person.name === "Sophia Ramos"));
+  assert.ok(parsed.people.some((person) => person.name === "Andres"));
+  assert.ok(parsed.places.some((place) => place.name === "Eight Bar" && place.useCases.includes("date night, nice dinner")));
+  assert.ok(parsed.places.some((place) => place.name === "Nobu" && place.guardrails.some((note) => /clubby luxury/i.test(note))));
+  assert.ok(parsed.negativeFilters.some((filter) => filter.trait === "Too clubby"));
+  assert.ok(parsed.negativeFilters.some((filter) => filter.trait === "try-hard"));
+  assert.ok(parsed.discoverySources.some((source) => source.name === "Chicago Bucket List" && source.status === "watching"));
+  assert.equal(parsed.upcomingEvents.find((event) => event.title === "White Sox Tailgate + Game")?.ambiguousDate, true);
+}
+
+function testTasteSeedDryRunAndBoundaries() {
+  const result = dryRunTasteSeedImport({
+    markdown: tasteSeedFixture,
+    fileName: "JARVIS TASTE SEED.md",
+    importedAt: now,
+  });
+  assert.equal(result.mode, "dry_run");
+  assert.equal(result.summary.created.people, 0);
+  assert.equal(result.summary.wouldCreate.activeRadar, 0);
+  assert.equal(result.summary.wouldCreate.candidateInbox, 0);
+  assert.ok(result.summary.wouldCreate.people >= 4);
+  assert.ok(result.provenance.source_file_name === "JARVIS TASTE SEED.md");
+  assert.equal(result.provenance.confidence, "owner_provided");
+}
+
+function testTasteSeedIdempotentKeys() {
+  const first = parseTasteSeedMarkdown(tasteSeedFixture);
+  const second = parseTasteSeedMarkdown(tasteSeedFixture);
+  assert.deepEqual(first.people.map((person) => person.key), second.people.map((person) => person.key));
+  assert.deepEqual(first.places.map((place) => place.key), second.places.map((place) => place.key));
+  assert.deepEqual(first.tasteSignals.map((signal) => signal.key), second.tasteSignals.map((signal) => signal.key));
+  assert.deepEqual(first.negativeFilters.map((signal) => signal.key), second.negativeFilters.map((signal) => signal.key));
+}
+
+function testNegativeTasteFiltersAffectScoring() {
+  const base = scoreIndexedItem(item({
+    title: "New rooftop dinner",
+    description: "A polished dinner room.",
+    tags: ["dining"],
+  })).total;
+  const penalized = scoreIndexedItem(item({
+    title: "Clubby try-hard rooftop dinner",
+    description: "Flashy tourist-facing scene.",
+    tags: ["dining"],
+  }), {
+    avoidKeywords: ["clubby", "try-hard", "tourist-facing"],
+  });
+  assert.ok(penalized.total < base);
+  assert.ok(penalized.reasons.some((reason) => /Taste filter penalty/i.test(reason)));
+}
+
+function testTasteSeedRouteAndDocsWiring() {
+  const route = readFileSync("app/api/library/import-taste-seed/route.ts", "utf8");
+  assert.match(route, /dryRun/);
+  assert.match(route, /commitTasteSeedImport/);
+  assert.match(route, /requireOwner/);
+  const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts?: Record<string, string> };
+  assert.match(pkg.scripts?.["import:taste-seed"] ?? "", /scripts\/import-taste-seed\.ts/);
+}
+
 async function main() {
   testEmptyContextDoesNotInventData();
   testBehaviorPatterns();
@@ -639,6 +762,11 @@ async function main() {
   testCandidateAndLibraryBoundaries();
   testAutopilotCronWiring();
   testAutopilotRunStateMigrationAndControls();
+  testTasteSeedParserExtractsOwnerContext();
+  testTasteSeedDryRunAndBoundaries();
+  testTasteSeedIdempotentKeys();
+  testNegativeTasteFiltersAffectScoring();
+  testTasteSeedRouteAndDocsWiring();
 
   console.log("brain coherence tests passed");
 }

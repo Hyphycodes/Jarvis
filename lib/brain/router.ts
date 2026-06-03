@@ -16,6 +16,8 @@ export function shortlistByScore(
     };
     northTags?: string[];
     recentPassCategories?: string[];
+    avoidKeywords?: string[];
+    dealbreakers?: string[];
     maxItems?: number;
   } = {},
 ): ScoredItem[] {
@@ -28,6 +30,8 @@ export function shortlistByScore(
         currentWeather: context.currentWeather,
         northTags: context.northTags,
         recentPassCategories: context.recentPassCategories,
+        avoidKeywords: context.avoidKeywords,
+        dealbreakers: context.dealbreakers,
       });
       return { item, score: s.total, reasons: s.reasons, northAlignment: s.northAlignment };
     })

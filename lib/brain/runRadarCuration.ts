@@ -154,6 +154,8 @@ export async function runRadarCuration(options: {
       : undefined,
     northTags: context.northTags,
     recentPassCategories,
+    avoidKeywords: context.founder.avoidKeywords,
+    dealbreakers: context.founder.dealbreakers,
     maxItems: options.maxShortlist ?? RADAR_SHORTLIST_LIMIT,
   });
 

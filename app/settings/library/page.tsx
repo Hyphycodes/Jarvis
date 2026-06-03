@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { readLibraryHealth } from "@/lib/library";
 import { readLibraryControlRoomStatus } from "@/lib/radar/autopilotRuns";
 import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
+import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { BackButton, MotionPage } from "@/components";
 import { ControlRoomActions } from "./ControlRoomActions";
 
@@ -26,6 +27,16 @@ export default async function SettingsLibraryPage() {
     userId: user.id,
     bootstrapNeeded,
   });
+  const supabase = await getServerSupabase();
+  const { data: lastTasteSeedImport } = await supabase
+    .from("intelligence_traces")
+    .select("created_at,outcome,selected_candidate,context_summary")
+    .eq("user_id", user.id)
+    .eq("route", "lib/tasteSeed/importer.commitTasteSeedImport")
+    .eq("decision_type", "taste_seed_import")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const rows = [
     ["Places", String(health.places)],
     ["Events", `${health.events} active`],
@@ -126,6 +137,17 @@ export default async function SettingsLibraryPage() {
         </section>
 
         <section className="motion-card mt-8 grid gap-3">
+          <StatusRow
+            label="Taste seed import"
+            value={lastTasteSeedImport?.created_at
+              ? relativeTime(String(lastTasteSeedImport.created_at))
+              : "None yet"}
+          />
+          {lastTasteSeedImport?.outcome ? (
+            <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58">
+              {String(lastTasteSeedImport.outcome)}
+            </p>
+          ) : null}
           <StatusRow
             label="Current operation"
             value={control.activeRun?.operation ?? "None"}

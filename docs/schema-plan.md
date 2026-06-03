@@ -36,6 +36,8 @@
   before anything reaches Library, Holding, or Active Radar
 - **intelligence_sources** — Source Graph for publications, domains, venues,
   calendars, tastemakers, organizers, authors, and search patterns
+- **taste seed import** — no standalone table; owner-provided markdown is routed
+  into Circle, Places Library, taste signals, memory, Source Graph, and traces
 - **radar_autopilot_settings** — owner control flags for scheduled Autopilot
   pause/resume and cooperative stop requests
 - **radar_autopilot_runs** — operational run ledger for scheduled, bootstrap,
@@ -57,6 +59,10 @@
   Living Library. Quality tiers are metadata for curation, not a browsing UI.
 - Use `intelligence_sources` for source learning and adaptive cadence. It is
   not an API uptime table.
+- Use the Taste Seed Importer as a routing helper, not a schema fork. It writes
+  `taste_seed_import` provenance into existing rows and remains idempotent by
+  existing natural keys such as person name, place slug, source key, trait, and
+  memory content.
 - Bootstrap Mode uses these same tables. It does not add a separate bootstrap
   schema: real provider results enter `radar_candidate_inbox`, real durable
   places/events enter `places_library` / `current_events`, and real domains,
@@ -65,6 +71,9 @@
   visibility. They are not memory and should not drive recommendations directly.
 - Do not add fake production rows to fill empty states. Synthetic rows belong
   only in tests or QA-only helpers.
+- Do not hardcode owner seed names into prompts, UI components, fallback arrays,
+  or static recommendations. Imported names are durable context; imported
+  reasons and filters are what should influence scoring.
 
 ## Open questions
 

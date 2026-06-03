@@ -11,6 +11,8 @@ export type IndexedItemScoringContext = ScoringContext & {
   currentWeather?: { temperatureF?: number; precipitationProbability?: number };
   northTags?: string[];
   recentPassCategories?: string[];
+  avoidKeywords?: string[];
+  dealbreakers?: string[];
 };
 
 export type IndexedItemScore = {
@@ -104,6 +106,26 @@ export function scoreIndexedItem(
       modifier -= 0.06;
       reasons.push("Passed similar item recently");
     }
+  }
+
+  // Explicit taste filters: softer than hard gates, but visible in reasons.
+  const itemText = [
+    item.title,
+    item.subtitle,
+    item.description,
+    item.category,
+    item.type,
+    ...item.tags,
+  ].filter(Boolean).join(" ").toLowerCase();
+  const avoidMatches = keywordMatches(itemText, context.avoidKeywords);
+  if (avoidMatches.length > 0 && item.status !== "saved" && item.status !== "planned") {
+    modifier -= Math.min(0.18, avoidMatches.length * 0.06);
+    reasons.push(`Taste filter penalty: ${avoidMatches.slice(0, 2).join(", ")}`);
+  }
+  const dealbreakerMatches = keywordMatches(itemText, context.dealbreakers);
+  if (dealbreakerMatches.length > 0 && item.status !== "saved" && item.status !== "planned") {
+    modifier -= Math.min(0.3, dealbreakerMatches.length * 0.1);
+    reasons.push(`Dealbreaker penalty: ${dealbreakerMatches.slice(0, 2).join(", ")}`);
   }
 
   // Source quality bias.
@@ -209,6 +231,13 @@ function toCandidate(item: IndexedItem): NormalizedCandidate {
     tags: item.tags,
     raw: item.rawPayload,
   };
+}
+
+function keywordMatches(text: string, keywords: string[] | undefined): string[] {
+  return Array.from(new Set((keywords ?? [])
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword.length > 1)
+    .filter((keyword) => text.includes(keyword.toLowerCase()))));
 }
 
 function mapSource(source: IndexedItem["source"]): NormalizedCandidate["source"] {

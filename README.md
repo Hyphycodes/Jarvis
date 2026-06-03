@@ -18,6 +18,7 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 - **Library Bootstrap Mode:** when Candidate Inbox, Living Library, Source Graph, or Tier A/B inventory is thin, Autopilot runs a bounded foundation-building stack instead of one tiny maintenance pass.
 - **Living Library + Source Graph:** places, events, tastemakers, and sources form the permanent intelligence bank under Radar. Source cadence adapts from save/pass/plan behavior.
 - **Library Control Room:** `/settings/library` shows run state, provider blockers, activity, bootstrap progress, and owner controls for run/pause/resume/stop-after-current-step.
+- **Taste Seed Importer:** owner-provided markdown taste context can be dry-run or committed into Circle, Library, Source Graph, memory, taste signals, and negative scoring filters without becoming static Radar content.
 
 **Brain pipeline (5 agents + Decision Council):**
 1. Taste Strategist — derives interest lanes and source plan from the Interest Graph
@@ -79,6 +80,8 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 | `pnpm start`     | Run the built app            |
 | `pnpm typecheck` | `tsc --noEmit`               |
 | `pnpm test:brain` | Brain coherence tests       |
+| `pnpm import:taste-seed -- path/to/file.md` | Dry-run owner taste seed import |
+| `pnpm import:taste-seed -- path/to/file.md --commit` | Commit taste seed import with service role |
 | `pnpm smoke`     | App smoke script             |
 
 ## Environment variables
@@ -169,6 +172,32 @@ started manually. Stop means "stop after current major step."
 All Claude calls go through `generateStructured<T>` in `lib/ai/structured.ts`. Every agent has a `deterministic*` fallback — the system degrades gracefully without the API key.
 
 Production routes must not invent Radar items, Today suggestions, Circle people, plans, memories, or behavior. Empty real data should produce quiet empty states or skipped output, not generic filler. Synthetic objects belong in tests or QA-only helpers.
+
+## Taste Seed Importer
+
+`POST /api/library/import-taste-seed` accepts owner-only JSON:
+
+```json
+{ "markdown": "...", "fileName": "JARVIS TASTE SEED.md", "dryRun": true }
+```
+
+Dry run parses the seed and returns counts without writing rows. Commit mode
+uses `dryRun: false` and routes the parsed sections into existing systems:
+
+- People go to `circle_people`.
+- Upcoming ambiguous dates become `circle_updates` planning context, not fake
+  exact `current_events` timestamps.
+- Places go to `places_library` with owner-provided provenance and do not
+  automatically enter Candidate Inbox, Holding, or Active Radar.
+- Taste signals and negative filters go to `taste_signals`; negative filters
+  also merge into `founder_profile.avoid_keywords` as scoring penalties.
+- Discovery sources go to `intelligence_sources`.
+- Operating notes go to `memory_items`.
+- The import writes an `intelligence_traces` audit row.
+
+Imported names are anchors and priors. Radar should use the reasons behind
+those names to score future candidates, not repeatedly recommend the imported
+places themselves.
 
 ## Deploy
 

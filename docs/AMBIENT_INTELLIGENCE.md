@@ -40,6 +40,7 @@ budget into `brain_decision_runs.raw_output.budget`.
 - `POST /api/radar/autopilot/pause`
 - `POST /api/radar/autopilot/resume`
 - `POST /api/radar/autopilot/stop`
+- `POST /api/library/import-taste-seed`
 - `POST /api/radar/refresh` (manual debug path, runs bounded Radar refill)
 - `POST /api/radar/cleanup`
 
@@ -71,6 +72,23 @@ Pause only blocks scheduled cron. Owner-requested runs can still be launched
 from `/settings/library`. Stop is cooperative: the current serverless step is
 allowed to finish, then Bootstrap checks the flag before starting the next major
 operation.
+
+## Taste Seed Import
+
+The taste seed importer is not a discovery run and does not call external
+providers. It ingests first-party owner markdown as structured context for the
+ambient system:
+
+- dry run returns parsed counts and warnings with no database writes
+- commit mode writes Circle, Library, Source Graph, memory, taste signals, and
+  negative filters with `taste_seed_import` provenance
+- ambiguous dates remain planning context instead of fake exact events
+- imported places are never promoted directly to Active Radar
+
+After commit, ambient runs can use the resulting FounderContextPacket,
+Source Graph rows, Library anchors, and negative filters to guide future
+discovery. Radar still needs Curator, Critic, Decision Council, and front-room
+admission before anything is shown.
 
 ## Radar Refill Contract
 

@@ -18,6 +18,7 @@ FounderContextPacket
   -> IntelligenceReason + IntelligenceTrace
   -> routed action
   -> behavior signals / source stats / memory proposals
+  -> taste seed imports when owner provides first-party context
   -> future FounderContextPacket
 ```
 
@@ -121,6 +122,27 @@ Bootstrap source seeding also captures real provider result domains/articles as
 `intelligence_sources` and `radar_candidate_inbox` source candidates. This lets
 Jarvis learn where quality comes from even before an article yields a durable
 place or event.
+
+## Taste Seed Importer
+
+`POST /api/library/import-taste-seed` and
+`pnpm run import:taste-seed -- path/to/file.md` parse owner-provided markdown
+into structured records. Dry run is the default and writes nothing. Commit mode
+routes the parsed sections into existing systems:
+
+- People / Circle -> `circle_people`
+- Upcoming Events -> `circle_updates` when dates are contextual or ambiguous
+- Places -> `places_library`
+- Taste Signals and Negative Filters -> `taste_signals`
+- Negative Filters -> `founder_profile.avoid_keywords` scoring penalties
+- Discovery Sources -> `intelligence_sources`
+- Notes for Jarvis -> `memory_items`
+- Import log -> `intelligence_traces`
+
+Do not hardcode seed names into prompts, components, fallback arrays, or static
+queries. Imported names build the Library; imported reasons, notes, and filters
+build the brain. Known places are anchors and similarity seeds, not automatic
+Active Radar items.
 
 ## Library Control Room
 
