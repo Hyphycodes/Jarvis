@@ -138,6 +138,20 @@ Run errors should be visible but safe. Control Room summaries show the actual
 run `error_message` with token-like bearer values redacted, plus partial row
 counts so "partial success" is understandable without opening Vercel logs.
 
+The top of the Control Room uses operator language: Jarvis is working, paused,
+blocked, reviewing Radar, testing sources, finding options, or building the
+city map. Technical operation names remain in lower activity/details only when
+useful for debugging.
+
+## Radar Moves and Promotion Bridge
+
+Foundation Sprint still searches hard and stores a lot, but it should only
+surface composed moves. Promotion review compares Holding candidates by lane,
+composes `radar_move` copy, writes the enriched payload back to
+`surfaced_items`, and then the Radar page reads that same row through the normal
+front-room gate. If diagnostics mark a Holding item eligible and it still does
+not promote, activity must include the final blocker or write error.
+
 ## Intent-Aware Actions
 
 Radar remains visually quiet. The primary actions stay Save, Plan, and Pass.

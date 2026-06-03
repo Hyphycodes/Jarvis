@@ -14,6 +14,8 @@ import {
 import { RADAR_BOARD_QUALITY_FLOOR } from "@/lib/intelligence/radarScoring";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { readItemIntent } from "@/lib/items/intents";
+import { composeRadarMove, radarMovePayload } from "@/lib/radar/moveComposer";
+import { shortlistRadarMoves } from "@/lib/radar/moveShortlist";
 import { listIndexItems, rowToIndexedItem } from "@/lib/index/repo";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import type { Json, SurfacedItemRow } from "@/lib/types/database";
@@ -259,7 +261,8 @@ export async function promoteQualifiedHoldingItems(
     promotable.push(radarItem);
   }
 
-  const selected = selectDiverseRadarSet(promotable, 0, Math.min(slots, RADAR_ACTIVE_ITEM_LIMIT - activeRows.length));
+  const shortlisted = shortlistRadarMoves(promotable, Math.min(slots * 2, RADAR_ACTIVE_ITEM_LIMIT));
+  const selected = selectDiverseRadarSet(shortlisted, 0, Math.min(slots, RADAR_ACTIVE_ITEM_LIMIT - activeRows.length));
   let promoted = 0;
   const promotedIds: string[] = [];
   for (const item of selected) {
@@ -304,17 +307,25 @@ export function mergeRadarIntelligencePayload(
   item: RadarItem,
 ): Json {
   const current = isRecord(payload) ? payload : {};
+  const move = composeRadarMove(item);
   return {
     ...current,
+    radar_move: radarMovePayload(move),
     purpose_label: item.decision.purpose_label,
-    move_title: item.title,
+    move_title: move.moveTitle,
+    move_summary: move.moveSummary,
+    why_this: move.whyThis,
+    why_now: move.whyNow,
+    best_for: move.bestFor,
+    timing_window: move.timingWindow,
+    friction: move.friction,
     vibe: item.vibe,
     diversity_group: item.diversityGroup,
     radar_disposition: item.radarDisposition,
     today_disposition: item.todayDisposition,
     plan_disposition: item.planDisposition,
-    reason_surfaced: item.reasonSurfaced,
-    strongest_angle: item.strongestAngle,
+    reason_surfaced: move.whyThis,
+    strongest_angle: move.whyNow ?? item.strongestAngle,
     missing_info: item.missingInfo,
     score_breakdown: item.scoreBreakdown,
     north_alignment: item.northAlignment,
@@ -322,10 +333,12 @@ export function mergeRadarIntelligencePayload(
     intelligence: {
       ...(isRecord(current.intelligence) ? current.intelligence : {}),
       enriched_at: new Date().toISOString(),
+      radar_move: radarMovePayload(move),
+      move_title: move.moveTitle,
       vibe: item.vibe,
       diversity_group: item.diversityGroup,
-      reason_surfaced: item.reasonSurfaced,
-      strongest_angle: item.strongestAngle,
+      reason_surfaced: move.whyThis,
+      strongest_angle: move.whyNow ?? item.strongestAngle,
       confidence: item.confidence,
       score: item.score,
       score_breakdown: item.scoreBreakdown,

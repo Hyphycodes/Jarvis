@@ -11,6 +11,8 @@ import {
 import { scoreIndexedItem } from "../lib/scoring/scoreIndexedItem";
 import { buildItemIntentPayload, intentJson, readItemIntent } from "../lib/items/intents";
 import { assessResultQuality } from "../lib/sources/resultQuality";
+import { composeRadarMove, humanOperationLabel } from "../lib/radar/moveComposer";
+import { shortlistRadarMoves } from "../lib/radar/moveShortlist";
 import { buildCommandActionChips } from "../lib/chat/routeChatIntent";
 import { buildIntelligenceReason, reasonForCircleMoment } from "../lib/brain/intelligenceReason";
 import {
@@ -57,6 +59,7 @@ import { sourceKeyFromUrl } from "../lib/library/sourceIdentity";
 import { scoreSourceQuality } from "../lib/library/sourceScoring";
 import type { ExplorationLane } from "../lib/brain/tasteStrategist";
 import type { IndexedItem } from "../lib/index/types";
+import type { RadarItem } from "../lib/intelligence/types";
 
 const now = "2026-06-03T18:00:00.000Z";
 
@@ -741,9 +744,9 @@ function testAutopilotRunStateMigrationAndControls() {
   assert.match(page, /Activity/);
 
   const actions = readFileSync("app/settings/library/ControlRoomActions.tsx", "utf8");
-  assert.match(actions, /Run Bootstrap/);
+  assert.match(actions, /Bootstrap/);
   assert.match(actions, /Start Sprint/);
-  assert.match(actions, /Run Next Mission/);
+  assert.match(actions, /Next Mission/);
   assert.match(actions, /Commit Import/);
   assert.match(actions, /Pause/);
   assert.match(actions, /Resume/);
@@ -1096,7 +1099,7 @@ function testSettingsLibraryVisibilityWiring() {
   assert.match(page, /safeErrorDetail/);
 
   const actions = readFileSync("app/settings/library/ControlRoomActions.tsx", "utf8");
-  assert.match(actions, /Run Promotion Review/);
+  assert.match(actions, /Promotion Review/);
   assert.match(actions, /manual_force/);
 }
 
@@ -1106,6 +1109,137 @@ function testPromotionReviewActivityContract() {
   assert.match(autopilot, /Promotion review considered/);
   assert.match(autopilot, /blockers: diagnostics\.items/);
   assert.match(autopilot, /Promotion review promoted 0 items/);
+}
+
+function radarItem(overrides: Partial<RadarItem> = {}): RadarItem {
+  const baseItem = item({
+    title: "Horseback riding experience",
+    type: "place",
+    category: "outdoors",
+    description: "A scenic outdoor riding option outside the city.",
+    tags: ["outdoor", "weekend", "small group"],
+  });
+  return {
+    item: baseItem,
+    title: "Horseback Riding Outside the City",
+    category: "outdoors",
+    vibe: "land_escape",
+    reasonSurfaced: "Scenic weekend move. Better with one person or a small group.",
+    strongestAngle: "Worth watching for a clear Saturday.",
+    confidence: 0.78,
+    score: 0.82,
+    scoreBreakdown: {
+      total: 0.82,
+      tasteFit: 0.86,
+      timingFit: 0.68,
+      novelty: 0.72,
+      usefulness: 0.8,
+      vibeStrength: 0.78,
+      planPotential: 0.74,
+      evidenceQuality: 0.7,
+      socialUpside: 0.66,
+      creativeUpside: 0.2,
+      longTermValue: 0.45,
+      energyCost: 0.35,
+      moneyCost: 0.45,
+      redundancyPenalty: 0,
+      northAlignment: { score: 0, matchedPillars: [], reason: "No North match." },
+    },
+    planReadiness: {
+      shouldPreparePlan: true,
+      confidence: 0.7,
+      knownDetails: ["outdoor activity"],
+      missingDetails: ["exact time"],
+    },
+    source: { domain: "example.com" },
+    evidence: { quality: 0.7, summary: "Specific activity details available." },
+    missingInfo: ["confirm timing"],
+    suggestedAction: "Save for a weekend.",
+    radarDisposition: "active",
+    todayDisposition: "not_today",
+    planDisposition: "seed",
+    canGeneratePlan: true,
+    diversityGroup: "active_social",
+    decision: {
+      admission: "radar",
+      confidence: 0.78,
+      purpose_label: "Outdoor reset",
+      move_title: "Horseback Riding Outside the City",
+      one_line: "Scenic weekend move.",
+      best_move: "Watch for a clear Saturday.",
+      display_depth: "compact",
+      positive_signals: ["scenic", "small group"],
+      negative_flags: [],
+      council_scores: { scout: 0.8, operator: 0.72, taste: 0.86, growth: 0.6, critic: 0.7 },
+    },
+    northAlignment: { score: 0, matchedPillars: [], reason: "No North match." },
+    ...overrides,
+  };
+}
+
+function testRadarMoveComposerCreatesHumanCopy() {
+  const move = composeRadarMove(radarItem());
+  assert.equal(move.sourceLayer, "holding");
+  assert.equal(move.moveTitle, "Horseback Riding Outside the City");
+  assert.match(move.moveSummary, /Scenic weekend move/);
+  assert.doesNotMatch(`${move.moveTitle} ${move.moveSummary}`, /candidate inbox|source graph|holding|eligible|promote_candidate/i);
+  assert.ok(move.bestFor?.includes("small group"));
+  assert.ok(move.friction?.includes("confirm timing"));
+}
+
+function testMoveShortlistPicksBestSimilarLane() {
+  const weak = radarItem({
+    item: item({ id: "horse_weak", title: "Horseback riding basic listing", type: "place", category: "outdoors", tags: ["horse"] }),
+    score: 0.62,
+    scoreBreakdown: {
+      ...radarItem().scoreBreakdown,
+      total: 0.62,
+      tasteFit: 0.55,
+      timingFit: 0.5,
+      evidenceQuality: 0.46,
+    },
+    evidence: { quality: 0.46 },
+  });
+  const strong = radarItem({
+    item: item({ id: "horse_strong", title: "Private trail ride", type: "place", category: "outdoors", tags: ["horse", "trail"] }),
+    score: 0.86,
+  });
+  const dinner = radarItem({
+    item: item({ id: "dinner", title: "Quiet dinner room", type: "restaurant", category: "dining", tags: ["dining"] }),
+    category: "dining",
+    vibe: "social_controlled",
+    score: 0.8,
+  });
+  const selected = shortlistRadarMoves([weak, strong, dinner], 3);
+  assert.ok(selected.some((entry) => entry.item.id === "horse_strong"));
+  assert.equal(selected.some((entry) => entry.item.id === "horse_weak"), false);
+  assert.ok(selected.some((entry) => entry.item.id === "dinner"));
+}
+
+function testPromotionBridgeAndVisibleCountContracts() {
+  const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
+  assert.match(autopilot, /evaluateActiveRadarItem\(item\)\.allowed/);
+  assert.match(autopilot, /mergeRadarIntelligencePayload/);
+  assert.match(autopilot, /shortlistRadarMoves/);
+  assert.match(autopilot, /promotion write failed/);
+  assert.match(autopilot, /moved to Radar as a composed move/);
+
+  const curator = readFileSync("lib/intelligence/radarCurator.ts", "utf8");
+  assert.match(curator, /composeRadarMove/);
+  assert.match(curator, /radar_move/);
+  assert.match(curator, /radar_disposition: item\.radarDisposition/);
+  assert.match(curator, /shortlistRadarMoves/);
+
+  const loader = readFileSync("lib/dispatch/loadSurface.ts", "utf8");
+  assert.match(loader, /payload\.radar_move/);
+  assert.match(loader, /stringValue\(move\.move_title\)/);
+  assert.match(loader, /stringValue\(move\.why_this\)/);
+}
+
+function testHumanOperationLabels() {
+  assert.equal(humanOperationLabel("promotion_review"), "Reviewing what is ready for Radar");
+  assert.equal(humanOperationLabel("source_building_campaign"), "Testing sources");
+  assert.equal(humanOperationLabel("foundation_build_mode"), "Building the intelligence bank");
 }
 
 type Row = Record<string, any>;
@@ -1279,6 +1413,10 @@ async function main() {
   testLibraryPreviewAndPromotionDiagnosticsContract();
   testSettingsLibraryVisibilityWiring();
   testPromotionReviewActivityContract();
+  testRadarMoveComposerCreatesHumanCopy();
+  testMoveShortlistPicksBestSimilarLane();
+  testPromotionBridgeAndVisibleCountContracts();
+  testHumanOperationLabels();
 
   console.log("brain coherence tests passed");
 }

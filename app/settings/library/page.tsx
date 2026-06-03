@@ -6,6 +6,7 @@ import { readLibraryPreview, type LibraryPreviewCandidate, type LibraryPreviewEn
 import { readLibraryControlRoomStatus } from "@/lib/radar/autopilotRuns";
 import { BOOTSTRAP_TARGETS } from "@/lib/radar/bootstrapPolicy";
 import { FOUNDATION_SPRINT_TARGETS } from "@/lib/radar/foundationSprint";
+import { humanOperationLabel } from "@/lib/radar/moveComposer";
 import { readRadarPromotionDiagnostics, type RadarPromotionDiagnostic } from "@/lib/radar/promotionDiagnostics";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { BackButton, MotionPage } from "@/components";
@@ -172,7 +173,7 @@ export default async function SettingsLibraryPage() {
           />
           <StatusRow
             label="Current mission"
-            value={control.activeRun?.operation ?? "None"}
+            value={humanOperationLabel(control.activeRun?.operation)}
           />
           <StatusRow
             label="Sprint cursor"
@@ -187,12 +188,12 @@ export default async function SettingsLibraryPage() {
           ) : null}
           <StatusRow
             label="Current operation"
-            value={control.activeRun?.operation ?? "None"}
+            value={humanOperationLabel(control.activeRun?.operation)}
           />
           <StatusRow
             label="Last operation"
             value={control.lastRun
-              ? `${control.lastRun.operation ?? control.lastRun.status} · ${formatTimestamp(control.lastRun.started_at)}`
+              ? `${humanOperationLabel(control.lastRun.operation ?? control.lastRun.status)} · ${formatTimestamp(control.lastRun.started_at)}`
               : "None yet"}
           />
           <StatusRow
@@ -263,7 +264,7 @@ export default async function SettingsLibraryPage() {
               {promotionDiagnostics.summary}
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-warm-ivory/34">
-              Active {promotionDiagnostics.activeCount}/{promotionDiagnostics.target} target · cap {promotionDiagnostics.cap}. Raw Candidate Inbox does not promote directly.
+              Visible Radar {promotionDiagnostics.activeCount}/{promotionDiagnostics.target} target · cap {promotionDiagnostics.cap}. Raw intake never moves straight to Radar.
             </p>
           </div>
           <PreviewDetails title="Why Radar is quiet" count={promotionDiagnostics.items.length} open>

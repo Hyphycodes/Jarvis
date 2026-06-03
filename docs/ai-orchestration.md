@@ -192,6 +192,28 @@ Rejected/Muted rows, and Tier A/B/C slices. This is visibility into the research
 desk, not a browsing product surface. Empty sections stay quiet; they are not
 filled with fake examples.
 
+## Radar Move Layer
+
+Radar is the front-stage surface, so it receives composed moves rather than raw
+database findings. Promotion review can only move rows that have crossed into
+Holding and cleared the front-room gates. At promotion time, Jarvis writes a
+`radar_move` payload with move title, concise summary, why-this, why-now,
+best-for, timing, friction, cost/location/source context, confidence, and fit
+scores. The Radar loader prefers this payload for card copy.
+
+Move shortlisting compares similar lanes before promotion:
+
+- weekend_move
+- after_work_reset
+- culture_creative
+- food_dining
+- active_social
+- family_social
+- business_room
+
+Only the strongest fit in a lane should move forward. Similar or weaker options
+remain in Holding/Library or become watch/better-version context.
+
 Radar promotion diagnostics explain the final boundary. The diagnostic helper
 reviews Candidate Inbox, Holding, Tier A/B Library places, and current events,
 then returns source layer, score, eligibility, reason, blockers, and next step.

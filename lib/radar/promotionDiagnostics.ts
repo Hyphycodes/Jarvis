@@ -8,6 +8,7 @@ import {
 } from "@/lib/brain/constants";
 import { buildJarvisContext } from "@/lib/intelligence/context";
 import { enrichRadarItem } from "@/lib/intelligence/core";
+import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { isPromotableWhenUnderfilled } from "@/lib/intelligence/radarCurator";
 import { readItemIntent } from "@/lib/items/intents";
 import { rowToIndexedItem } from "@/lib/index/repo";
@@ -134,7 +135,9 @@ export async function readRadarPromotionDiagnostics(input: {
 
   const activeRows = (activeRes.data ?? []) as SurfacedItemRow[];
   const holdingRows = (holdingRes.data ?? []) as SurfacedItemRow[];
-  const activeItems = activeRows.map(rowToIndexedItem);
+  const activeItems = activeRows
+    .map(rowToIndexedItem)
+    .filter((item) => evaluateActiveRadarItem(item).allowed);
   const activeBoard = activeItems.map((item) => enrichRadarItem({ item }));
   const context = await buildJarvisContext({
     userId: input.userId,
@@ -155,7 +158,7 @@ export async function readRadarPromotionDiagnostics(input: {
     .slice(0, limit);
   const eligible = items.filter((item) => item.radarEligible).length;
   return {
-    activeCount: activeRows.length,
+    activeCount: activeItems.length,
     target: RADAR_MIN_ACTIVE_ITEM_TARGET,
     cap: RADAR_ACTIVE_ITEM_LIMIT,
     summary: promotionSummary(activeRows.length, eligible, items.length),

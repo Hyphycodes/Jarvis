@@ -581,13 +581,25 @@ function toRadarCard(item: IndexedItem): RadarCard {
   const consideration = buildConsiderationBrief(item);
   const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
   const intelligence = isRecord(payload.intelligence) ? payload.intelligence : {};
-  const actionTitle = stringValue(payload.move_title) ?? stringValue(intelligence.move_title) ?? actionTitleForItem(item).title;
+  const move = isRecord(payload.radar_move) ? payload.radar_move : {};
+  const actionTitle =
+    stringValue(move.move_title) ??
+    stringValue(payload.move_title) ??
+    stringValue(intelligence.move_title) ??
+    actionTitleForItem(item).title;
   const purposeLabel =
     stringValue(payload.purpose_label) ??
     stringValue(intelligence.purpose_label) ??
     purposeLabelForItem(item);
-  const reasonSurfaced = stringValue(payload.reason_surfaced) ?? stringValue(intelligence.reason_surfaced);
-  const strongestAngle = stringValue(payload.strongest_angle) ?? stringValue(intelligence.strongest_angle);
+  const reasonSurfaced =
+    stringValue(move.move_summary) ??
+    stringValue(move.why_this) ??
+    stringValue(payload.reason_surfaced) ??
+    stringValue(intelligence.reason_surfaced);
+  const strongestAngle =
+    stringValue(move.why_now) ??
+    stringValue(payload.strongest_angle) ??
+    stringValue(intelligence.strongest_angle);
   const planReadiness = readPlanReadiness(payload.plan_readiness ?? intelligence.plan_readiness);
   const scoreBreakdown = readNumberRecord(payload.score_breakdown ?? intelligence.score_breakdown);
   return {
@@ -622,6 +634,7 @@ function toRadarCard(item: IndexedItem): RadarCard {
     cleanedTags: briefing?.cleaned_tags,
     sourceDomain: sourceDomainForItem(item),
     locationLabel:
+      stringValue(move.location_label) ??
       consideration.location?.neighborhood ??
       consideration.location?.city ??
       consideration.location?.label,
@@ -631,8 +644,8 @@ function toRadarCard(item: IndexedItem): RadarCard {
     placeholderKind: consideration.media.placeholderKind,
     score: planReadiness?.confidence ?? briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
-    whyItFits: reasonSurfaced ?? briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
-    whyNow: briefing?.why_now ?? strongestAngle ?? item.reasons[1] ?? "Available now.",
+    whyItFits: stringValue(move.why_this) ?? reasonSurfaced ?? briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
+    whyNow: stringValue(move.why_now) ?? briefing?.why_now ?? strongestAngle ?? item.reasons[1] ?? "Available now.",
     actions: { save: true, pass: true, openPlan: Boolean(planSlug || planReadiness?.shouldPreparePlan) },
     routeOnSave: ["radar.saved"],
     routeOnPass: ["radar.passed"],

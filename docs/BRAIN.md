@@ -187,6 +187,42 @@ Graph stats, and adds watch conditions when useful. Later/Watch/Better Version
 are positive lane/category signals but negative active-attention signals for the
 exact unchanged item.
 
+## Radar Moves
+
+Active Radar should read like Jarvis brought back a few worthwhile moves, not
+like a dump of rows. The promotion bridge composes a `radar_move` payload when a
+Holding item crosses into Active Radar:
+
+```ts
+type RadarMove = {
+  sourceItemId: string;
+  sourceLayer: "holding" | "current_events" | "places_library" | "candidate_inbox";
+  moveTitle: string;
+  moveSummary: string;
+  whyThis: string;
+  whyNow?: string;
+  bestFor?: string[];
+  timingWindow?: string;
+  friction?: string[];
+  confidence: number;
+};
+```
+
+`lib/radar/moveComposer.ts` builds human copy from the enriched Radar item and
+strips engine-room terms such as Candidate Inbox, Source Graph, Holding,
+eligible, and promote-candidate. `lib/radar/moveShortlist.ts` compares similar
+lanes before promotion so eight similar ideas become one best-fit move and the
+rest stay in Holding/Library.
+
+The front-stage path is Candidate Inbox -> Library/Source Graph -> Holding ->
+Radar Move -> Active Radar card.
+
+Raw Candidate Inbox rows never skip straight to Radar. Durable Library places
+need timing or plan relevance before they become a move. Event Pulse rows need
+real timing/source detail. Holding is still the direct bridge, and the visible
+Radar count now uses the same `evaluateActiveRadarItem()` gate as the page
+loader.
+
 ## Taste Seed Importer
 
 `lib/tasteSeed/parser.ts` parses owner-provided markdown with these sections:

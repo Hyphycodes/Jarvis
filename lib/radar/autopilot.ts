@@ -16,7 +16,12 @@ import { processRefresh } from "@/lib/brain/refresher";
 import { runAmbientIntelligence } from "@/lib/intelligence/ambientRuns";
 import { buildJarvisContext } from "@/lib/intelligence/context";
 import { enrichRadarItem } from "@/lib/intelligence/core";
-import { isPromotableWhenUnderfilled } from "@/lib/intelligence/radarCurator";
+import {
+  isPromotableWhenUnderfilled,
+  mergeRadarIntelligencePayload,
+} from "@/lib/intelligence/radarCurator";
+import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
+import { shortlistRadarMoves } from "@/lib/radar/moveShortlist";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import { readLibraryHealth, type LibraryHealth } from "@/lib/library";
 import {
@@ -376,7 +381,7 @@ async function readAutopilotHealth(input: {
     library,
     dueSources,
   ] = await Promise.all([
-    input.supabase.from("surfaced_items").select("id", { count: "exact", head: true }).eq("user_id", input.userId).eq("destination", "radar").in("status", ["shown", "opened"]),
+    input.supabase.from("surfaced_items").select("*").eq("user_id", input.userId).eq("destination", "radar").in("status", ["shown", "opened"]).limit(RADAR_ACTIVE_ITEM_LIMIT * 2),
     input.supabase.from("surfaced_items").select("id", { count: "exact", head: true }).eq("user_id", input.userId).eq("destination", "holding").in("status", ["discovered", "shown", "opened"]),
     input.supabase.from("radar_candidate_inbox").select("id", { count: "exact", head: true }).eq("user_id", input.userId).in("status", ["new", "evaluated"]),
     input.supabase.from("intelligence_sources").select("id", { count: "exact", head: true }).eq("user_id", input.userId).in("status", ["testing", "watching", "cooldown"]),
@@ -388,8 +393,13 @@ async function readAutopilotHealth(input: {
   const eventFreshnessDays = discoveredAt
     ? Math.floor((Date.now() - new Date(discoveredAt).getTime()) / (24 * 60 * 60 * 1000))
     : null;
+  const activeRows = (activeRes.data ?? []) as SurfacedItemRow[];
+  const visibleActiveCount = activeRows
+    .map(rowToIndexedItem)
+    .filter((item) => evaluateActiveRadarItem(item).allowed)
+    .length;
   return {
-    activeCount: activeRes.count ?? 0,
+    activeCount: visibleActiveCount,
     holdingCount: holdingRes.count ?? 0,
     candidateInboxCount: inboxRes.count ?? 0,
     sourceCount: sourceRes.count ?? 0,
@@ -877,13 +887,15 @@ async function promoteHoldingWithService(input: {
     .in("status", ["discovered", "shown", "opened"])
     .order("score", { ascending: false, nullsFirst: false })
     .limit(40);
-  const activeItems = ((activeRows ?? []) as SurfacedItemRow[]).map(rowToIndexedItem);
+  const activeItems = ((activeRows ?? []) as SurfacedItemRow[])
+    .map(rowToIndexedItem)
+    .filter((item) => evaluateActiveRadarItem(item).allowed);
   const context = await buildJarvisContext({
     userId: input.userId,
     supabase: input.supabase,
     currentRadarItems: activeItems,
   });
-  const selected: Array<{ id: string; score: number; payload: Json }> = [];
+  const promotable: Array<{ id: string; radar: ReturnType<typeof enrichRadarItem>; row: SurfacedItemRow }> = [];
   const reasons: string[] = [];
   for (const row of (holdingRows ?? []) as SurfacedItemRow[]) {
     const item = rowToIndexedItem(row);
@@ -892,36 +904,36 @@ async function promoteHoldingWithService(input: {
       reasons.push(`${item.title}: ${radar.radarDisposition} · score ${radar.score.toFixed(2)} · confidence ${radar.confidence.toFixed(2)}.`);
       continue;
     }
-    selected.push({
-      id: row.id,
-      score: radar.score,
-      payload: {
-        ...(typeof row.payload === "object" && row.payload && !Array.isArray(row.payload) ? row.payload : {}),
-        autopilot_promotion: {
-          promoted_at: new Date().toISOString(),
-          reason: radar.reasonSurfaced,
-          score: radar.score,
-        },
-      } as Json,
-    });
-    if (selected.length >= input.slots) break;
+    promotable.push({ id: row.id, radar, row });
   }
+  const selected = shortlistRadarMoves(
+    promotable.map((entry) => entry.radar),
+    input.slots,
+  );
+  let promoted = 0;
   for (const item of selected) {
-    await input.supabase
+    const source = promotable.find((entry) => entry.id === item.item.id);
+    const payload = mergeRadarIntelligencePayload(source?.row.payload ?? item.item.rawPayload, item);
+    const { error } = await input.supabase
       .from("surfaced_items")
       .update({
         destination: "radar",
         status: "shown",
         score: item.score,
-        payload: item.payload,
+        payload,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", item.id)
+      .eq("id", item.item.id)
       .eq("user_id", input.userId);
+    if (error) reasons.push(`${item.title}: promotion write failed (${error.message}).`);
+    else {
+      promoted++;
+      reasons.push(`${item.title}: moved to Radar as a composed move.`);
+    }
   }
   return {
     reviewed: (holdingRows ?? []).length,
-    promoted: selected.length,
+    promoted,
     reasons,
   };
 }

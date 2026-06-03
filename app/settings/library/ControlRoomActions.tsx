@@ -33,20 +33,10 @@ export function ControlRoomActions({
 
   return (
     <div className="grid gap-2">
+      <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/35">
+        Primary
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => run("Bootstrap", () =>
-            fetch("/api/radar/autopilot", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ mode: "bootstrap" }),
-            }))}
-          className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/70 disabled:opacity-45"
-        >
-          Run Bootstrap
-        </button>
         <button
           type="button"
           disabled={pending}
@@ -58,38 +48,8 @@ export function ControlRoomActions({
             }))}
           className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/70 disabled:opacity-45"
         >
-          Run Autopilot
+          Run Now
         </button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => run("Foundation Sprint", () =>
-            fetch("/api/radar/autopilot", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ mode: "foundation_sprint", start: true, runNow: true }),
-            }))}
-          className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/70 disabled:opacity-45"
-        >
-          Start Sprint
-        </button>
-        <button
-          type="button"
-          disabled={pending || !foundationSprintEnabled}
-          onClick={() => run("Next Mission", () =>
-            fetch("/api/radar/autopilot", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ mode: "foundation_sprint", runNow: true }),
-            }))}
-          className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/70 disabled:opacity-35"
-        >
-          Run Next Mission
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           disabled={pending || !enabled}
@@ -112,6 +72,66 @@ export function ControlRoomActions({
           Resume
         </button>
       </div>
+      <details className="grid gap-2">
+        <summary className="cursor-pointer pt-2 text-[10px] uppercase tracking-editorial text-warm-ivory/35">
+          Advanced
+        </summary>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run("Bootstrap", () =>
+              fetch("/api/radar/autopilot", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ mode: "bootstrap" }),
+              }))}
+            className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/60 disabled:opacity-45"
+          >
+            Bootstrap
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run("Foundation Sprint", () =>
+              fetch("/api/radar/autopilot", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ mode: "foundation_sprint", start: true, runNow: true }),
+              }))}
+            className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/60 disabled:opacity-45"
+          >
+            Start Sprint
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={pending || !foundationSprintEnabled}
+            onClick={() => run("Next Mission", () =>
+              fetch("/api/radar/autopilot", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ mode: "foundation_sprint", runNow: true }),
+              }))}
+            className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/60 disabled:opacity-35"
+          >
+            Next Mission
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run("Promotion Review", () =>
+              fetch("/api/radar/autopilot", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ mode: "manual_force", force: true }),
+              }))}
+            className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/60 disabled:opacity-35"
+          >
+            Promotion Review
+          </button>
+        </div>
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -140,32 +160,20 @@ export function ControlRoomActions({
           Resume Sprint
         </button>
       </div>
-      <button
-        type="button"
-        disabled={pending || !activeRunId}
-        onClick={() => run("Stop", () =>
-          fetch("/api/radar/autopilot/stop", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ runId: activeRunId }),
-          }))}
-        className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/50 disabled:opacity-30"
-      >
-        Stop After Current Step
-      </button>
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => run("Promotion Review", () =>
-          fetch("/api/radar/autopilot", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ mode: "manual_force", force: true }),
-          }))}
-        className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/55 disabled:opacity-35"
-      >
-        Run Promotion Review
-      </button>
+        <button
+          type="button"
+          disabled={pending || !activeRunId}
+          onClick={() => run("Stop", () =>
+            fetch("/api/radar/autopilot/stop", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ runId: activeRunId }),
+            }))}
+          className="lux-surface-quiet min-h-11 rounded-[var(--radius-card)] px-3 text-[11px] uppercase tracking-editorial text-warm-ivory/50 disabled:opacity-30"
+        >
+          Stop After Current Step
+        </button>
+      </details>
       {message ? (
         <p className="text-[11px] leading-relaxed text-warm-ivory/45">
           {message}
