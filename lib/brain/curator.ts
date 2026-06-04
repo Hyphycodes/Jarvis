@@ -176,12 +176,24 @@ function renderCuratorPrompt(input: CurationInput, max: number): string {
       active_plan: context.activePlan,
       weather: context.weather,
       north_tags: context.northTags,
+      life_context: context.lifeContext
+        ? {
+            radar_now: context.lifeContext.radarComposition,
+            category_gaps: context.lifeContext.categoryGaps,
+            recent_outings: context.lifeContext.recentActivityByCategory,
+            occasions_ahead: context.lifeContext.upcomingOccasions,
+            active_north_pillars: context.lifeContext.activePillarTitles,
+          }
+        : null,
       max_selected: max,
       instructions: [
         "Select 0 to " + max + " items. 0 is a valid answer.",
         "Route strong-but-not-urgent items to destination:'holding'.",
         "Route timely, high-confidence items to destination:'radar'.",
         "Reject everything not selected.",
+        "If radar_now shows 2+ items in a category, require very high score to add a third.",
+        "Weight category_gaps higher — underrepresented categories get priority when strong candidates exist.",
+        "Surface items matching upcoming occasions (occasions_ahead) — prefer group-friendly when a cluster exists.",
       ],
       candidates,
     },

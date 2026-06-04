@@ -112,6 +112,21 @@ export type BrainContextPacket = {
     timezone: string;
   };
   people: PersonContext[];
+  /** Life context — what the founder's actual week looks like, so curation
+   *  reflects rhythm and gaps, not just taste. Optional so nothing breaks if
+   *  it isn't populated. */
+  lifeContext?: {
+    radarComposition: Record<string, number>; // { dining: 2, music: 0, activity: 1 }
+    categoryGaps: string[]; // categories with 0 items on Radar
+    recentActivityByCategory: Record<string, number>; // outings in last 14 days by category
+    upcomingOccasions: Array<{
+      personName: string;
+      occasionType: string;
+      daysOut?: number;
+      clusterNote?: string;
+    }>;
+    activePillarTitles: string[];
+  };
 };
 
 export type ScoredItem = {

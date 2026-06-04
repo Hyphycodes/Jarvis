@@ -310,6 +310,62 @@ export function computeNorthAlignment(input: {
 
 export function toBrainContextPacket(packet: FounderContextPacket): BrainContextPacket {
   const activePlan = packet.today.activePlan ?? packet.today.activePlans[0] ?? null;
+
+  // ── Life context ────────────────────────────────────────────────────────────
+
+  // Radar composition
+  const radarComposition: Record<string, number> = {};
+  for (const item of packet.radar.current) {
+    const cat = (item.category ?? item.type ?? "other") as string;
+    radarComposition[cat] = (radarComposition[cat] ?? 0) + 1;
+  }
+  const ALL_CATS = ["dining", "music", "activity", "style", "events", "culture"];
+  const categoryGaps = ALL_CATS.filter((c) => !radarComposition[c]);
+
+  // Recent activity by category from recentItemActions
+  const recentActivityByCategory: Record<string, number> = {};
+  for (const action of packet.behavior.recentItemActions) {
+    const status = action.status as string;
+    if (status === "completed" || status === "saved") {
+      const cat = (action.category ?? "other") as string;
+      recentActivityByCategory[cat] = (recentActivityByCategory[cat] ?? 0) + 1;
+    }
+  }
+
+  // Upcoming occasions from circle moments
+  const upcomingOccasions = packet.circle.upcomingMoments
+    .map((moment) => {
+      const t = moment.title.toLowerCase();
+      const occasionType =
+        t.includes("birthday") ? "birthday"
+        : t.includes("party") ? "party"
+        : t.includes("anniversary") || t.includes("milestone") ? "milestone"
+        : null;
+      if (!occasionType) return null;
+      const person = packet.circle.relevantPeople.find((p) => p.id === moment.personId);
+      return {
+        personName: person?.name ?? "Someone",
+        occasionType,
+        daysOut: undefined as number | undefined,
+        clusterNote: undefined as string | undefined,
+      };
+    })
+    .filter((o): o is NonNullable<typeof o> => o !== null)
+    .slice(0, 5);
+
+  // Cluster detection
+  if (upcomingOccasions.length >= 2) {
+    const names = upcomingOccasions.map((o) => o.personName).join(", ");
+    const note = `${upcomingOccasions.length}-person occasion cluster — ${names}`;
+    upcomingOccasions.forEach((o) => { o.clusterNote = note; });
+  }
+
+  // Active North pillars
+  const activePillarTitles = packet.north.pillars
+    .filter((p) => p.progress !== null && (p.progress as number) > 0)
+    .map((p) => p.title as string)
+    .slice(0, 4);
+
   return {
     now: packet.now,
     homeCity: packet.location.homeCity ?? undefined,
@@ -375,6 +431,13 @@ export function toBrainContextPacket(packet: FounderContextPacket): BrainContext
           : null,
       };
     }),
+    lifeContext: {
+      radarComposition,
+      categoryGaps,
+      recentActivityByCategory,
+      upcomingOccasions,
+      activePillarTitles,
+    },
   };
 }
 

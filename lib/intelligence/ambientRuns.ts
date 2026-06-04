@@ -23,6 +23,7 @@ import {
 import { expireOldCandidates, ingestCandidates } from "@/lib/sources/ingest";
 import { runDayOfPromotion } from "@/lib/scheduling/promoteItems";
 import { seedCanonicalSources } from "@/lib/library/seedSources";
+import { runOccasionEngine } from "@/lib/intelligence/occasionEngine";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -142,6 +143,11 @@ export async function runAmbientIntelligence(input: {
       }
     } catch (err) {
       summary.errors.push(`seed_sources: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      await runOccasionEngine(owner.id, supabase);
+    } catch (err) {
+      summary.errors.push(`occasions: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
       const promoted = await runDayOfPromotion();
