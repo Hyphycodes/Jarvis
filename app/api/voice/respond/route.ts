@@ -5,6 +5,7 @@ import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPromp
 import { buildChatMessages } from "@/lib/chat/buildChatMessages";
 import { buildCommandActionChips, routeChatIntent } from "@/lib/chat/routeChatIntent";
 import { handleImageDrop } from "@/lib/chat/handlers/handleImageDrop";
+import { handleLinkDrop, type LinkChatAttachment } from "@/lib/chat/handlers/handleLinkDrop";
 import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
 import { saveItem, passItem } from "@/lib/actions/items";
 import { createCanonicalMemory } from "@/lib/memory/memoryStore";
@@ -190,6 +191,7 @@ export async function POST(req: Request) {
       contextQuery: message,
     });
     const imageAttachment = attachments.find((a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image");
+    const linkAttachment = attachments.find((a): a is LinkChatAttachment => a.type === "link");
     let intakeResult: ChatIntakeResult | null = null;
 
     if (imageAttachment) {
@@ -199,6 +201,13 @@ export async function POST(req: Request) {
         attachment: imageAttachment,
         context,
         commitmentMode: routed.commitmentMode,
+      });
+    } else if (linkAttachment) {
+      intakeResult = await handleLinkDrop({
+        userId: owner.id,
+        message,
+        attachment: linkAttachment,
+        context,
       });
     } else {
       intakeResult = await handleTextObservation({

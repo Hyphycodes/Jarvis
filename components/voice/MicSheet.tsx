@@ -36,11 +36,10 @@ type AttachmentContext = {
   imageMediaType?: string;
 };
 
-type AttachmentTrayMode = "closed" | "place" | "link" | "photo";
-
 const VOICE_PREF_KEY = "jarvis_voice_output";
 const SESSION_KEY = "jarvis_session";
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -150,10 +149,8 @@ export function MicSheet({
   const [textInput, setTextInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [attachment, setAttachment] = useState<AttachmentContext | null>(null);
-  const [trayMode, setTrayMode] = useState<AttachmentTrayMode>("closed");
-  const [placeQuery, setPlaceQuery] = useState("");
-  const [linkInput, setLinkInput] = useState("");
-  const [trayLoading, setTrayLoading] = useState(false);
+  const [, setDetectedLinkUrl] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const [analyzingImage, setAnalyzingImage] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -215,8 +212,8 @@ export function MicSheet({
       setCurrentResponse("");
       setError(null);
       setPlanCard(null);
-      setTrayMode("closed");
       setAttachment(null);
+      setDetectedLinkUrl(null);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -262,6 +259,7 @@ export function MicSheet({
     };
     setMessages((prev) => [...prev, userMessage]);
     setTextInput("");
+    setDetectedLinkUrl(null);
     setState("thinking");
     setCurrentResponse("");
     setPlanCard(null);
@@ -384,6 +382,40 @@ export function MicSheet({
 
   const busy = state === "thinking" || state === "responding";
 
+  const detectLinkAttachment = useCallback((value: string) => {
+    const url = value.match(URL_RE)?.[0]?.replace(/[),.;!?]+$/, "") ?? null;
+    if (!url) {
+      setDetectedLinkUrl((current) => {
+        if (current) {
+          setAttachment((existing) => (
+            existing?.type === "link" && existing.url === current ? null : existing
+          ));
+        }
+        return null;
+      });
+      return;
+    }
+
+    setDetectedLinkUrl((current) => {
+      if (current === url) return current;
+      setAttachment((existing) => {
+        if (existing?.type === "image") return existing;
+        return {
+          type: "link",
+          label: url,
+          context: `User pasted link: ${url}`,
+          url,
+        };
+      });
+      return url;
+    });
+  }, []);
+
+  const handleTextInputChange = useCallback((value: string) => {
+    setTextInput(value);
+    detectLinkAttachment(value);
+  }, [detectLinkAttachment]);
+
   const handleTextSubmit = useCallback(() => {
     const txt = textInput.trim();
     if (!txt) return;
@@ -470,28 +502,8 @@ export function MicSheet({
 
   // ── Attachment tray ─────────────────────────────────────────────────────────
 
-  const handleLinkAttach = useCallback(async () => {
-    const url = linkInput.trim();
-    if (!url) return;
-    setTrayLoading(true);
-    try {
-      const res = await fetch("/api/voice/fetch-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = (await res.json()) as { ok?: boolean; title?: string; context?: string };
-      if (data.ok && data.context) {
-        setAttachment({ type: "link", label: data.title ?? url, context: data.context, url });
-      }
-    } catch { /* noop */ }
-    setLinkInput("");
-    setTrayMode("closed");
-    setTrayLoading(false);
-  }, [linkInput]);
-
   const handlePhotoAttach = useCallback(async (file: File) => {
-    setTrayLoading(true);
+    setPhotoLoading(true);
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -508,40 +520,7 @@ export function MicSheet({
         imageMediaType: file.type || "image/jpeg",
       });
     } catch { /* noop */ }
-    setTrayMode("closed");
-    setTrayLoading(false);
-  }, []);
-
-  // Google Places inline search (server-side via /api/)
-  const [placeResults, setPlaceResults] = useState<Array<{ name: string; address: string; placeId: string }>>([]);
-  const placeSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handlePlaceQuery = useCallback((q: string) => {
-    setPlaceQuery(q);
-    if (placeSearchTimeout.current) clearTimeout(placeSearchTimeout.current);
-    if (!q.trim()) { setPlaceResults([]); return; }
-    placeSearchTimeout.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/places/search?q=${encodeURIComponent(q)}`);
-        const data = (await res.json()) as { results?: Array<{ name: string; address: string; place_id: string }> };
-        setPlaceResults((data.results ?? []).slice(0, 5).map((r) => ({
-          name: r.name,
-          address: r.address,
-          placeId: r.place_id,
-        })));
-      } catch { setPlaceResults([]); }
-    }, 350);
-  }, []);
-
-  const handlePlaceSelect = useCallback((place: { name: string; address: string }) => {
-    setAttachment({
-      type: "place",
-      label: place.name,
-      context: `User attached place: ${place.name}, ${place.address}.`,
-    });
-    setPlaceQuery("");
-    setPlaceResults([]);
-    setTrayMode("closed");
+    setPhotoLoading(false);
   }, []);
 
   // ── Status ──────────────────────────────────────────────────────────────────
@@ -703,81 +682,16 @@ export function MicSheet({
         {attachment ? (
           <div className="mx-5 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-soft)] border border-white/[0.08] bg-white/[0.025] px-3 py-2">
             <AttachmentPreview attachment={attachment} />
-            <button type="button" onClick={() => setAttachment(null)} className="ml-2 shrink-0 text-[11px] text-warm-ivory/35 hover:text-warm-ivory/60">✕</button>
-          </div>
-        ) : null}
-
-        {/* Attachment tray */}
-        {trayMode !== "closed" ? (
-          <div
-            className="mx-4 mb-2 rounded-[var(--radius-soft)] border border-white/[0.07] bg-[#0c0c0b] px-4 py-3"
-            style={{ animation: "cross-fade 150ms ease" }}
-          >
-            {trayMode === "place" ? (
-              <div className="flex flex-col gap-2">
-                <input
-                  autoFocus
-                  type="text"
-                  value={placeQuery}
-                  onChange={(e) => handlePlaceQuery(e.target.value)}
-                  placeholder="Search a place…"
-                  className="w-full bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none"
-                />
-                {placeResults.length > 0 ? (
-                  <ul className="flex flex-col gap-1">
-                    {placeResults.map((p) => (
-                      <li key={p.placeId}>
-                        <button type="button" onClick={() => handlePlaceSelect(p)} className="w-full text-left">
-                          <div className="text-[13px] text-warm-ivory/85">{p.name}</div>
-                          <div className="text-[11px] text-warm-ivory/40">{p.address}</div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : trayMode === "link" ? (
-              <div className="flex items-center gap-2">
-                <input
-                  autoFocus
-                  type="url"
-                  value={linkInput}
-                  onChange={(e) => setLinkInput(e.target.value)}
-                  placeholder="Paste a URL…"
-                  className="flex-1 bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none"
-                  onKeyDown={(e) => { if (e.key === "Enter") void handleLinkAttach(); }}
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleLinkAttach()}
-                  disabled={trayLoading || !linkInput.trim()}
-                  className="text-[11px] uppercase tracking-[0.16em] text-muted-gold/70 disabled:opacity-40"
-                >
-                  {trayLoading ? "…" : "Attach"}
-                </button>
-              </div>
-            ) : trayMode === "photo" ? (
-              <div>
-                <input
-                  ref={photoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handlePhotoAttach(file);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={trayLoading}
-                  className="text-[13px] text-warm-ivory/70 disabled:opacity-40"
-                >
-                  {trayLoading ? "Loading…" : "Choose photo"}
-                </button>
-              </div>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setAttachment(null);
+                setDetectedLinkUrl(null);
+              }}
+              className="ml-2 shrink-0 text-[11px] text-warm-ivory/35 hover:text-warm-ivory/60"
+            >
+              ✕
+            </button>
           </div>
         ) : null}
 
@@ -786,44 +700,7 @@ export function MicSheet({
           className="flex shrink-0 flex-col"
           style={{ borderTop: "1px solid rgba(246,239,221,0.07)" }}
         >
-          {/* Tray icons row */}
-          {trayMode === "closed" ? (
-            <div className="flex items-center gap-4 px-5 pt-2 pb-1">
-              <TrayButton label="📍 Place" onClick={() => setTrayMode("place")} />
-              <TrayButton label="🔗 Link" onClick={() => setTrayMode("link")} />
-              <TrayButton label="📷 Photo" onClick={() => setTrayMode("photo")} />
-            </div>
-          ) : (
-            <button type="button" onClick={() => setTrayMode("closed")} className="px-5 pt-2 pb-1 text-left text-[11px] text-warm-ivory/35">
-              ↓ Close tray
-            </button>
-          )}
-
-          <div className="flex items-center gap-3 px-4 pb-3 pt-1">
-            <input
-              ref={textInputRef}
-              type="text"
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); }
-              }}
-              placeholder={isListening ? "Listening…" : "Type or tap mic…"}
-              disabled={busy}
-              className="flex-1 bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none disabled:opacity-40"
-            />
-
-            {textInput.trim() && !isListening ? (
-              <button
-                type="button"
-                onClick={handleTextSubmit}
-                disabled={busy}
-                className="shrink-0 text-[12px] uppercase tracking-[0.16em] text-muted-gold/70 hover:text-muted-gold disabled:opacity-40"
-              >
-                Send
-              </button>
-            ) : null}
-
+          <div className="flex items-center gap-3 px-4 py-3">
             {/* Mic toggle button */}
             <button
               type="button"
@@ -840,6 +717,48 @@ export function MicSheet({
               }}
             >
               <Mic size={15} />
+            </button>
+
+            <input
+              ref={textInputRef}
+              type="text"
+              value={textInput}
+              onChange={(e) => handleTextInputChange(e.target.value)}
+              onDrop={(e) => {
+                const droppedText = e.dataTransfer.getData("text/plain").trim();
+                if (!droppedText) return;
+                e.preventDefault();
+                const next = textInput ? `${textInput} ${droppedText}` : droppedText;
+                handleTextInputChange(next);
+                textInputRef.current?.focus();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); }
+              }}
+              placeholder={isListening ? "Listening…" : "Type or tap mic…"}
+              disabled={busy}
+              className="flex-1 bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none disabled:opacity-40"
+            />
+
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handlePhotoAttach(file);
+                e.currentTarget.value = "";
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Attach photo"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={busy || photoLoading}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.12] text-[16px] text-warm-ivory/55 transition-colors hover:border-muted-gold/40 hover:text-warm-ivory/85 disabled:opacity-40"
+            >
+              {photoLoading ? "…" : "📷"}
             </button>
           </div>
         </div>
@@ -902,18 +821,6 @@ function ChipButton({
       onClick={onClick}
       disabled={disabled}
       className="rounded-full border border-white/[0.12] px-3 py-1 text-[11px] text-warm-ivory/60 transition-all duration-150 hover:border-muted-gold/40 hover:text-warm-ivory/90 active:bg-muted-gold/10 disabled:opacity-40"
-    >
-      {label}
-    </button>
-  );
-}
-
-function TrayButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="text-[11px] text-warm-ivory/40 transition-colors hover:text-warm-ivory/70"
     >
       {label}
     </button>
