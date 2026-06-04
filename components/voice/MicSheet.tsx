@@ -173,7 +173,11 @@ export function MicSheet({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { start: rtStart, stop: rtStop, isListening } = useRealtimeVoice(handleTranscript);
+  const handleVoiceError = useCallback((msg: string) => {
+    setError(msg);
+  }, []);
+
+  const { start: rtStart, stop: rtStop, isListening } = useRealtimeVoice(handleTranscript, handleVoiceError);
 
   // ── Init on mount ───────────────────────────────────────────────────────────
 

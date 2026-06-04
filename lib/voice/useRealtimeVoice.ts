@@ -54,6 +54,7 @@ type RTEvent = {
 
 export function useRealtimeVoice(
   onTranscript: (text: string, final: boolean) => void,
+  onError: (msg: string) => void,
 ) {
   const [isListening, setIsListening] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -63,6 +64,24 @@ export function useRealtimeVoice(
   const transcriptRef = useRef("");
   const fallbackBlobRef = useRef<Blob[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
+  const runFallbackTranscription = useCallback(async (blob: Blob) => {
+    try {
+      const mimeType = blob.type || "audio/mp4";
+      const file = new File([blob], `audio.${audioExtensionForMime(mimeType)}`, { type: mimeType });
+      const form = new FormData();
+      form.append("audio", file);
+      const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string };
+      if (data.ok && data.text) {
+        onTranscript(data.text, true);
+      } else {
+        onError("Didn't catch that, try again.");
+      }
+    } catch {
+      onError("Didn't catch that, try again.");
+    }
+  }, [onTranscript, onError]);
 
   const stop = useCallback(() => {
     // Close worklet + audio context
@@ -83,33 +102,31 @@ export function useRealtimeVoice(
       }
     }
     wsRef.current?.close();
+
+    // Stop fallback recorder — checked BEFORE nulling wsRef so we can detect if WS was active
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      const recorder = mediaRecorderRef.current;
+      // If WS path was used but produced no transcript, fall back to blob
+      if (wsRef.current !== null && !transcriptRef.current) {
+        recorder.onstop = () => {
+          const blob = new Blob(fallbackBlobRef.current, {
+            type: recorder.mimeType || "audio/mp4",
+          });
+          if (blob.size > 0) {
+            void runFallbackTranscription(blob);
+          } else {
+            onError("Didn't catch that, try again.");
+          }
+          setIsListening(false);
+        };
+      }
+      recorder.stop();
+    }
+
     wsRef.current = null;
 
-    // Stop fallback recorder if running
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
-
     setIsListening(false);
-  }, []);
-
-  const runFallbackTranscription = useCallback(async (blob: Blob) => {
-    try {
-      const mimeType = blob.type || "audio/mp4";
-      const file = new File([blob], `audio.${audioExtensionForMime(mimeType)}`, { type: mimeType });
-      const form = new FormData();
-      form.append("audio", file);
-      const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string };
-      if (data.ok && data.text) {
-        onTranscript(data.text, true);
-      } else {
-        onTranscript("Didn't catch that, try again.", true);
-      }
-    } catch {
-      onTranscript("Didn't catch that, try again.", true);
-    }
-  }, [onTranscript]);
+  }, [onError, runFallbackTranscription]);
 
   const start = useCallback(async () => {
     if (isListening) return;
@@ -121,7 +138,7 @@ export function useRealtimeVoice(
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
     } catch {
-      onTranscript("Microphone access denied.", true);
+      onError("Microphone access denied.");
       return;
     }
 
@@ -211,10 +228,25 @@ export function useRealtimeVoice(
       // Wire AudioWorklet → WebSocket
       const audioCtx = new AudioContext({ sampleRate: 24000 });
       audioCtxRef.current = audioCtx;
+      try { await audioCtx.resume(); } catch { /* best-effort */ }
 
       const workletBlob = new Blob([WORKLET_SOURCE], { type: "application/javascript" });
       const workletUrl = URL.createObjectURL(workletBlob);
-      await audioCtx.audioWorklet.addModule(workletUrl);
+      try {
+        await audioCtx.audioWorklet.addModule(workletUrl);
+      } catch {
+        // AudioWorklet not supported or failed on this platform
+        // Fall through — fallback MediaRecorder is already capturing
+        audioCtx.close().catch(() => {});
+        sessionOk = false;
+        setIsListening(true);
+        fallbackRecorder.onstop = () => {
+          const blob = new Blob(fallbackBlobRef.current, { type: mimeType });
+          void runFallbackTranscription(blob);
+          setIsListening(false);
+        };
+        return;
+      }
       URL.revokeObjectURL(workletUrl);
 
       const source = audioCtx.createMediaStreamSource(stream);
@@ -258,7 +290,7 @@ export function useRealtimeVoice(
     if (!sessionOk) {
       // stop() will trigger fallbackRecorder.stop() → onstop → transcription
     }
-  }, [isListening, onTranscript, runFallbackTranscription]);
+  }, [isListening, onTranscript, onError, runFallbackTranscription]);
 
   return { start, stop, isListening };
 }
