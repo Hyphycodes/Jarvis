@@ -134,6 +134,7 @@ export type ScoredItem = {
   score: number;
   reasons: string[];
   northAlignment?: NorthAlignment;
+  crossSourceCount?: number; // how many distinct sources named this place
 };
 
 export type CurationInput = {

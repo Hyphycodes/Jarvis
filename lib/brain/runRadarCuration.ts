@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { listIndexItems, rowToIndexedItem } from "@/lib/index/repo";
@@ -167,10 +168,19 @@ export async function runRadarCuration(options: {
     velocityProfile,
   });
 
+  // Cross-source confidence pass — boost items named by multiple trusted
+  // sources. Runs before the article filter so boosted scores can rescue
+  // borderline items that might otherwise fall below the shortlist threshold.
+  const confidenceAdjusted = await applySourceConfidence(
+    scoredShortlist,
+    owner.id,
+    supabase,
+  );
+
   // Hard-block article/listicle items before they reach the Curator.
   // These are not places — they're editorial roundups that slipped
   // normalization. An empty Radar is correct. Junk on Radar is not.
-  const shortlist: ScoredItem[] = scoredShortlist.filter(
+  const shortlist: ScoredItem[] = confidenceAdjusted.filter(
     (s) => !isArticleItem(s.item),
   );
 
@@ -1131,6 +1141,104 @@ function isArticleItem(item: IndexedItem): boolean {
   }
 
   return false;
+}
+
+/**
+ * Batch cross-source confidence pass.
+ *
+ * Looks up how many distinct sources in place_candidates mentioned each
+ * shortlisted item by name. Applies a score modifier:
+ *   2 sources  → +0.05
+ *   3+ sources → +0.10
+ *   Any Circle mention tag → +0.08 additional (on top of source modifier)
+ *
+ * One batch DB query for all names — never N queries. Because
+ * place_candidates stores original casing, we fetch the user's recent
+ * candidates and normalize in memory rather than filtering by lowercased
+ * names in SQL (which would never match). Fails open: if the query errors,
+ * returns items unchanged.
+ */
+async function applySourceConfidence(
+  items: ScoredItem[],
+  userId: string,
+  supabase: SupabaseClient,
+): Promise<ScoredItem[]> {
+  if (items.length === 0) return items;
+
+  try {
+    // One batch query — recent candidates for this user. Normalize after fetch.
+    const { data } = await supabase
+      .from("place_candidates")
+      .select("name, discovered_via")
+      .eq("user_id", userId)
+      .order("discovered_at", { ascending: false })
+      .limit(1000);
+
+    // normalized_name → set of distinct source domains
+    const domainSetsMap = new Map<string, Set<string>>();
+    for (const row of (data ?? []) as Array<{
+      name: string | null;
+      discovered_via: string | null;
+    }>) {
+      if (!row.name) continue;
+      const normalizedName = row.name.toLowerCase().trim();
+      const domain = extractDomain(row.discovered_via);
+      if (!domain) continue;
+      let set = domainSetsMap.get(normalizedName);
+      if (!set) {
+        set = new Set();
+        domainSetsMap.set(normalizedName, set);
+      }
+      set.add(domain);
+    }
+
+    return items.map((s) => {
+      const normalizedTitle = s.item.title.toLowerCase().trim();
+      const sourceCount = domainSetsMap.get(normalizedTitle)?.size ?? 1;
+      const tags = new Set(s.item.tags.map((t) => t.toLowerCase()));
+
+      // Source count modifier
+      const sourceModifier =
+        sourceCount >= 3 ? 0.1 : sourceCount >= 2 ? 0.05 : 0;
+
+      // Circle mention modifier (independent signal, high trust)
+      const circleModifier =
+        tags.has("circle") ||
+        tags.has("circle-signal") ||
+        s.item.source === "contacts"
+          ? 0.08
+          : 0;
+
+      const totalModifier = sourceModifier + circleModifier;
+      if (totalModifier === 0) return s;
+
+      const newScore = Math.min(1, s.score + totalModifier);
+      const newReasons = [...s.reasons];
+      if (sourceModifier > 0) newReasons.push(`${sourceCount} independent sources`);
+      if (circleModifier > 0) newReasons.push("Circle signal");
+
+      return {
+        ...s,
+        score: Math.round(newScore * 100) / 100,
+        reasons: newReasons,
+        crossSourceCount: sourceCount,
+      };
+    });
+  } catch (err) {
+    // Fail open — return unmodified items rather than crashing curation
+    console.warn("[runRadarCuration] source confidence pass failed", err);
+    return items;
+  }
+}
+
+function extractDomain(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    // Not a URL — might be a source key like "lane:xyz"
+    return url.split(":")[0] ?? null;
+  }
 }
 
 function mergeObjectPayload(
