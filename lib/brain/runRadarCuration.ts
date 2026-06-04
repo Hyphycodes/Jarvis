@@ -453,28 +453,49 @@ async function attachBriefings(
   const rejectionReasonByItemId = new Map(
     decision.rejected.map((r) => [r.itemId, r.reason]),
   );
-  const selected = [];
-  let generated = 0;
 
-  for (const sel of decision.selected) {
-    const scored = scoreByItemId.get(sel.itemId);
-    if (!scored || generated >= maxBriefings) {
-      selected.push(sel);
-      continue;
-    }
-    const result = await editBriefing({
-      context,
-      scored,
-      selection: sel,
-      criticReason: rejectionReasonByItemId.get(sel.itemId),
-    });
-    if (!result.reused) generated++;
-    selected.push({
-      ...sel,
-      briefing: result.briefing,
-      briefingMeta: result.meta,
-    });
-  }
+  // Tag each selection with its original array index so we can reassemble in
+  // order after concurrent generation.
+  type IndexedSel = { sel: BrainDecision["selected"][number]; idx: number };
+
+  const toGenerate: IndexedSel[] = [];
+  decision.selected.forEach((sel, idx) => {
+    if (scoreByItemId.has(sel.itemId)) toGenerate.push({ sel, idx });
+  });
+
+  // Cap at maxBriefings — items beyond the cap pass through unchanged
+  // (same behaviour as the old sequential loop's `generated >= maxBriefings` guard).
+  const toBrief = toGenerate.slice(0, maxBriefings);
+
+  // Run up to 4 briefing calls concurrently. editBriefing is stateless so
+  // concurrent calls are safe.
+  type BriefResult = { sel: BrainDecision["selected"][number]; idx: number; reused: boolean };
+  const briefed = await withConcurrency<IndexedSel, BriefResult>(
+    toBrief,
+    4,
+    async ({ sel, idx }) => {
+      const scored = scoreByItemId.get(sel.itemId)!;
+      const result = await editBriefing({
+        context,
+        scored,
+        selection: sel,
+        criticReason: rejectionReasonByItemId.get(sel.itemId),
+      });
+      return {
+        sel: { ...sel, briefing: result.briefing, briefingMeta: result.meta },
+        idx,
+        reused: result.reused,
+      };
+    },
+  );
+
+  const generated = briefed.filter((r) => !r.reused).length;
+
+  // Reconstruct selected in original order. Items that weren't briefed
+  // (no scored entry, or over the maxBriefings cap) are left as-is via the
+  // `?? sel` fallback.
+  const enrichedByIdx = new Map(briefed.map((r) => [r.idx, r.sel]));
+  const selected = decision.selected.map((sel, i) => enrichedByIdx.get(i) ?? sel);
 
   return {
     ...decision,
@@ -999,6 +1020,25 @@ async function logDecisionRun(input: {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+/**
+ * Runs `fn` over `items` with at most `limit` concurrent calls at a time.
+ * Processes in chunks: each chunk fires simultaneously, then the next chunk
+ * starts. This keeps concurrency bounded without needing an external semaphore.
+ */
+async function withConcurrency<TIn, TOut>(
+  items: TIn[],
+  limit: number,
+  fn: (item: TIn) => Promise<TOut>,
+): Promise<TOut[]> {
+  const results: TOut[] = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
 
 function isNearRecentPass(
   item: IndexedItem,
