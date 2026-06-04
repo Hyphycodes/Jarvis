@@ -1477,6 +1477,14 @@ export interface Database {
         Args: { p_user_id: string };
         Returns: null;
       };
+      match_memories: {
+        Args: {
+          query_embedding: number[];
+          match_user_id: string;
+          match_limit?: number;
+        };
+        Returns: Database["public"]["Tables"]["memory_items"]["Row"][];
+      };
     };
     Enums: Record<never, never>;
     CompositeTypes: Record<never, never>;

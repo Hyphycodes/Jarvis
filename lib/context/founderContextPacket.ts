@@ -5,6 +5,8 @@ import { requireOwner } from "@/lib/auth";
 import { normalizeWeeklyRhythm } from "@/lib/schedule/weeklyRhythm";
 import { getCurrentWeather } from "@/lib/sources/openMeteo";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { hasEmbeddings } from "@/lib/ai/embeddings";
+import { semanticMemorySearch } from "@/lib/memory/memoryStore";
 import type {
   BehaviorSignalRow,
   CirclePersonRow,
@@ -40,6 +42,12 @@ export async function buildFounderContextPacket(options: {
   includeWeather?: boolean;
   now?: Date;
   supabase?: SupabaseClient;
+  /**
+   * When set (and an embedding provider is configured), `stablePreferences`
+   * are retrieved by semantic similarity to this query instead of by recency.
+   * Omit for cron/ambient/general packets — behavior is then unchanged.
+   */
+  contextQuery?: string;
 } = {}): Promise<FounderContextPacket> {
   const owner = options.userId ? null : await requireOwner();
   const userId = options.userId ?? owner?.id;
@@ -185,7 +193,30 @@ export async function buildFounderContextPacket(options: {
   const location = readLocation(profile);
   const weather = await readWeather(location, Boolean(options.includeWeather));
 
-  const memories = ((memoryRes.data ?? []) as MemoryItemRow[]).map(mapMemory);
+  // Stable preferences: semantic when a contextQuery is supplied and an
+  // embedding provider is configured, otherwise the recency query above.
+  // Semantic search self-falls-back to recency if no embedded rows exist.
+  let memories = ((memoryRes.data ?? []) as MemoryItemRow[]).map(mapMemory);
+  if (options.contextQuery && hasEmbeddings()) {
+    try {
+      const semantic = await semanticMemorySearch(options.contextQuery, userId, MEMORY_LIMIT);
+      if (semantic.length > 0) {
+        memories = semantic.slice(0, MEMORY_LIMIT).map((m) => ({
+          id: m.id,
+          content: m.content,
+          kind: m.type,
+          confidence: m.confidence,
+          source: m.source,
+          tags: m.tags,
+          createdAt: m.createdAt,
+          updatedAt: m.updatedAt,
+        }));
+      }
+    } catch (err) {
+      logQueryError("context.memory.semantic", err);
+    }
+  }
+  // Recent context stays recency-ordered — recency is correct there.
   const recentMemories = ((recentMemoryRes.data ?? []) as MemoryItemRow[]).map(mapMemory);
   const behaviorSignals = ((behaviorRes.data ?? []) as BehaviorSignalRow[]).map(mapBehavior);
   const actionRows = (actionsRes.data ?? []) as SurfacedItemRow[];

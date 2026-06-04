@@ -12,13 +12,19 @@ export async function buildChatContext(options: {
   userId?: string;
   includeWeather?: boolean;
   forceRefresh?: boolean;
+  /**
+   * When set, memory is retrieved semantically for this query. The cache is
+   * bypassed (read and write) because results are query-specific.
+   */
+  contextQuery?: string;
 } = {}): Promise<ChatContextPacket> {
   const owner = options.userId ? null : await requireOwner();
   const userId = options.userId ?? owner?.id;
   if (!userId) throw new Error("Missing user id");
 
   const cacheKey = `${userId}:${options.includeWeather ? "weather" : "no-weather"}`;
-  const cached = cache.get(cacheKey);
+  const useCache = !options.contextQuery;
+  const cached = useCache ? cache.get(cacheKey) : undefined;
   if (!options.forceRefresh && cached && cached.expiresAt > Date.now()) {
     return cached.packet;
   }
@@ -26,10 +32,13 @@ export async function buildChatContext(options: {
   const founderPacket = await buildFounderContextPacket({
     userId,
     includeWeather: options.includeWeather,
+    contextQuery: options.contextQuery,
   });
   const packet = toChatContextPacket(founderPacket);
 
-  cache.set(cacheKey, { expiresAt: Date.now() + CONTEXT_TTL_MS, packet });
+  if (useCache) {
+    cache.set(cacheKey, { expiresAt: Date.now() + CONTEXT_TTL_MS, packet });
+  }
   return packet;
 }
 

@@ -1,5 +1,6 @@
 import { getViewableProfileId, requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { embedOne } from "@/lib/ai/embeddings";
 import type { MemoryItemRow } from "@/lib/types/database";
 import type { MemoryItem, MemoryType } from "@/lib/memory/types";
 
@@ -51,7 +52,63 @@ export async function createCanonicalMemory(input: {
     .select("id")
     .single();
   if (error) throw new Error(error.message);
+
+  // Embed-on-write. Fully isolated from insert success — a failed or
+  // unconfigured embedding leaves the row without a vector and recency
+  // retrieval still works. Never throws back to the caller.
+  try {
+    const embedInput = [input.content, ...(input.tags ?? [])]
+      .filter(Boolean)
+      .join(" ");
+    const embedding = await embedOne(embedInput);
+    if (embedding) {
+      await supabase
+        .from("memory_items")
+        .update({ embedding })
+        .eq("id", data.id)
+        .eq("user_id", owner.id);
+    }
+  } catch (err) {
+    console.error("[memory] embed-on-write failed", err);
+  }
+
   return data.id;
+}
+
+/**
+ * Semantic memory retrieval via pgvector cosine distance.
+ *
+ * Embeds `contextQuery` and returns the closest active memories for the user.
+ * Falls back to recency-ordered `listActiveMemory()` whenever embeddings are
+ * unavailable (no provider key, embed failure) or no embedded rows exist yet.
+ */
+export async function semanticMemorySearch(
+  contextQuery: string,
+  userId: string,
+  limit = 8,
+): Promise<MemoryItem[]> {
+  const query = contextQuery.trim();
+  if (!query) return listActiveMemory();
+
+  const embedding = await embedOne(query);
+  if (!embedding) return listActiveMemory();
+
+  try {
+    const supabase = await getServerSupabase();
+    const { data, error } = await supabase.rpc("match_memories", {
+      query_embedding: embedding,
+      match_user_id: userId,
+      match_limit: limit,
+    });
+    if (error) throw new Error(error.message);
+
+    const rows = (data ?? []) as MemoryItemRow[];
+    if (rows.length === 0) return listActiveMemory();
+    return rows.map(toMemoryItem);
+  } catch (err) {
+    console.error("[memory] semanticMemorySearch failed", err);
+    return listActiveMemory();
+  }
 }
 
 export function toMemoryItem(row: MemoryItemRow): MemoryItem {

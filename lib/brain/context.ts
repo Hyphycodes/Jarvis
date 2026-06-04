@@ -11,6 +11,8 @@ export async function buildBrainContext(
     userId?: string;
     now?: Date;
     supabase?: SupabaseClient;
+    /** Forwarded to the founder packet for semantic memory retrieval. */
+    contextQuery?: string;
   } = {},
 ): Promise<BrainContextPacket> {
   const packet = await buildFounderContextPacket(options);

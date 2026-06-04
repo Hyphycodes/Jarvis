@@ -184,7 +184,11 @@ export async function POST(req: Request) {
 
     const committedActionType = autoCommit?.success ? autoCommitChip?.action_type : undefined;
 
-    const context = await buildChatContext({ userId: owner.id, includeWeather: false });
+    const context = await buildChatContext({
+      userId: owner.id,
+      includeWeather: false,
+      contextQuery: message,
+    });
     const imageAttachment = attachments.find((a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image");
     let intakeResult: ChatIntakeResult | null = null;
 
