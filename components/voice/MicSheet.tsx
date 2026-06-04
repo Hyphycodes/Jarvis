@@ -175,9 +175,10 @@ export function MicSheet({
 
   const handleVoiceError = useCallback((msg: string) => {
     setError(msg);
+    setState("idle"); // failed mic attempt must not leave the sheet stuck in "thinking"
   }, []);
 
-  const { start: rtStart, stop: rtStop, isListening } = useRealtimeVoice(handleTranscript, handleVoiceError);
+  const { start: rtStart, stop: rtStop, release: rtRelease, isListening } = useRealtimeVoice(handleTranscript, handleVoiceError);
 
   // ── Init on mount ───────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ export function MicSheet({
   useEffect(() => {
     if (!open) {
       if (messages.length > 0) saveSession(messages);
-      if (isListening) rtStop();
+      rtRelease(); // stop recorder + release the retained mic stream when the sheet closes
       setState("idle");
       setCurrentResponse("");
       setError(null);
@@ -224,12 +225,12 @@ export function MicSheet({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentResponse]);
 
-  // Sync state with isListening
+  // Sync state with isListening. Only drive "listening" here — the transition
+  // to "thinking" is owned by handleSendMessage (real transcript) and the
+  // transition to "idle" by handleVoiceError (nothing captured).
   useEffect(() => {
     if (isListening) {
       setState("listening");
-    } else if (state === "listening") {
-      setState("thinking");
     }
   }, [isListening]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -237,8 +238,8 @@ export function MicSheet({
 
   const handleToggleMic = useCallback(async () => {
     if (isListening) {
+      // Let the transcript/error path own the next state — don't flash "thinking".
       rtStop();
-      setState("thinking");
     } else if (state === "idle") {
       haptic(10);
       await rtStart();

@@ -29,7 +29,7 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
 
   const res = await fetch(`${BASE}/speech-to-text`, {
     method: "POST",
-    headers: { xi_api_key: apiKey() },
+    headers: { "xi-api-key": apiKey() },
     body: form,
   });
 
@@ -70,7 +70,7 @@ export async function synthesizeSpeech(text: string): Promise<ArrayBuffer> {
   const res = await fetch(`${BASE}/text-to-speech/${voiceId()}`, {
     method: "POST",
     headers: {
-      xi_api_key: apiKey(),
+      "xi-api-key": apiKey(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
