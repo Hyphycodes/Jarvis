@@ -692,9 +692,6 @@ function shouldRejectSearchResult(input: {
   if (/near me|coupon|groupon|tripadvisor|yelp|directory|yellow pages|mapquest|trivago|hotel deals|men'?s wearhouse/i.test(haystack)) {
     return true;
   }
-  if (/^(best|top)\s+\d+\b/i.test(title) && !extractLeadName(title, snippet)) {
-    return true;
-  }
   if (/ultimate guide|things to do|everything you need to know/i.test(haystack)) {
     return true;
   }
@@ -707,6 +704,32 @@ function shouldRejectSearchResult(input: {
   if (input.age && /\b(20[0-2][0-4]|[2-9]\s+years?\s+ago)\b/i.test(input.age)) {
     return true;
   }
+
+  // "Best X in Chicago" without a leading number (already catches "Best 10 X")
+  if (/^(best|top)\s+[a-z]/i.test(title) && !extractLeadName(title, snippet)) {
+    return true;
+  }
+
+  // List/guide article titles that won't contain a specific named place
+  if (/\byour\s+guide\s+to\b|\bcomplete\s+guide\b|\bguide\s+to\s+the\b/i.test(title)) {
+    return true;
+  }
+
+  // "Chicago Style: ..." or "City Name: ..." editorial framing = article, not a place
+  if (/^[A-Z][a-z]+ (Style|Guide|Scene|Dining|Living|Life):\s/i.test(title)) {
+    return true;
+  }
+
+  // "X of the City's Best Y" or "X of Chicago's Best Y" — still a list
+  if (/\bof\s+(?:the\s+)?(?:chicago'?s?|city'?s?)\s+best\b/i.test(title)) {
+    return true;
+  }
+
+  // Social posts that slipped the domain check (contains hashtag + no real venue signal)
+  if (/#\w+/.test(title) && /instagram|tiktok|twitter|x\.com/i.test(input.url ?? "")) {
+    return true;
+  }
+
   return false;
 }
 

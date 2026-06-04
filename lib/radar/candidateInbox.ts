@@ -78,6 +78,25 @@ export async function upsertCandidateInboxItem(input: {
     .maybeSingle();
   const existingId = (existing as { id?: string; status?: string } | null)?.id;
 
+  // Secondary dedup: same normalized title from a different URL.
+  // Catches the same article ingested from two different sources. This is a
+  // soft dedup — it skips rather than merging, which is correct since the same
+  // article from two sources carries the same junk content either way.
+  if (!existingId) {
+    const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const { data: titleMatch } = await supabase
+      .from("radar_candidate_inbox")
+      .select("id, status")
+      .eq("user_id", input.userId)
+      .ilike("title", normalizedTitle.slice(0, 80)) // first 80 chars, case-insensitive
+      .maybeSingle();
+    const titleMatchId = (titleMatch as { id?: string } | null)?.id;
+    if (titleMatchId) {
+      // Don't update — just skip the duplicate.
+      return "skipped";
+    }
+  }
+
   if (existingId) {
     const { error } = await supabase
       .from("radar_candidate_inbox")

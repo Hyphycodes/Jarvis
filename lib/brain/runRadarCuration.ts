@@ -153,7 +153,7 @@ export async function runRadarCuration(options: {
     context.founder.timezone,
   );
 
-  const shortlist: ScoredItem[] = shortlistByScore(pool, {
+  const scoredShortlist: ScoredItem[] = shortlistByScore(pool, {
     homeLat: context.homeLat,
     homeLng: context.homeLng,
     currentWeather: context.weather
@@ -166,6 +166,13 @@ export async function runRadarCuration(options: {
     maxItems: options.maxShortlist ?? RADAR_SHORTLIST_LIMIT,
     velocityProfile,
   });
+
+  // Hard-block article/listicle items before they reach the Curator.
+  // These are not places — they're editorial roundups that slipped
+  // normalization. An empty Radar is correct. Junk on Radar is not.
+  const shortlist: ScoredItem[] = scoredShortlist.filter(
+    (s) => !isArticleItem(s.item),
+  );
 
   // 6.3 — Cadence-aware aperture
   const cadence = await inferRecentCadence({ userId: owner.id, supabase });
@@ -1096,6 +1103,34 @@ function jaccard(a: string, b: string): number {
 
 function uniq<T>(values: T[]): T[] {
   return Array.from(new Set(values));
+}
+
+/**
+ * Deterministic article/listicle detector. Removes items that are editorial
+ * roundups rather than specific places before the Curator ever sees them.
+ */
+function isArticleItem(item: IndexedItem): boolean {
+  const title = item.title;
+  const tags = new Set(item.tags);
+
+  // Explicit tag from normalization: web-result without a lead extraction =
+  // the article itself, not a place.
+  if (tags.has("web-result") && !tags.has("article-lead")) {
+    const looksLikeArticle =
+      /^(best|top)\s+[a-z]/i.test(title) ||
+      /\byour guide to\b|\bcomplete guide\b/i.test(title) ||
+      /\bof\s+(?:chicago'?s?|the\s+city'?s?)\s+best\b/i.test(title) ||
+      /\b(style|guide|scene):\s/i.test(title) ||
+      /^the best .{5,} in /i.test(title);
+    if (looksLikeArticle) return true;
+  }
+
+  // Instagram/social posts that aren't events.
+  if (tags.has("social_noise") && !tags.has("events") && item.type !== "event") {
+    return true;
+  }
+
+  return false;
 }
 
 function mergeObjectPayload(
