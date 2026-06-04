@@ -24,6 +24,9 @@ import { expireOldCandidates, ingestCandidates } from "@/lib/sources/ingest";
 import { runDayOfPromotion } from "@/lib/scheduling/promoteItems";
 import { seedCanonicalSources } from "@/lib/library/seedSources";
 import { runOccasionEngine } from "@/lib/intelligence/occasionEngine";
+import { runNewListingMonitor } from "@/lib/intelligence/newListingMonitor";
+import { runNetworkSignalAgent } from "@/lib/intelligence/networkSignalAgent";
+import { runSocialProofAggregator } from "@/lib/intelligence/socialProofAggregator";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -148,6 +151,23 @@ export async function runAmbientIntelligence(input: {
       await runOccasionEngine(owner.id, supabase);
     } catch (err) {
       summary.errors.push(`occasions: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // Signal-depth agents: Circle mentions first (in-process, fast), then the
+    // external Tavily-backed monitors (slower).
+    try {
+      await runNetworkSignalAgent(owner.id, supabase);
+    } catch (err) {
+      summary.errors.push(`network_signal: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      await runNewListingMonitor(owner.id);
+    } catch (err) {
+      summary.errors.push(`new_listings: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      await runSocialProofAggregator(owner.id);
+    } catch (err) {
+      summary.errors.push(`social_proof: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
       const promoted = await runDayOfPromotion();
