@@ -6,6 +6,9 @@ import { buildChatMessages } from "@/lib/chat/buildChatMessages";
 import { buildCommandActionChips, routeChatIntent } from "@/lib/chat/routeChatIntent";
 import { handleImageDrop } from "@/lib/chat/handlers/handleImageDrop";
 import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
+import { saveItem, passItem } from "@/lib/actions/items";
+import { createCanonicalMemory } from "@/lib/memory/memoryStore";
+import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
 import type { ConversationMessage } from "@/lib/brain/intentClassifier";
 import type { ChatAttachment, ChatChip, ChatIntakeResult } from "@/lib/chat/types";
 
@@ -60,6 +63,72 @@ function mergeChips(...groups: Array<ChatChip[] | undefined>): ChatChip[] {
   return chips.slice(0, 5);
 }
 
+// ── Auto-commit ───────────────────────────────────────────────────────────────
+// High-confidence, low-stakes intents that Jarvis executes immediately
+// without requiring a chip tap.
+
+type AutoCommitType = "save_item" | "pass_item" | "remember";
+
+function isAutoCommitType(type: unknown): type is AutoCommitType {
+  return type === "save_item" || type === "pass_item" || type === "remember";
+}
+
+async function executeHighConfidenceAction(
+  actionType: AutoCommitType,
+  context: { itemId?: string; content?: string; userId: string },
+): Promise<{ success: boolean; confirmationText: string }> {
+  try {
+    if (actionType === "save_item") {
+      if (!context.itemId) return { success: false, confirmationText: "" };
+      await saveItem({ itemId: context.itemId });
+      await recordChatBehaviorSignal({
+        userId: context.userId,
+        signalType: "item.save",
+        objectType: "radar_item",
+        objectId: context.itemId,
+        metadata: { source: "voice_auto_commit" },
+      });
+      return { success: true, confirmationText: "Saved." };
+    }
+    if (actionType === "pass_item") {
+      if (!context.itemId) return { success: false, confirmationText: "" };
+      await passItem({ itemId: context.itemId });
+      await recordChatBehaviorSignal({
+        userId: context.userId,
+        signalType: "item.pass",
+        objectType: "radar_item",
+        objectId: context.itemId,
+        metadata: { source: "voice_auto_commit" },
+      });
+      return { success: true, confirmationText: "Passed." };
+    }
+    // actionType === "remember"
+    if (!context.content) return { success: false, confirmationText: "" };
+    const memoryId = await createCanonicalMemory({
+      type: "confirmed_behavior",
+      content: context.content,
+      confidence: 0.72,
+      source: "explicit",
+      tags: ["voice", "auto_commit"],
+      metadata: { source: "voice_auto_commit" },
+    });
+    await recordChatBehaviorSignal({
+      userId: context.userId,
+      signalType: "memory.accept",
+      objectType: "memory",
+      objectId: memoryId,
+      metadata: { source: "voice_auto_commit", content: context.content },
+    });
+    return { success: true, confirmationText: "Got it, I'll remember that." };
+  } catch (err) {
+    console.error("[voice.respond] auto-commit failed", {
+      actionType,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { success: false, confirmationText: "" };
+  }
+}
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -96,6 +165,25 @@ export async function POST(req: Request) {
 
     const routed = routeChatIntent({ message, history, attachments });
     const commandChips = buildCommandActionChips({ message, sheetContext });
+
+    // ── Auto-commit detection ────────────────────────────────────────────────
+    // If a command chip is one of the three low-stakes auto-commit types,
+    // execute it immediately and skip the chip from the response.
+    const autoCommitChip = commandChips.find((chip) => isAutoCommitType(chip.action_type));
+    let autoCommit: { success: boolean; confirmationText: string } | null = null;
+
+    if (autoCommitChip && isAutoCommitType(autoCommitChip.action_type)) {
+      const payload = autoCommitChip.payload ?? {};
+      const itemId = typeof payload.item_id === "string" ? payload.item_id : undefined;
+      const content = typeof payload.memory_content === "string" ? payload.memory_content : undefined;
+      autoCommit = await executeHighConfidenceAction(
+        autoCommitChip.action_type,
+        { itemId, content, userId: owner.id },
+      );
+    }
+
+    const committedActionType = autoCommit?.success ? autoCommitChip?.action_type : undefined;
+
     const context = await buildChatContext({ userId: owner.id, includeWeather: false });
     const imageAttachment = attachments.find((a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image");
     let intakeResult: ChatIntakeResult | null = null;
@@ -116,7 +204,13 @@ export async function POST(req: Request) {
       });
     }
 
-    const actionChips = mergeChips(commandChips, routed.chips, intakeResult?.chips);
+    const actionChips = mergeChips(
+      committedActionType
+        ? commandChips.filter((chip) => chip.action_type !== committedActionType)
+        : commandChips,
+      routed.chips,
+      intakeResult?.chips,
+    );
 
     const client = getAnthropicClient();
 
@@ -161,6 +255,11 @@ export async function POST(req: Request) {
           radar_item_id: intakeResult?.radarItemId,
           planning_state: intakeResult?.state,
         });
+
+        // Prepend auto-commit confirmation before the LLM stream
+        if (autoCommit?.success && autoCommit.confirmationText) {
+          send({ type: "token", text: autoCommit.confirmationText + " " });
+        }
 
         // Start streaming from Anthropic
         const stream = client.messages.stream({
