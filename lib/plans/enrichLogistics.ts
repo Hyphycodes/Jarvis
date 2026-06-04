@@ -14,6 +14,11 @@ import { getViewableProfileId } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { hasMapbox, geocode } from "@/lib/sources/mapbox";
 import { getDailyForecast } from "@/lib/sources/openMeteo";
+import {
+  hasGooglePlaces,
+  nearbyPlaces,
+  type GooglePlace,
+} from "@/lib/sources/googlePlaces";
 import type { LoadedPlan } from "@/lib/plans/loadPlan";
 import type { PlanBrief, PlanInfoBlock } from "@/lib/plans/planBrief";
 
@@ -23,15 +28,50 @@ export async function enrichInfoStrip(
 ): Promise<PlanInfoBlock[]> {
   const blocks = brief.infoStrip.map((b) => ({ ...b }));
 
-  const [weather, inArea] = await Promise.all([
+  const [weather, parking, inArea] = await Promise.all([
     resolveWeather(brief, loaded).catch(() => null),
+    resolveParking(brief, loaded).catch(() => null),
     resolveInArea(brief, loaded).catch(() => null),
   ]);
 
   if (weather) blocks[1] = weather;
+  if (parking) blocks[2] = parking;
   if (inArea) blocks[3] = inArea;
 
   return blocks;
+}
+
+async function resolveParking(
+  brief: PlanBrief,
+  loaded: LoadedPlan,
+): Promise<PlanInfoBlock | null> {
+  if (!hasGooglePlaces()) return null;
+
+  const coords = await venueCoords(loaded);
+  if (!coords) return null;
+
+  // Search for parking lots/garages within 400m of the venue.
+  const places = await nearbyPlaces({
+    lat: coords.lat,
+    lng: coords.lng,
+    radiusMeters: 400,
+    includedTypes: ["parking"],
+    maxResults: 3,
+  }).catch(() => [] as GooglePlace[]);
+
+  if (!places.length) return null;
+
+  // Pick the closest / first result.
+  const lot = places[0];
+  const name = lot.displayName?.text ?? "Parking nearby";
+  const distance = lot.shortFormattedAddress ?? "nearby";
+
+  return {
+    label: "PARKING",
+    value: name,
+    sub: distance,
+    icon: "parking",
+  };
 }
 
 async function resolveWeather(

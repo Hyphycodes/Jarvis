@@ -228,6 +228,7 @@ function renderPrompt(
         tags: item.tags,
         reasons: item.reasons,
         score: item.score,
+        plan_shape: detectPlanShape(item), // tells the LLM what kind of plan this is
       },
       consideration_brief: {
         verdict: brief.verdict,
@@ -271,7 +272,10 @@ function renderPrompt(
         "Use supplemental place details for verification only; do not claim a reservation or booking exists.",
         "Use cost_estimate and party size to write a practical cost section when relevant.",
         "For products, style, articles, ideas, land, and creative inspiration, prefer research/compare/verify steps over fake execution logistics.",
-        "Include 'detours' only when truly worth it. 0 is valid.",
+        "For 'detours' and 'after' sections: structure as satellites — specific named places with what they are, why they fit, distance/timing, and rough cost. Format: one paragraph intro, then each satellite as a bullet: '**Name** — [what it is, why it fits, ~X min away, ~$Y]'. Max 2 before, 2 instead, 2 after. If nothing genuinely fits, omit the section entirely.",
+        "Include an 'alternatives' section with 2–3 pivot options (if you change your mind at the last minute, these are the real nearby options). Same satellite bullet format.",
+        "For shape 'occasion': focus sections on contribution (gift ideas in 'detours'), attendance logistics in 'before', and relational context in 'notes'.",
+        "For shape 'acquisition': structure 'before' as sourcing options with prices and where to get them.",
         "Set effort_level and spending_posture honestly.",
         "Set status to 'draft'. Activation is a user action.",
         "Set source_item_id to the provided item id.",
