@@ -22,6 +22,7 @@ import {
 } from "@/lib/sources/gather";
 import { expireOldCandidates, ingestCandidates } from "@/lib/sources/ingest";
 import { runDayOfPromotion } from "@/lib/scheduling/promoteItems";
+import { seedCanonicalSources } from "@/lib/library/seedSources";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -128,6 +129,20 @@ export async function runAmbientIntelligence(input: {
   }
 
   if (runType === "daily_maintenance") {
+    // Auto-seed canonical sources when registry is empty (first run).
+    // Idempotent — skips sources that already exist, never downgrades earned trust.
+    try {
+      const countRes = await supabase
+        .from("intelligence_sources")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", owner.id);
+      const count: number = countRes.count ?? 0;
+      if (count < 10) {
+        await seedCanonicalSources(owner.id);
+      }
+    } catch (err) {
+      summary.errors.push(`seed_sources: ${err instanceof Error ? err.message : String(err)}`);
+    }
     try {
       const promoted = await runDayOfPromotion();
       summary.promoted_today = promoted.promoted;
