@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { DayPlanProvider } from "@/lib/dayPlanStore";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 const instrumentSerif = Instrument_Serif({
   weight: "400",
@@ -48,6 +49,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Jarvis" />
       </head>
       <body className="bg-near-black text-warm-ivory antialiased">
+        <ServiceWorkerRegister />
         <DayPlanProvider>{children}</DayPlanProvider>
       </body>
     </html>

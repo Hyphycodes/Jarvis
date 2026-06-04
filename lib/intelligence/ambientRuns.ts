@@ -38,6 +38,9 @@ import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
 import { detectAndProposePatterns } from "@/lib/intelligence/patternDetector";
 import { recomputeNorth } from "@/lib/north/recomputeNorth";
 import { safeWriteIntelligenceTrace } from "@/lib/brain/intelligenceTrace";
+import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
+import { hasVapid, sendPushNotification } from "@/lib/push/send";
+import type { PushSubscriptionRow, SurfacedItemRow } from "@/lib/types/database";
 
 export type AmbientRunSummary = {
   ok: boolean;
@@ -463,5 +466,107 @@ function safeHome() {
     return getDefaultLocation();
   } catch {
     return null;
+  }
+}
+
+// ── Evening Active Mode push ─────────────────────────────────────────────────
+
+export type EveningPushSummary = {
+  userId: string;
+  sent: number;
+  skipped?: string;
+};
+
+/**
+ * Evening Active Mode. Daily maintenance runs at noon UTC; this is the
+ * separate wind-down nudge. Fires a push only when (a) it is the user's local
+ * evening (17:00–20:00), and (b) there is a fresh, strong Active Radar item
+ * worth surfacing. Never sends a generic "check Jarvis" — silence is the
+ * default. Never throws.
+ */
+export async function runEveningBriefPush(
+  userId: string,
+): Promise<EveningPushSummary> {
+  try {
+    if (!hasVapid()) return { userId, sent: 0, skipped: "vapid_not_configured" };
+
+    const supabase = getSupabaseServiceClient();
+
+    // 1. Timezone (profiles.timezone; default America/Chicago)
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("timezone")
+      .eq("id", userId)
+      .maybeSingle();
+    const timezone = profile?.timezone || "America/Chicago";
+
+    // 2. Local-hour gate — only the 17:00–20:00 wind-down window
+    const localHour = getLocalHour(new Date(), timezone);
+    if (localHour < 17 || localHour > 20) {
+      return { userId, sent: 0, skipped: `outside_window(${localHour}h)` };
+    }
+
+    // 3. Subscriptions
+    const { data: subs } = await supabase
+      .from("push_subscriptions")
+      .select("*")
+      .eq("user_id", userId);
+    const subscriptions = (subs ?? []) as PushSubscriptionRow[];
+    if (subscriptions.length === 0) {
+      return { userId, sent: 0, skipped: "no_subscriptions" };
+    }
+
+    // 4. Strongest fresh Active Radar item (shown, updated in last 24h)
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: items } = await supabase
+      .from("surfaced_items")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("destination", "radar")
+      .eq("status", "shown")
+      .gte("updated_at", since)
+      .order("score", { ascending: false, nullsFirst: false })
+      .limit(1);
+    const top = ((items ?? []) as SurfacedItemRow[])[0];
+    if (!top || !top.title) {
+      return { userId, sent: 0, skipped: "no_worthy_items" };
+    }
+
+    // 5. Payload
+    const briefing = readBriefingFromPayload(top.payload);
+    const whyNow = briefing?.why_now?.trim();
+    const body = whyNow ? `${top.title} — ${whyNow}` : top.title;
+    const payload = { title: "Tonight on Jarvis", body, url: "/" };
+
+    // 6. Send to every registered subscription
+    let sent = 0;
+    for (const sub of subscriptions) {
+      await sendPushNotification(
+        { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+        payload,
+      );
+      sent += 1;
+    }
+    return { userId, sent };
+  } catch (err) {
+    console.error("[push.evening] failed", {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { userId, sent: 0, skipped: "error" };
+  }
+}
+
+function getLocalHour(date: Date, timeZone: string): number {
+  try {
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hour12: false,
+      timeZone,
+    }).format(date);
+    const hour = parseInt(formatted, 10);
+    return Number.isFinite(hour) ? hour % 24 : date.getUTCHours();
+  } catch {
+    return date.getUTCHours();
   }
 }

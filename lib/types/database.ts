@@ -1466,6 +1466,36 @@ export interface Database {
         };
         Relationships: [];
       };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          endpoint?: string;
+          p256dh?: string;
+          auth?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -1530,6 +1560,8 @@ export type NorthPillarRow =
   Database["public"]["Tables"]["north_pillars"]["Row"];
 export type NorthSignalRow =
   Database["public"]["Tables"]["north_signals"]["Row"];
+export type PushSubscriptionRow =
+  Database["public"]["Tables"]["push_subscriptions"]["Row"];
 export type BrainDecisionRunRow =
   Database["public"]["Tables"]["brain_decision_runs"]["Row"];
 export type IntelligenceTraceRow =
