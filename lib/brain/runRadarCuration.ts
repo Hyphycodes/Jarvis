@@ -19,6 +19,7 @@ import {
 import { runCurator, summarizeContext } from "@/lib/brain/curator";
 import { runCritic } from "@/lib/brain/critic";
 import { shortlistByScore } from "@/lib/brain/router";
+import { getLaneVelocity } from "@/lib/north/laneVelocity";
 import { inferRecentCadence } from "@/lib/brain/lifeCadence";
 import {
   buildIntelligenceReason,
@@ -146,6 +147,12 @@ export async function runRadarCuration(options: {
     .map((a) => a.category)
     .filter((c): c is string => typeof c === "string");
 
+  const velocityProfile = getLaneVelocity(
+    context.recentSignals,
+    now,
+    context.founder.timezone,
+  );
+
   const shortlist: ScoredItem[] = shortlistByScore(pool, {
     homeLat: context.homeLat,
     homeLng: context.homeLng,
@@ -157,6 +164,7 @@ export async function runRadarCuration(options: {
     avoidKeywords: context.founder.avoidKeywords,
     dealbreakers: context.founder.dealbreakers,
     maxItems: options.maxShortlist ?? RADAR_SHORTLIST_LIMIT,
+    velocityProfile,
   });
 
   // 6.3 — Cadence-aware aperture

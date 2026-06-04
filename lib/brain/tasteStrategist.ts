@@ -29,6 +29,7 @@ import {
   HOLDING_ITEM_LIMIT,
 } from "@/lib/brain/constants";
 import { getSeasonalContext } from "@/lib/brain/seasonality";
+import { getLaneVelocity } from "@/lib/north/laneVelocity";
 
 // Pillars below this progress are "cold" and get explicit lane guidance.
 // 0.35 matches the A2 status thresholds — anything under is "Getting started"
@@ -257,6 +258,31 @@ function renderPrompt(input: StrategistInput): string {
       ].join(" ")
     : null;
 
+  // Lane velocity — time-of-week pre-bias. Computed once here and injected
+  // into instructions when it adds actionable directional signal (i.e. when
+  // priority or suppressed lanes are non-empty). Midday with no behavioral
+  // reinforcement is a no-op and correctly skipped.
+  const velocity = getLaneVelocity(
+    context.recentSignals,
+    now,
+    context.founder.timezone,
+  );
+  const velocityGuidance =
+    velocity.priorityLanes.length > 0 || velocity.suppressedLanes.length > 0
+      ? [
+          `Current time context: ${velocity.timeContext}.`,
+          velocity.priorityLanes.length > 0
+            ? `Weight these lanes higher right now: ${velocity.priorityLanes.join(", ")}.`
+            : "",
+          velocity.suppressedLanes.length > 0
+            ? `Weight these lanes lower right now: ${velocity.suppressedLanes.join(", ")}.`
+            : "",
+          velocity.reasoning,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : null;
+
   return JSON.stringify(
     {
       now: context.now,
@@ -294,6 +320,7 @@ function renderPrompt(input: StrategistInput): string {
       })),
       cold_pillars: coldPillars,
       cold_pillars_guidance: coldPillarsGuidance,
+      lane_velocity: velocityGuidance,
       memory_summary: context.memory.slice(0, 10).map((m) => m.content),
       recent_actions: context.recentActions,
       active_radar_count: input.activeRadarCount,
@@ -320,6 +347,7 @@ function renderPrompt(input: StrategistInput): string {
         "Do not propose product/shopping lanes unless the interest_area is product/style/watch/gear.",
         "When an item could meaningfully involve someone from the people list (a place good for that person's heritage, family-friendly for a toddler, etc.), note the connection in why_it_fits.",
         ...(coldPillarsGuidance ? [coldPillarsGuidance] : []),
+        ...(velocityGuidance ? [velocityGuidance] : []),
       ],
     },
     null,
