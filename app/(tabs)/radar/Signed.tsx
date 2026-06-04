@@ -419,7 +419,7 @@ function RadarCard({
       className="lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric"
     >
       <Link
-        href={`/item/${card.id}`}
+        href={card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`}
         className="block transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
         aria-label={`Open ${card.title}`}
       >

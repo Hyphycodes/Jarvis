@@ -12,6 +12,7 @@ import {
   PlanShell,
   PlanTopBar,
 } from "@/components/plan";
+import { PlanDispositionBar } from "@/components/plan/PlanDispositionBar";
 import { categoryLabel } from "@/lib/plans/planCopyBanks";
 import { dateKey } from "@/components/calendar/MonthGrid";
 
@@ -94,6 +95,11 @@ export default async function DynamicPlanPage({
         body={brief.quote.body}
         attribution={brief.quote.attribution}
       />
+
+      {/* Disposition — only show if this plan came from Radar (has a sourceId) */}
+      {brief.sourceId ? (
+        <PlanDispositionBar itemId={brief.sourceId} planSlug={slug} />
+      ) : null}
     </PlanShell>
   );
 }
