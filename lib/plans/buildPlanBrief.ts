@@ -108,6 +108,8 @@ export function buildPlanBrief(input: BuildPlanBriefInput): PlanBrief {
     sourceType: input.sourceType,
     title: cleanText(loaded.title) ?? "Plan",
     category,
+    shape: loaded.shape ?? "experience",
+    isSequential: loaded.isSequential ?? false,
     dateLabel,
     timeLabel: timeLabel ?? scheduledTimeLabel(loaded),
     areaLabel,
@@ -308,7 +310,9 @@ function buildChapters(input: {
   loaded: LoadedPlan;
   sectionsByType: Map<string, LoadedPlanSection[]>;
 }): PlanChapter[] {
-  const { slug, sectionsByType } = input;
+  const { slug, loaded, sectionsByType } = input;
+  const shape = loaded.shape ?? "experience";
+  const isSequential = loaded.isSequential ?? false;
 
   const make = (
     key: PlanChapterKey,
@@ -320,9 +324,12 @@ function buildChapters(input: {
     const hasRealSection = sectionTypes.some((t) =>
       hasContent(sectionsByType.get(t)),
     );
+    // Every section must earn its place: when no real content exists we leave
+    // confirmation undefined and flag hasContent=false so the caller can hide
+    // optional chapters rather than show copy-bank filler.
     const confirmation = hasRealSection
       ? confirmationFromSections(sectionTypes, sectionsByType)
-      : chapterConfirmationFallback(key);
+      : undefined;
     return {
       key,
       title,
@@ -330,53 +337,55 @@ function buildChapters(input: {
       href: `/plan/${slug}/${key}`,
       icon,
       confirmation,
+      hasContent: hasRealSection,
     };
   };
 
+  if (shape === "occasion") {
+    return [
+      make("before", "THE MOMENT", "Who, the occasion, and what it calls for.", "jacket", ["why", "notes"]),
+      make("details", "YOUR MOVE", "Gift, contribution, or presence — sourced and ready.", "map-pin", ["cost", "detours", "alternatives"]),
+      make("after", "IF ATTENDING", "What to wear, timing, and how to get there.", "moon", ["before", "wear", "timing"]),
+    ].filter(hasContentOrAlwaysShow);
+  }
+
+  if (shape === "acquisition") {
+    return [
+      make("before", "WHAT TO GET", "Sourced options, ranked by fit.", "jacket", ["before", "alternatives", "detours"]),
+      make("details", "WHERE", "Where to get it, with links and lead times.", "map-pin", ["notes", "details"]),
+      make("after", "THE NUMBER", "What it costs, all in.", "moon", ["cost"]),
+    ].filter(hasContentOrAlwaysShow);
+  }
+
+  if (shape === "touchpoint") {
+    // Minimal, signal-card style.
+    return [
+      make("before", "WHO", "Context and relationship.", "jacket", ["why", "notes"]),
+      make("details", "THE MOVE", "What to do, and how.", "map-pin", ["move", "details"]),
+    ].filter(hasContentOrAlwaysShow);
+  }
+
+  // experience (default)
   return [
-    make(
-      "before",
-      "BEFORE YOU GO",
-      "What to wear, bring, and know before you leave.",
-      "jacket",
-      ["before", "wear", "bring", "cost"],
-    ),
-    make(
-      "move",
-      "THE MOVE",
-      "The flow of the plan, step by step.",
-      "wine",
-      ["move", "route", "timing"],
-    ),
-    make(
-      "atmosphere",
-      "ATMOSPHERE",
-      "Energy, music, lighting, and the mood.",
-      "record",
-      ["atmosphere"],
-    ),
-    make(
-      "details",
-      "THE DETAILS",
-      "Address, reservation, contacts, and intel.",
-      "map-pin",
-      ["notes", "details", "route"],
-    ),
-    make(
-      "detours",
-      "OPTIONAL DETOURS",
-      "Places worth considering along the way.",
-      "signpost",
-      ["detours", "alternatives"],
-    ),
-    make(
-      "after",
-      "AFTER",
-      "How the night can end well.",
-      "moon",
-      ["after"],
-    ),
-  ];
+    make("before", "BEFORE YOU GO", "What to wear, bring, and know before you leave.", "jacket", ["before", "wear", "bring", "cost"]),
+    // The Move only renders for sequential plans.
+    ...(isSequential
+      ? [make("move", "THE MOVE", "The flow, step by step.", "wine", ["move", "route", "timing"])]
+      : []),
+    make("details", "THE DETAILS", "Address, reservation, contacts, and intel.", "map-pin", ["notes", "details", "route"]),
+    make("around-it", "AROUND IT", "Before, instead, and after — all ready if you want them.", "signpost", ["detours", "alternatives", "after"]),
+    // Atmosphere is omitted as a chapter — it is folded into the hero summary.
+  ].filter(hasContentOrAlwaysShow);
+}
+
+/**
+ * Always show the primary structural chapters (before / details) even while
+ * content is still building. Hide optional ones (move / around-it / after)
+ * when they have no real content.
+ */
+function hasContentOrAlwaysShow(chapter: PlanChapter): boolean {
+  if (chapter.key === "before" || chapter.key === "details") return true;
+  return chapter.hasContent;
 }
 
 function confirmationFromSections(
@@ -538,6 +547,8 @@ function sectionTypesForChapter(key: PlanChapterKey): string[] {
       return ["detours", "alternatives"];
     case "after":
       return ["after"];
+    case "around-it":
+      return ["detours", "alternatives", "after"];
   }
 }
 

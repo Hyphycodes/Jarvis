@@ -12,6 +12,8 @@ export function samplePlanBrief(): PlanBrief {
     sourceType: "sample",
     title: "Sparrow Tonight",
     category: "dining",
+    shape: "experience",
+    isSequential: true,
     dateLabel: "Tonight",
     timeLabel: "8:30 PM",
     areaLabel: "West Loop, Chicago",
@@ -54,6 +56,7 @@ export function samplePlanBrief(): PlanBrief {
         href: "/plan/sample/before",
         icon: "jacket",
         confirmation: "Fit, timing, and essentials are staged.",
+        hasContent: true,
       },
       {
         key: "move",
@@ -62,6 +65,7 @@ export function samplePlanBrief(): PlanBrief {
         href: "/plan/sample/move",
         icon: "wine",
         confirmation: "Leave window and first move are set.",
+        hasContent: true,
       },
       {
         key: "atmosphere",
@@ -70,6 +74,7 @@ export function samplePlanBrief(): PlanBrief {
         href: "/plan/sample/atmosphere",
         icon: "record",
         confirmation: "Low light, low volume — the room reads itself.",
+        hasContent: true,
       },
       {
         key: "details",
@@ -78,6 +83,7 @@ export function samplePlanBrief(): PlanBrief {
         href: "/plan/sample/details",
         icon: "map-pin",
         confirmation: "Reservation held. Address confirmed.",
+        hasContent: true,
       },
       {
         key: "detours",
@@ -86,6 +92,7 @@ export function samplePlanBrief(): PlanBrief {
         href: "/plan/sample/detours",
         icon: "signpost",
         confirmation: "Two stops nearby if the night opens up.",
+        hasContent: true,
       },
       {
         key: "after",
@@ -94,6 +101,7 @@ export function samplePlanBrief(): PlanBrief {
         href: "/plan/sample/after",
         icon: "moon",
         confirmation: "The walk home is part of the plan.",
+        hasContent: true,
       },
     ],
     before: {

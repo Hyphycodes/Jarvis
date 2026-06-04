@@ -8,26 +8,29 @@ import type { PlanInfoBlock } from "@/lib/plans/planBrief";
  * + optional sub-line (small muted). Blocks separated by thin gold
  * verticals. The whole strip sits on a soft-black band.
  *
- * `missing` blocks render in muted tones so the page is honest about
- * what's not yet wired without looking broken.
+ * Blocks with `missing: true` are hidden entirely — absent beats invented.
+ * A 2-tile strip of real data reads better than a 4-tile strip padded with
+ * placeholders. The whole strip hides when nothing real is left.
  */
 export function PlanInfoStrip({ blocks }: { blocks: PlanInfoBlock[] }) {
-  if (blocks.length === 0) return null;
+  const visibleBlocks = blocks.filter((b) => !b.missing).slice(0, 4);
+  if (visibleBlocks.length === 0) return null;
   return (
     <section
-      className="grid grid-cols-4 items-stretch"
+      className="grid items-stretch"
       style={{
+        gridTemplateColumns: `repeat(${visibleBlocks.length}, minmax(0, 1fr))`,
         background: "rgba(13, 11, 8, 0.7)",
         borderTop: "1px solid var(--border)",
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {blocks.slice(0, 4).map((b, i) => (
+      {visibleBlocks.map((b, i) => (
         <div
           key={`${b.label}-${i}`}
           className="flex flex-col items-center px-2 py-4 text-center"
           style={
-            i < blocks.length - 1
+            i < visibleBlocks.length - 1
               ? { borderRight: "1px solid var(--border)" }
               : undefined
           }

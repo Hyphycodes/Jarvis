@@ -41,6 +41,8 @@ export type LoadedPlan = {
   planType: string;
   status: "draft" | "active" | "completed" | "cancelled" | string;
   buildStatus: string;
+  shape: "experience" | "occasion" | "acquisition" | "touchpoint";
+  isSequential: boolean;
   liveEnabled: boolean;
   liveLabel: string;
   scheduledDate?: string;
@@ -178,6 +180,13 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
   const keyStats = isRecord(planRow.key_stats) ? planRow.key_stats : {};
   const slug = readSlug(planRow.key_stats) ?? planRow.id;
 
+  // shape / is_sequential were added in migration 0018; the generated DB
+  // types haven't been regenerated yet, so read them through a narrow cast.
+  const shapeRow = planRow as PlanRow & {
+    shape?: string | null;
+    is_sequential?: boolean | null;
+  };
+
   return {
     id: planRow.id,
     title: planRow.title,
@@ -189,6 +198,8 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
         : planRow.category ?? "general",
     status: planRow.status,
     buildStatus: planRow.build_status ?? "ready",
+    shape: isShape(shapeRow.shape) ? shapeRow.shape : "experience",
+    isSequential: shapeRow.is_sequential ?? false,
     liveEnabled: planRow.live_enabled,
     liveLabel: planRow.live_label,
     scheduledDate: planRow.scheduled_date ?? undefined,
@@ -281,6 +292,17 @@ function isPosture(
   value: unknown,
 ): value is "free" | "low" | "paid" | "high" | "unknown" {
   return value === "free" || value === "low" || value === "paid" || value === "high" || value === "unknown";
+}
+
+function isShape(
+  value: unknown,
+): value is "experience" | "occasion" | "acquisition" | "touchpoint" {
+  return (
+    value === "experience" ||
+    value === "occasion" ||
+    value === "acquisition" ||
+    value === "touchpoint"
+  );
 }
 
 function looksLikeUuid(value: string): boolean {

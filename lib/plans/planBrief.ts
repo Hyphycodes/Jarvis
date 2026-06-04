@@ -37,7 +37,8 @@ export type PlanChapterKey =
   | "atmosphere"
   | "details"
   | "detours"
-  | "after";
+  | "after"
+  | "around-it"; // merges detours + after for the Experience shape
 
 export type PlanInfoBlock = {
   /** Small-caps label, e.g. "LEAVE BY". */
@@ -60,6 +61,8 @@ export type PlanChapter = {
   icon: "jacket" | "wine" | "record" | "map-pin" | "signpost" | "moon";
   /** One short line under the description summarizing what the chapter knows. */
   confirmation?: string;
+  /** True when this chapter has real section content. Used to hide empty optional chapters. */
+  hasContent: boolean;
 };
 
 export type PlanBeforeSection = {
@@ -111,6 +114,10 @@ export type PlanBrief = {
   sourceType?: "today" | "radar" | "event" | "sample";
   title: string;
   category: PlanCategory;
+  /** Plan shape (PRE-G3) — drives which chapters render. */
+  shape: "experience" | "occasion" | "acquisition" | "touchpoint";
+  /** When true, The Move (step-by-step flow) renders for Experience plans. */
+  isSequential: boolean;
   dateLabel?: string;
   timeLabel?: string;
   areaLabel?: string;

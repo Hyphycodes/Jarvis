@@ -95,6 +95,7 @@ const CHAPTER_CONFIRMATION_FALLBACK: Record<PlanChapterKey, string> = {
   details: "Confirm address and timing before you leave.",
   detours: "Three nearby options if the night opens up.",
   after: "Keep what was worth keeping. Let the rest go.",
+  "around-it": "Before, instead, and after — ready if you want them.",
 };
 
 export function chapterConfirmationFallback(key: PlanChapterKey): string {
@@ -163,6 +164,14 @@ const CHAPTER_COPY: Record<PlanChapterKey, ChapterCopy> = {
     closing: "Carry the best of it forward.",
     fallbackBody:
       "After is short. Note what worked, who showed up, what's worth doing again. Then put the day down. The plan ends when you do.",
+  },
+  "around-it": {
+    eyebrow: "AROUND IT",
+    title: "Before, instead, and after.",
+    subtitle: "The satellites worth holding near the main move.",
+    closing: "All optional. None of it required.",
+    fallbackBody:
+      "Around the main move sits everything optional — a stop before, an alternative instead, a way to end after. Hold them loosely. Reach for one only if the night asks for it.",
   },
 };
 
