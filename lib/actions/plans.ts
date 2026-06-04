@@ -14,8 +14,8 @@ import {
   safeWriteIntelligenceTrace,
   writeIntelligenceTraceWithClient,
 } from "@/lib/brain/intelligenceTrace";
-import { generatePlanFromItem } from "@/lib/brain/planGenerator";
-import { slugify, type GeneratedPlan } from "@/lib/brain/planTypes";
+import { detectPlanShape, generatePlanFromItem } from "@/lib/brain/planGenerator";
+import { slugify, type GeneratedPlan, type PlanShape } from "@/lib/brain/planTypes";
 import type { IndexedItem } from "@/lib/index/types";
 import type { PlanChatContext } from "@/lib/plans/chatContext";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
@@ -126,6 +126,34 @@ export type CreateStubResult = {
   reused: boolean;
 };
 
+type PlanInsertWithShape = {
+  user_id: string;
+  title: string;
+  category: string | null;
+  location_line: string | null;
+  live_enabled: boolean;
+  live_label: "BEGIN";
+  key_stats: Json;
+  quote_card: Json;
+  status: "draft";
+  build_status: "building";
+  source_observation_id: string | null;
+  shape: PlanShape;
+  is_sequential: boolean;
+};
+
+type PlanUpdateWithShape = {
+  title: string;
+  category: GeneratedPlan["plan_type"];
+  date: string | null;
+  location_line: string | null;
+  summary: string;
+  live_label: "UPCOMING" | "BEGIN";
+  key_stats: Json;
+  build_status: "ready";
+  is_sequential: boolean;
+};
+
 /**
  * Create a plan shell immediately and return its id/slug. When the source item
  * already has a plan it is reused (unless `force`). Heavy generation is deferred
@@ -191,29 +219,34 @@ export async function createStubPlan(input: {
   }
 
   const slug = await ensureUniqueSlug(owner.id, slugify(item.title), item.id, supabase);
+  const planShape = detectPlanShape(item);
+  const planInsertPayload: PlanInsertWithShape = {
+    user_id: owner.id,
+    title: item.title,
+    category: item.category ?? null,
+    location_line: item.locationName ?? item.address ?? null,
+    live_enabled: false,
+    live_label: "BEGIN",
+    key_stats: {
+      slug,
+      source_item_id: item.id,
+      source_item_type: item.type,
+      source_item_category: item.category,
+      plan_shape: planShape,
+      source_observation_id: input.sourceObservationId ?? null,
+      chat_context: input.chatContext ?? null,
+    } as Json,
+    quote_card: {} as Json,
+    status: "draft",
+    build_status: "building",
+    source_observation_id: input.sourceObservationId ?? null,
+    shape: planShape,
+    is_sequential: false,
+  };
 
   const { data: planInsert, error: planError } = await supabase
     .from("plans")
-    .insert({
-      user_id: owner.id,
-      title: item.title,
-      category: item.category ?? null,
-      location_line: item.locationName ?? item.address ?? null,
-      live_enabled: false,
-      live_label: "BEGIN",
-      key_stats: {
-        slug,
-        source_item_id: item.id,
-        source_item_type: item.type,
-        source_item_category: item.category,
-        source_observation_id: input.sourceObservationId ?? null,
-        chat_context: input.chatContext ?? null,
-      } as Json,
-      quote_card: {} as Json,
-      status: "draft",
-      build_status: "building",
-      source_observation_id: input.sourceObservationId ?? null,
-    })
+    .insert(planInsertPayload)
     .select("id")
     .single();
   if (planError || !planInsert) {
@@ -310,6 +343,7 @@ export async function fillPlan(input: {
     location_name: plan.location_name,
     address: plan.address,
     plan_type: plan.plan_type,
+    plan_shape: detectPlanShape(item),
     source_item_id: plan.source_item_id ?? item.id,
     source_item_type: item.type,
     source_item_category: item.category,
@@ -319,24 +353,27 @@ export async function fillPlan(input: {
     chat_context: input.chatContext ?? null,
   };
 
+  const planUpdatePayload: PlanUpdateWithShape = {
+    title: plan.title,
+    category: plan.plan_type,
+    date: formatDateLabel(plan.starts_at),
+    location_line:
+      plan.location_name ??
+      item.locationName ??
+      plan.address ??
+      item.address ??
+      null,
+    summary: plan.hero_angle,
+    live_label:
+      plan.starts_at && isFutureOrToday(plan.starts_at) ? "UPCOMING" : "BEGIN",
+    key_stats: keyStats as Json,
+    build_status: "ready",
+    is_sequential: plan.is_sequential ?? false,
+  };
+
   const { error: updateError } = await supabase
     .from("plans")
-    .update({
-      title: plan.title,
-      category: plan.plan_type,
-      date: formatDateLabel(plan.starts_at),
-      location_line:
-        plan.location_name ??
-        item.locationName ??
-        plan.address ??
-        item.address ??
-        null,
-      summary: plan.hero_angle,
-      live_label:
-        plan.starts_at && isFutureOrToday(plan.starts_at) ? "UPCOMING" : "BEGIN",
-      key_stats: keyStats as Json,
-      build_status: "ready",
-    })
+    .update(planUpdatePayload)
     .eq("id", input.planId)
     .eq("user_id", input.userId);
   if (updateError) console.error("[fillPlan] plan update", updateError);

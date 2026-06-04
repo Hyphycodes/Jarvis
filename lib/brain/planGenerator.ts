@@ -34,6 +34,7 @@ import {
   slugify,
   type GeneratedPlan,
   type PlanGenerationResult,
+  type PlanShape,
 } from "@/lib/brain/planTypes";
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
@@ -363,6 +364,7 @@ function deterministicPlan(item: IndexedItem, chatContext?: PlanChatContext): Ge
     subtitle: item.subtitle ?? brief.oneLine,
     slug,
     plan_type: planType,
+    is_sequential: false,
     status: "draft",
     starts_at: item.startsAt,
     ends_at: item.endsAt,
@@ -648,6 +650,55 @@ function inferPlanType(item: IndexedItem): GeneratedPlan["plan_type"] {
     default:
       return "general";
   }
+}
+
+/**
+ * Detects the plan's shape based on the source item's type and source.
+ * Shape determines the plan page template and what the Provisioner builds.
+ *
+ * experience  — you're going somewhere / doing something (default)
+ * occasion    — someone else's life event, your role is contribution
+ * acquisition — you need something specific, output is a sourcing brief
+ * touchpoint  — relationship maintenance, output is a suggested move
+ */
+export function detectPlanShape(item: IndexedItem): PlanShape {
+  // Relationship updates from Circle → occasion or touchpoint
+  if (item.type === "relationship_update") {
+    const tags = new Set(item.tags.map((t) => t.toLowerCase()));
+    const category = (item.category ?? "").toLowerCase();
+    // Birthday, party, milestone → occasion (has a specific event to attend/contribute to)
+    if (
+      tags.has("birthday") ||
+      tags.has("party") ||
+      tags.has("milestone") ||
+      category.includes("birthday") ||
+      category.includes("occasion")
+    ) {
+      return "occasion";
+    }
+    // General relationship signal → touchpoint
+    return "touchpoint";
+  }
+
+  // Products and gift-type items → acquisition
+  if (item.type === "product") return "acquisition";
+
+  // Calendar-sourced person events → occasion
+  if (item.source === "contacts" || item.source === "calendar") {
+    const title = item.title.toLowerCase();
+    if (
+      title.includes("birthday") ||
+      title.includes("party") ||
+      title.includes("anniversary") ||
+      title.includes("wedding") ||
+      title.includes("graduation")
+    ) {
+      return "occasion";
+    }
+  }
+
+  // Everything else — restaurant, event, place, culture, style, etc. → experience
+  return "experience";
 }
 
 function inferEffort(item: IndexedItem): GeneratedPlan["effort_level"] {

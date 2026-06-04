@@ -9,6 +9,15 @@
 
 import { z } from "zod";
 
+export const PLAN_SHAPES = [
+  "experience",
+  "occasion",
+  "acquisition",
+  "touchpoint",
+] as const;
+
+export type PlanShape = typeof PLAN_SHAPES[number];
+
 export const PLAN_TYPES = [
   "dining",
   "event",
@@ -101,6 +110,7 @@ export const generatedPlanSchema = z.object({
     .max(80)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be lowercase-kebab"),
   plan_type: z.enum(PLAN_TYPES),
+  is_sequential: z.boolean().optional().default(false),
   status: z.literal("draft"),
   starts_at: z.string().datetime().optional(),
   ends_at: z.string().datetime().optional(),
