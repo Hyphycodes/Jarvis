@@ -8,9 +8,11 @@ export const CRON_API_PATHS = [
   "/api/library/scout",
   "/api/library/process-candidates",
   "/api/library/refresh",
+  "/api/library/enrich",
   "/api/events/scout",
   "/api/events/process",
   "/api/tastemakers/sweep",
+  "/api/push/evening",
 ] as const;
 
 export function isCronApiPath(pathname: string): boolean {

@@ -4,6 +4,7 @@ import type {
   ChatContextPacket,
   CirclePersonContext,
   ConstraintContext,
+  KnownPlaceContext,
   PlanContext,
   PreferenceContext,
   RadarItemContext,
@@ -74,6 +75,19 @@ export type FounderTodayItem = {
   details?: string | null;
   startsAt?: string | null;
   source?: "timeline" | "surfaced_item" | "circle" | "plan";
+};
+
+export type FounderKnownPlace = {
+  name: string;
+  slug: string;
+  placeType: string | null;
+  neighborhood: string | null;
+  cuisineOrFocus: string | null;
+  priceLevel: string | null;
+  vibeKeywords: string[];
+  verdict: string | null;
+  verdictStrength: number | null;
+  bestFor: string[];
 };
 
 export type FounderCirclePerson = {
@@ -189,6 +203,7 @@ export type FounderContextPacket = {
     upcomingMoments: FounderCircleMoment[];
     relevantPeople: FounderCirclePerson[];
   };
+  knownPlaces: FounderKnownPlace[];
   memory: {
     stablePreferences: FounderMemorySignal[];
     recentSignals: FounderMemorySignal[];
@@ -421,6 +436,19 @@ export function toChatContextPacket(packet: FounderContextPacket): ChatContextPa
     createdAt: signal.createdAt,
   }));
 
+  const knownPlaces: KnownPlaceContext[] = packet.knownPlaces.map((place) => ({
+    name: place.name,
+    slug: place.slug,
+    placeType: place.placeType ?? null,
+    neighborhood: place.neighborhood ?? null,
+    cuisineOrFocus: place.cuisineOrFocus ?? null,
+    priceLevel: place.priceLevel ?? null,
+    vibeKeywords: place.vibeKeywords,
+    verdict: place.verdict ?? null,
+    verdictStrength: place.verdictStrength ?? null,
+    bestFor: place.bestFor,
+  }));
+
   return {
     today,
     user: {
@@ -439,6 +467,7 @@ export function toChatContextPacket(packet: FounderContextPacket): ChatContextPa
     preferences,
     recentSignals,
     constraints: constraintsFromPacket(packet),
+    knownPlaces,
   };
 }
 

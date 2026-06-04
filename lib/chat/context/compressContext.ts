@@ -11,5 +11,6 @@ export function compressContext(packet: ChatContextPacket): ChatContextPacket {
     preferences: packet.preferences.slice(0, 22),
     recentSignals: packet.recentSignals.slice(0, 18),
     constraints: packet.constraints.slice(0, 14),
+    knownPlaces: packet.knownPlaces.slice(0, 40),
   };
 }

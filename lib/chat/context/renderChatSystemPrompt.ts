@@ -1,7 +1,7 @@
 import "server-only";
 
 import { compressContext } from "@/lib/chat/context/compressContext";
-import type { ChatContextPacket } from "@/lib/chat/context/types";
+import type { ChatContextPacket, KnownPlaceContext } from "@/lib/chat/context/types";
 import type { ChatIntent } from "@/lib/chat/types";
 
 export function renderChatSystemPrompt(
@@ -70,6 +70,16 @@ export function renderChatSystemPrompt(
         .join(" | ")}.`,
     );
   }
+  if (c.knownPlaces.length) {
+    lines.push("");
+    lines.push("Places you already know about (the owner's curated library):");
+    for (const place of c.knownPlaces.slice(0, 40)) {
+      lines.push(`- ${renderKnownPlace(place)}`);
+    }
+    lines.push(
+      "When the user references a place by description or partial name (\"the Greek place on the river\", \"that new spot in Fulton Market\"), first check this list and resolve to the matching known place before saying you don't have it. Only ask for clarification if nothing plausibly matches.",
+    );
+  }
   if (c.circle.length) {
     lines.push(
       `Circle context: ${c.circle
@@ -92,4 +102,20 @@ export function renderChatSystemPrompt(
   }
 
   return lines.join("\n");
+}
+
+/** Compact one-liner, e.g. "Naia — Greek, Fulton Market, riverside/refined (strength 0.78)". */
+function renderKnownPlace(place: KnownPlaceContext): string {
+  const descriptors = [
+    place.cuisineOrFocus ?? place.placeType,
+    place.neighborhood,
+    place.vibeKeywords.slice(0, 3).join("/") || null,
+  ].filter((d): d is string => Boolean(d && d.trim()));
+
+  let line = place.name;
+  if (descriptors.length) line += ` — ${descriptors.join(", ")}`;
+  if (place.verdict) line += `. ${place.verdict.trim()}`;
+  if (place.bestFor.length) line += ` Best for: ${place.bestFor.slice(0, 3).join(", ")}.`;
+  if (place.verdictStrength != null) line += ` (strength ${place.verdictStrength.toFixed(2)})`;
+  return line;
 }

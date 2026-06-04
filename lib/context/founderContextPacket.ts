@@ -23,6 +23,7 @@ import type {
 import type {
   FounderBehaviorSignal,
   FounderContextPacket,
+  FounderKnownPlace,
   FounderLocationContext,
   FounderRadarItem,
   FounderTodayItem,
@@ -36,6 +37,20 @@ import {
 const MEMORY_LIMIT = 24;
 const RECENT_SIGNAL_LIMIT = 40;
 const RECENT_ACTION_LIMIT = 40;
+
+// Narrow projection of places_library used for chat context (see knownPlaces query).
+type KnownPlaceRow = {
+  name: string;
+  slug: string;
+  place_type: string | null;
+  neighborhood: string | null;
+  cuisine_or_focus: string | null;
+  price_level: string | null;
+  vibe_keywords: string[] | null;
+  verdict: string | null;
+  verdict_strength: number | string | null;
+  best_for: string[] | null;
+};
 
 export async function buildFounderContextPacket(options: {
   userId?: string;
@@ -71,6 +86,7 @@ export async function buildFounderContextPacket(options: {
     todayItemsRes,
     circlePeopleRes,
     circleUpdatesRes,
+    knownPlacesRes,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -165,6 +181,14 @@ export async function buildFounderContextPacket(options: {
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(24),
+    supabase
+      .from("places_library")
+      .select(
+        "name,slug,place_type,neighborhood,cuisine_or_focus,price_level,vibe_keywords,verdict,verdict_strength,best_for",
+      )
+      .eq("user_id", userId)
+      .order("verdict_strength", { ascending: false, nullsFirst: false })
+      .limit(40),
   ]);
 
   logQueryError("context.profile", profileRes.error);
@@ -181,6 +205,7 @@ export async function buildFounderContextPacket(options: {
   logQueryError("context.today.items", todayItemsRes.error);
   logQueryError("context.circle.people", circlePeopleRes.error);
   logQueryError("context.circle.updates", circleUpdatesRes.error);
+  logQueryError("context.places.library", knownPlacesRes.error);
 
   const profile = (profileRes.data ?? null) as {
     display_name?: string | null;
@@ -293,6 +318,18 @@ export async function buildFounderContextPacket(options: {
     source: row.source,
     createdAt: row.created_at,
   }));
+  const knownPlaces: FounderKnownPlace[] = ((knownPlacesRes.data ?? []) as KnownPlaceRow[]).map((row) => ({
+    name: row.name,
+    slug: row.slug,
+    placeType: row.place_type ?? null,
+    neighborhood: row.neighborhood ?? null,
+    cuisineOrFocus: row.cuisine_or_focus ?? null,
+    priceLevel: row.price_level ?? null,
+    vibeKeywords: row.vibe_keywords ?? [],
+    verdict: row.verdict ?? null,
+    verdictStrength: row.verdict_strength != null ? Number(row.verdict_strength) : null,
+    bestFor: row.best_for ?? [],
+  }));
 
   return {
     userId,
@@ -336,6 +373,7 @@ export async function buildFounderContextPacket(options: {
       upcomingMoments: circleMoments,
       relevantPeople: circlePeople,
     },
+    knownPlaces,
     memory: {
       stablePreferences: memories,
       recentSignals: recentMemories,

@@ -73,6 +73,19 @@ export type ConstraintContext = {
   source: string;
 };
 
+export type KnownPlaceContext = {
+  name: string;
+  slug: string;
+  placeType: string | null;
+  neighborhood: string | null;
+  cuisineOrFocus: string | null;
+  priceLevel: string | null;
+  vibeKeywords: string[];
+  verdict: string | null;
+  verdictStrength: number | null;
+  bestFor: string[];
+};
+
 export type ChatContextPacket = {
   today: TodayContext;
   user: UserProfileContext;
@@ -82,4 +95,5 @@ export type ChatContextPacket = {
   preferences: PreferenceContext[];
   recentSignals: BehaviorSignalContext[];
   constraints: ConstraintContext[];
+  knownPlaces: KnownPlaceContext[];
 };

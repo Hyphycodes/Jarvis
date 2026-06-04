@@ -30,6 +30,7 @@ export type GooglePlace = {
   googleMapsUri?: string;
   editorialSummary?: { text: string };
   currentOpeningHours?: { openNow?: boolean };
+  regularOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
   photos?: { name: string }[];
   reviews?: {
     rating?: number;
@@ -191,6 +192,54 @@ export async function getPlaceDetails(input: {
       },
     }),
   );
+}
+
+const ENRICHMENT_FIELDS = [
+  "places.id",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.location",
+  "places.priceLevel",
+  "places.primaryType",
+  "places.types",
+  "places.regularOpeningHours.weekdayDescriptions",
+].join(",");
+
+/**
+ * Single best text-search match with the fields needed to enrich a Library
+ * place (address, lat/lng, price, weekday hours). Returns null when there is
+ * no result — the caller decides whether the match is confident enough.
+ */
+export async function searchPlaceForEnrichment(input: {
+  query: string;
+  lat?: number;
+  lng?: number;
+}): Promise<GooglePlace | null> {
+  const body: Record<string, unknown> = {
+    textQuery: input.query,
+    maxResultCount: 1,
+  };
+  if (input.lat != null && input.lng != null) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: input.lat, longitude: input.lng },
+        radius: 16_000,
+      },
+    };
+  }
+  const data = await fetchJson<{ places?: GooglePlace[] }>(
+    `${BASE}/places:searchText`,
+    {
+      service: "google-places",
+      method: "POST",
+      headers: {
+        "X-Goog-Api-Key": key(),
+        "X-Goog-FieldMask": ENRICHMENT_FIELDS,
+      },
+      body,
+    },
+  );
+  return data.places?.[0] ?? null;
 }
 
 export function getPlacePhotoUrl(input: {

@@ -46,6 +46,10 @@
       "schedule": "0 10 * * 2"
     },
     {
+      "path": "/api/library/enrich",
+      "schedule": "30 */6 * * *"
+    },
+    {
       "path": "/api/push/evening",
       "schedule": "0 22 * * *"
     }

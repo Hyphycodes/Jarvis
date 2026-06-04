@@ -1666,6 +1666,7 @@ export type PlacesLibraryRow = {
   compared_to: string | null;
   events_observed: unknown;
   seasonal_notes: string | null;
+  enrichment_status?: string | null;
   first_seen_at: string;
   last_researched_at: string;
   last_refreshed_at: string;

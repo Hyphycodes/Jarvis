@@ -85,6 +85,7 @@ function emptyPacket(): FounderContextPacket {
     radar: { current: [], recentlySaved: [], recentlyPassed: [], patterns: [] },
     today: { upcomingItems: [], activePlan: null, activePlans: [] },
     circle: { upcomingMoments: [], relevantPeople: [] },
+    knownPlaces: [],
     memory: { stablePreferences: [], recentSignals: [] },
     behavior: {
       recentSignals: [],
