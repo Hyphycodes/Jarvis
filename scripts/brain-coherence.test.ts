@@ -1171,6 +1171,7 @@ function radarItem(overrides: Partial<RadarItem> = {}): RadarItem {
       positive_signals: ["scenic", "small group"],
       negative_flags: [],
       council_scores: { scout: 0.8, operator: 0.72, taste: 0.86, growth: 0.6, critic: 0.7 },
+      appliedConfidenceFloor: 0.72,
     },
     northAlignment: { score: 0, matchedPillars: [], reason: "No North match." },
     ...overrides,

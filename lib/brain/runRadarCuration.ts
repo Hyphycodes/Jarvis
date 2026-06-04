@@ -229,7 +229,12 @@ export async function runRadarCuration(options: {
     });
   }
 
-  const intelligenceGated = attachRadarIntelligence(gated, shortlist, context);
+  const intelligenceGated = attachRadarIntelligence(
+    gated,
+    shortlist,
+    context,
+    velocityProfile.timeContext,
+  );
 
   const { selectedApplied, rejectedApplied } = await applyDecision(
     owner.id,
@@ -738,11 +743,17 @@ function attachRadarIntelligence(
   decision: BrainDecision,
   shortlist: ScoredItem[],
   context: Awaited<ReturnType<typeof buildBrainContext>>,
+  velocityTimeContext?: string,
 ): BrainDecision {
   const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
   const selected: BrainDecision["selected"] = [];
   const rejected: BrainDecision["rejected"] = [...decision.rejected];
   const notes: string[] = [];
+  // Spread velocityTimeContext into the JarvisContext so judgeSignal can
+  // forward it to the Decision Council's occasion confidence floor logic.
+  const enrichContext = velocityTimeContext
+    ? { ...context, velocityTimeContext }
+    : context;
 
   for (const sel of decision.selected) {
     const scored = scoreByItemId.get(sel.itemId);
@@ -757,7 +768,7 @@ function attachRadarIntelligence(
       tags: uniq([...scored.item.tags, ...sel.tags]),
       reasons: uniq([...scored.item.reasons, sel.reason, sel.displayAngle]).filter(Boolean),
     };
-    const radarIntelligence = enrichRadarItem({ item, context });
+    const radarIntelligence = enrichRadarItem({ item, context: enrichContext });
     let destination = sel.destination;
 
     if (destination === "radar" && !isStrongRadarItem(radarIntelligence)) {

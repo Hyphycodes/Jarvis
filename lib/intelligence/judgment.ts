@@ -8,7 +8,10 @@ export function judgeSignal(
   item: IndexedItem,
   context?: JarvisContext,
 ): JarvisJudgment {
-  const decision = evaluateCandidateForRadar(item, { brainContext: context });
+  const decision = evaluateCandidateForRadar(item, {
+    brainContext: context,
+    timeContext: context?.velocityTimeContext,
+  });
   return {
     admission: decision.admission,
     confidence: decision.confidence,

@@ -25,6 +25,10 @@ export type RadarVibe =
 export type JarvisContext = BrainContextPacket & {
   activeRadarCount?: number;
   currentRadarItems?: IndexedItem[];
+  /** Time-of-day context string forwarded from the velocity profile so
+   *  occasion-aware confidence floors in the Decision Council receive the
+   *  same timeContext that pre-biased the shortlist. */
+  velocityTimeContext?: string;
 };
 
 export type SignalProfile = {

@@ -18,6 +18,127 @@ import type {
 
 export const RADAR_ADMISSION_MIN_CONFIDENCE = 0.72;
 
+// ── Occasion-aware confidence floors ─────────────────────────────────────────
+// Maps occasion signals + time context to a modified confidence floor.
+// The global 0.72 baseline is the default; these floors override it when the
+// temporal and content context makes a candidate clearly more or less relevant.
+
+const WEEKEND_OCCASIONS = new Set([
+  // Canonical OCCASION_TYPES
+  "weekend_day_move", "weekend_night_move", "casual_hang",
+  "guys_night", "date_night", "family_time",
+  // Ad-hoc lane names that surface in briefings
+  "weekend_move", "active_social", "family_social",
+]);
+
+const AFTER_WORK_OCCASIONS = new Set([
+  "weekday_after_work",
+  "after_work_reset",
+]);
+
+const FOOD_OCCASIONS = new Set([
+  "refined_dinner", "big_night_out",
+  "food_dining",
+]);
+
+const BUSINESS_OCCASIONS = new Set([
+  "business_room",
+]);
+
+const CULTURE_OCCASIONS = new Set([
+  "cultural_anchor", "creative_session",
+  "culture_creative",
+]);
+
+const WEEKDAY_NAMES: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/** Derive the time context string from context packet fields. Mirrors the
+ *  logic in lib/north/laneVelocity.ts so occasion floors are consistent
+ *  with the velocity profile even when timeContext is not explicitly passed. */
+function deriveTimeContext(
+  now: string,
+  timezone?: string | null,
+): string {
+  try {
+    const date = new Date(now);
+    let hour = date.getHours();
+    let dayOfWeek = date.getDay();
+    if (timezone) {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        hour: "numeric",
+        hour12: false,
+        weekday: "short",
+      }).formatToParts(date);
+      const h = parts.find((p) => p.type === "hour");
+      const w = parts.find((p) => p.type === "weekday");
+      if (h) hour = parseInt(h.value, 10) % 24;
+      if (w) dayOfWeek = WEEKDAY_NAMES[w.value] ?? dayOfWeek;
+    }
+    if (dayOfWeek === 0 || dayOfWeek === 6) return "weekend";
+    if (hour >= 5 && hour < 11) return "morning";
+    if (hour >= 11 && hour < 14) return "midday";
+    if (hour >= 14 && hour < 19) return "after_work";
+    if (hour >= 19) return "evening";
+    return "midday";
+  } catch {
+    return "midday";
+  }
+}
+
+/**
+ * Returns the confidence floor appropriate for this candidate given its
+ * occasion type and the current time context.
+ *
+ * Rules:
+ *   Weekend anchor on weekend     → 0.68 (user is in receptive mode)
+ *   After-work reset at after_work → 0.68 (high temporal relevance)
+ *   Food & dining                  → 0.70 (frequent, quality still matters)
+ *   Business / ownership           → 0.76 (fewer, sharper recommendations)
+ *   Culture / creative             → 0.74 (curated feel, above baseline)
+ *   Default                        → 0.72 (unchanged global baseline)
+ *
+ * When context.timeContext is not supplied, the function derives it from
+ * context.brainContext fields — same algorithm as laneVelocity.ts, so the
+ * result is always consistent with the velocity profile for the same run.
+ */
+function occasionConfidenceFloor(
+  candidate: IndexedItem,
+  context: RadarCouncilContext,
+): number {
+  const briefing = context.briefingOverride ?? candidate.briefing;
+  const occasionType = briefing?.occasion_type ?? "";
+
+  // Resolve time context: explicit > derived from brainContext > none
+  const timeCtx =
+    context.timeContext ??
+    (context.brainContext?.now
+      ? deriveTimeContext(
+          context.brainContext.now,
+          context.brainContext.founder?.timezone,
+        )
+      : null);
+
+  // Weekend anchor: lower bar when timing and occasion align
+  if (WEEKEND_OCCASIONS.has(occasionType) && timeCtx === "weekend") return 0.68;
+
+  // After-work reset: same reasoning — high temporal relevance
+  if (AFTER_WORK_OCCASIONS.has(occasionType) && timeCtx === "after_work") return 0.68;
+
+  // Food & dining: slightly easier than default but quality still matters
+  if (FOOD_OCCASIONS.has(occasionType)) return 0.70;
+
+  // Business / ownership: higher bar — fewer, sharper
+  if (BUSINESS_OCCASIONS.has(occasionType)) return 0.76;
+
+  // Culture / creative: above baseline — should feel curated, not just found
+  if (CULTURE_OCCASIONS.has(occasionType)) return 0.74;
+
+  return RADAR_ADMISSION_MIN_CONFIDENCE;
+}
+
 const TERMINAL_ACTIONS = new Set(["ignore", "pass"]);
 const HOLD_ACTIONS = new Set(["research", "watch"]);
 const ARCHIVE_FLAGS = new Set([
@@ -52,6 +173,7 @@ export function evaluateCandidateForRadar(
   context: RadarCouncilContext = {},
 ): RadarDecision {
   const briefing = context.briefingOverride ?? candidate.briefing;
+  const floor = occasionConfidenceFloor(candidate, context);
   const actionTitle = actionTitleForItem({ ...candidate, briefing });
   const taste = scoreAgainstTasteConstitution(
     { ...candidate, briefing },
@@ -105,7 +227,7 @@ export function evaluateCandidateForRadar(
       councilScores.growth * 0.08 +
       councilScores.critic * 0.09,
   );
-  if (confidence < RADAR_ADMISSION_MIN_CONFIDENCE) flags.add("no_current_value");
+  if (confidence < floor) flags.add("no_current_value");
 
   const positiveSignals = unique([
     ...taste.positiveSignals,
@@ -127,11 +249,12 @@ export function evaluateCandidateForRadar(
     briefing,
     confidence,
     flags,
+    floor,
   });
   const rejectionReason =
     admission === "radar"
       ? undefined
-      : rejectionReasonFor(admission, briefing, negativeFlags, confidence);
+      : rejectionReasonFor(admission, briefing, negativeFlags, confidence, floor);
 
   return {
     admission,
@@ -140,11 +263,12 @@ export function evaluateCandidateForRadar(
     move_title: actionTitle.title,
     one_line: oneLine,
     best_move: bestMove,
-    display_depth: displayDepthFor(admission, confidence, negativeFlags),
+    display_depth: displayDepthFor(admission, confidence, negativeFlags, floor),
     positive_signals: positiveSignals,
     negative_flags: negativeFlags,
     council_scores: councilScores,
     rejection_reason: rejectionReason,
+    appliedConfidenceFloor: floor,
   };
 }
 
@@ -166,8 +290,9 @@ function decideAdmission(input: {
   briefing?: ItemBriefing;
   confidence: number;
   flags: Set<string>;
+  floor: number;
 }): RadarAdmission {
-  const { candidate, briefing, confidence, flags } = input;
+  const { candidate, briefing, confidence, flags, floor } = input;
   const blocking = Array.from(flags).filter((flag) => BLOCKING_FLAGS.has(flag));
   if (briefing && TERMINAL_ACTIONS.has(briefing.best_next_action)) return "archive";
   if (blocking.some((flag) => ARCHIVE_FLAGS.has(flag))) return "archive";
@@ -178,7 +303,7 @@ function decideAdmission(input: {
   if (HOLD_ACTIONS.has(briefing.best_next_action)) return "holding";
   if (briefing.suggested_destination === "holding") return "holding";
   if (blocking.length > 0) return "holding";
-  if (confidence < RADAR_ADMISSION_MIN_CONFIDENCE) return "holding";
+  if (confidence < floor) return "holding";
   if (briefing.suggested_destination !== "radar") return "holding";
   // why_now gate: generic or missing why_now → demote to holding
   if (isGenericWhyNow(briefing.why_now)) return "holding";
@@ -190,6 +315,7 @@ function rejectionReasonFor(
   briefing: ItemBriefing | undefined,
   flags: string[],
   confidence: number,
+  floor: number,
 ): string {
   if (admission === "archive") {
     return flags.length > 0
@@ -199,8 +325,8 @@ function rejectionReasonFor(
   if (admission === "discovered") return "Kept as raw/discovered material.";
   if (flags.includes("no_current_value")) return "Good signal, not worth the front room now.";
   if (flags.includes("weak_evidence")) return "Interesting but source evidence is weak.";
-  if (confidence < RADAR_ADMISSION_MIN_CONFIDENCE) {
-    return `Below Radar confidence (${confidence.toFixed(2)}).`;
+  if (confidence < floor) {
+    return `Below Radar confidence (${confidence.toFixed(2)}, floor ${floor.toFixed(2)}).`;
   }
   return "Good signal, not urgent.";
 }
@@ -324,12 +450,13 @@ function displayDepthFor(
   admission: RadarAdmission,
   confidence: number,
   flags: string[],
+  floor: number,
 ): RadarDisplayDepth {
   if (admission === "archive" || admission === "discovered") return "minimal";
   if (confidence < 0.6 || flags.includes("weak_evidence") || flags.includes("source_lead_only")) {
     return "minimal";
   }
-  if (admission === "holding" || confidence < RADAR_ADMISSION_MIN_CONFIDENCE) return "compact";
+  if (admission === "holding" || confidence < floor) return "compact";
   return "rich";
 }
 
