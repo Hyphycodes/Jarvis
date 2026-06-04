@@ -731,8 +731,21 @@ function rowToCircleTodayItem(row: CircleUpdateRow): TodayCommandItem {
       suggestedAction: row.suggested_action,
       urgency: row.urgency,
     }),
+    signalType: "life",
+    occasionContext: {
+      occasionType: detectCircleOccasionType(row.title),
+      clusterNote: row.summary,
+    },
     score: scoreCircleUrgency(row.urgency),
   };
+}
+
+function detectCircleOccasionType(title: string): string {
+  const normalized = title.toLowerCase();
+  if (normalized.includes("birthday")) return "birthday";
+  if (normalized.includes("party")) return "party";
+  if (normalized.includes("anniversary")) return "milestone";
+  return "checkin";
 }
 
 function scoreCircleUrgency(urgency: string | null): number {

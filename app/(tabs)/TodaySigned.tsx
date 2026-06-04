@@ -13,6 +13,7 @@ import {
 } from "@/components";
 import { Arrow, ArrowRight, Chevron } from "@/components/icons";
 import { CalendarView } from "@/components/calendar/CalendarView";
+import { SignalBriefSheet } from "@/components/today/SignalBriefSheet";
 import type { TodayCommandItem, TodayPayload } from "@/lib/ai/types";
 
 /**
@@ -355,10 +356,16 @@ function formatEventTime(iso: string): string | null {
 // ── Signals ─────────────────────────────────────────────────────────────────
 
 function SignalsSection({ items }: { items: TodayCommandItem[] }) {
+  const [selectedSignal, setSelectedSignal] = useState<TodayCommandItem | null>(null);
   if (items.length === 0) return null;
   const top = items.slice(0, 4);
   return (
     <section className="mt-10">
+      <SignalBriefSheet
+        item={selectedSignal}
+        open={Boolean(selectedSignal)}
+        onClose={() => setSelectedSignal(null)}
+      />
       <SectionLabel
         trailing={
           <span className="text-[11px] uppercase tracking-[0.2em] text-muted-gold/70">
@@ -371,7 +378,7 @@ function SignalsSection({ items }: { items: TodayCommandItem[] }) {
       <ul className="mt-4 flex flex-col gap-3">
         {top.map((item) => (
           <li key={item.id}>
-            <SignalRow item={item} />
+            <SignalRow item={item} onOpen={setSelectedSignal} />
           </li>
         ))}
       </ul>
@@ -379,16 +386,19 @@ function SignalsSection({ items }: { items: TodayCommandItem[] }) {
   );
 }
 
-function SignalRow({ item }: { item: TodayCommandItem }) {
+function SignalRow({
+  item,
+  onOpen,
+}: {
+  item: TodayCommandItem;
+  onOpen: (item: TodayCommandItem) => void;
+}) {
   const href = item.planSlug
     ? `/plan/${item.planSlug}`
     : `/item/${item.id}`;
   const time = relativeTime(item.startsAt);
-  return (
-    <Link
-      href={href}
-      className="flex items-start gap-3 border-l border-muted-gold/35 bg-soft-black/40 px-4 py-3 transition-colors duration-300 ease-atmospheric hover:bg-soft-black/55"
-    >
+  const body = (
+    <>
       <div className="min-w-0 flex-1">
         <div className="text-[14px] leading-[1.4] text-warm-ivory/88">
           {item.title}
@@ -399,6 +409,47 @@ function SignalRow({ item }: { item: TodayCommandItem }) {
           </div>
         ) : null}
       </div>
+    </>
+  );
+
+  if (item.signalType === "day_alert") {
+    return (
+      <div className="flex items-start gap-3 bg-soft-black/40 px-4 py-3">
+        {body}
+        <div className="ml-3 shrink-0 pt-0.5 text-[11px] text-warm-ivory/45">
+          {time ?? "now"}
+        </div>
+      </div>
+    );
+  }
+
+  if (item.signalType === "life") {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(item)}
+        className="flex w-full items-start gap-3 border-l border-muted-gold/55 bg-soft-black/40 px-4 py-3 text-left transition-colors duration-300 ease-atmospheric hover:bg-soft-black/55"
+      >
+        {body}
+        <div className="ml-3 flex shrink-0 items-center gap-2 pt-0.5 text-[11px] text-warm-ivory/45">
+          {time ?? "now"}
+          <Chevron direction="right" size={12} />
+        </div>
+      </button>
+    );
+  }
+
+  const borderClass =
+    item.signalType === "background_complete"
+      ? "border-warm-ivory/18"
+      : "border-muted-gold/35";
+
+  return (
+    <Link
+      href={href}
+      className={`flex items-start gap-3 border-l ${borderClass} bg-soft-black/40 px-4 py-3 transition-colors duration-300 ease-atmospheric hover:bg-soft-black/55`}
+    >
+      {body}
       <div className="ml-3 flex shrink-0 items-center gap-2 pt-0.5 text-[11px] text-warm-ivory/45">
         {time ?? "now"}
         <Chevron direction="right" size={12} />

@@ -126,6 +126,14 @@ export type TodayCommandItem = {
   planSlug?: string;
   reason?: string;
   intelligenceReason?: IntelligenceReason;
+  signalType?: "life" | "background_complete" | "day_alert";
+  occasionContext?: {
+    personName?: string;
+    relationshipLine?: string;
+    occasionType?: string;
+    daysOut?: number;
+    clusterNote?: string;
+  };
   score?: number;
 };
 
