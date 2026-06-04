@@ -14,6 +14,7 @@ import {
 } from "@/lib/brain/intelligenceTrace";
 import { generatePlanFromItem } from "@/lib/brain/planGenerator";
 import { slugify, type GeneratedPlan } from "@/lib/brain/planTypes";
+import type { PlanChatContext } from "@/lib/plans/chatContext";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
 
 // ── Existing actions (preserved) ────────────────────────────────────────────
@@ -108,6 +109,7 @@ export type GeneratePlanForItemResult = {
   ok: true;
   planId: string;
   planSlug: string;
+  planTitle?: string;
   status: "draft" | "active" | "completed" | "cancelled" | string;
   fallbackUsed: boolean;
   cancelled?: boolean;
@@ -130,6 +132,7 @@ export async function createStubPlan(input: {
   itemId: string;
   force?: boolean;
   sourceObservationId?: string;
+  chatContext?: PlanChatContext;
 }): Promise<CreateStubResult> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
@@ -179,6 +182,7 @@ export async function createStubPlan(input: {
         source_item_type: item.type,
         source_item_category: item.category,
         source_observation_id: input.sourceObservationId ?? null,
+        chat_context: input.chatContext ?? null,
       } as Json,
       quote_card: {} as Json,
       status: "draft",
@@ -225,7 +229,8 @@ export async function fillPlan(input: {
   planId: string;
   userId: string;
   itemId: string;
-}): Promise<{ ok: true; fallbackUsed: boolean; cancelled?: boolean }> {
+  chatContext?: PlanChatContext;
+}): Promise<{ ok: true; fallbackUsed: boolean; cancelled?: boolean; planTitle?: string }> {
   const supabase = getSupabaseServiceClient();
 
   const before = await readPlanBuildState(supabase, input.planId, input.userId);
@@ -241,11 +246,14 @@ export async function fillPlan(input: {
   if (!itemRow) throw new Error("Item not found.");
   const item = rowToIndexedItem(itemRow as SurfacedItemRow);
 
-  const { plan, fallbackUsed } = await generatePlanFromItem({ item });
+  const { plan, fallbackUsed } = await generatePlanFromItem({
+    item,
+    chatContext: input.chatContext,
+  });
 
   const afterGeneration = await readPlanBuildState(supabase, input.planId, input.userId);
   if (isPlanBuildCancelled(afterGeneration)) {
-    return { ok: true, fallbackUsed, cancelled: true };
+    return { ok: true, fallbackUsed, cancelled: true, planTitle: plan.title };
   }
 
   // Preserve the slug chosen at stub time.
@@ -278,6 +286,7 @@ export async function fillPlan(input: {
     fallback_used: fallbackUsed,
     cautions: plan.cautions ?? [],
     grab_list: plan.grab_list ?? [],
+    chat_context: input.chatContext ?? null,
   };
 
   const { error: updateError } = await supabase
@@ -346,7 +355,7 @@ export async function fillPlan(input: {
     .eq("id", input.itemId)
     .eq("user_id", input.userId);
 
-  return { ok: true, fallbackUsed };
+  return { ok: true, fallbackUsed, planTitle: plan.title };
 }
 
 /**
@@ -356,16 +365,19 @@ export async function fillPlan(input: {
 export async function generatePlanForItem(input: {
   itemId: string;
   force?: boolean;
+  chatContext?: PlanChatContext;
 }): Promise<GeneratePlanForItemResult> {
   const stub = await createStubPlan({
     itemId: input.itemId,
     force: input.force,
+    chatContext: input.chatContext,
   });
   if (stub.reused) {
     return {
       ok: true,
       planId: stub.planId,
       planSlug: stub.planSlug,
+      planTitle: undefined,
       status: "draft",
       fallbackUsed: false,
       reused: true,
@@ -376,6 +388,7 @@ export async function generatePlanForItem(input: {
     planId: stub.planId,
     userId: stub.userId,
     itemId: input.itemId,
+    chatContext: input.chatContext,
   });
 
   await recordBehaviorSignal({
@@ -422,6 +435,7 @@ export async function generatePlanForItem(input: {
     ok: true,
     planId: stub.planId,
     planSlug: stub.planSlug,
+    planTitle: filled.planTitle,
     status: "draft",
     fallbackUsed: filled.fallbackUsed,
   };

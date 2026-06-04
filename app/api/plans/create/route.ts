@@ -11,6 +11,7 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createStubPlan, fillPlan } from "@/lib/actions/plans";
+import { sendPlanReadyPush } from "@/lib/push/send";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,11 +27,18 @@ export async function POST(request: Request) {
     if (!stub.reused) {
       after(async () => {
         try {
-          await fillPlan({
+          const filled = await fillPlan({
             planId: stub.planId,
             userId: stub.userId,
             itemId: body.radar_item_id,
           });
+          if (!filled.cancelled) {
+            await sendPlanReadyPush({
+              userId: stub.userId,
+              planSlug: stub.planSlug,
+              planTitle: filled.planTitle ?? "Your plan",
+            });
+          }
         } catch (error) {
           console.error("[plans.create] background fill", error);
         }

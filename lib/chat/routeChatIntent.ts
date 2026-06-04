@@ -162,11 +162,16 @@ export function buildCommandActionChips(input: {
   }
 
   if (itemId && COMMITMENT_RE.test(message)) {
+    const timingHint = extractTimingHint(message);
     chips.push({
       label: "Plan It",
       message: "Plan this.",
       action_type: "build_plan",
-      payload: { item_id: itemId, origin: "voice" },
+      payload: {
+        item_id: itemId,
+        origin: "voice",
+        ...(timingHint ? { timing_hint: timingHint } : {}),
+      },
     });
   }
 
@@ -204,4 +209,11 @@ function extractMemoryContent(message: string, sheetContext: string | undefined)
   if (cleaned.length >= 6) return cleaned.slice(0, 500);
   const visible = sheetContext?.match(/User is on (?:the detail page for|an item detail page\.)([^.]+)/i)?.[1]?.trim();
   return visible && visible.length >= 6 ? visible.slice(0, 500) : null;
+}
+
+function extractTimingHint(message: string): string | null {
+  const match = message.match(
+    /\b(today|tonight|tomorrow|this week|this weekend|next weekend|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening|night))?)\b/i,
+  );
+  return match?.[0] ?? null;
 }

@@ -23,6 +23,8 @@ import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
 import { learnSource } from "@/lib/chat/actions/learnSource";
 import { updateObservation } from "@/lib/chat/observations";
 import { clearChatContextCache } from "@/lib/chat/context/buildChatContext";
+import { sendPlanReadyPush } from "@/lib/push/send";
+import type { PlanChatContext } from "@/lib/plans/chatContext";
 import type { Json } from "@/lib/types/database";
 import type { ChatActionType, ChatChip } from "@/lib/chat/types";
 
@@ -44,6 +46,7 @@ const actionSchema = z.object({
     "compare",
     "dismiss",
     "not_my_vibe",
+    "enable_push",
   ] as const),
   message: z.string().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
@@ -73,6 +76,8 @@ export async function POST(request: Request) {
         return NextResponse.json(await notMyVibe(owner.id, body.payload));
       case "dismiss":
         return NextResponse.json({ ok: true, message: "Done.", chips: [] });
+      case "enable_push":
+        return NextResponse.json({ ok: true, message: "", chips: [] });
       case "find_similar":
       case "compare":
       case "send_message":
@@ -284,10 +289,12 @@ async function buildPlan(
     itemId = result.itemId;
   }
   if (!itemId) throw new Error("No Radar item to plan.");
+  const chatContext = chatContextFromPayload(payload);
 
   const stub = await createStubPlan({
     itemId,
     sourceObservationId: observationId ?? undefined,
+    chatContext,
   });
 
   const supabase = await getServerSupabase();
@@ -300,11 +307,19 @@ async function buildPlan(
   if (!stub.reused) {
     after(async () => {
       try {
-        await fillPlan({
+        const filled = await fillPlan({
           planId: stub.planId,
           userId: stub.userId,
           itemId,
+          chatContext,
         });
+        if (!filled.cancelled) {
+          await sendPlanReadyPush({
+            userId: stub.userId,
+            planSlug: stub.planSlug,
+            planTitle: filled.planTitle ?? "Your plan",
+          });
+        }
       } catch (error) {
         console.error("[chat.actions] background plan fill failed", error);
       }
@@ -547,6 +562,25 @@ async function traceChatAction(input: {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function chatContextFromPayload(
+  payload: Record<string, unknown> | undefined,
+): PlanChatContext | undefined {
+  const timingHint =
+    stringValue(payload?.timing_hint) ?? stringValue(payload?.timingHint);
+  const partySize =
+    numberValue(payload?.party_size) ?? numberValue(payload?.partySize);
+  const notes = stringValue(payload?.notes);
+  const context: PlanChatContext = {};
+  if (timingHint) context.timingHint = timingHint;
+  if (partySize) context.partySize = partySize;
+  if (notes) context.notes = notes;
+  return Object.keys(context).length ? context : undefined;
 }
 
 function handleError(error: unknown) {

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 export type UsePushSubscription = {
   isSupported: boolean;
   isSubscribed: boolean;
-  subscribe: () => Promise<void>;
+  subscribe: () => Promise<boolean>;
   unsubscribe: () => Promise<void>;
 };
 
@@ -41,14 +41,14 @@ export function usePushSubscription(): UsePushSubscription {
   }, []);
 
   const subscribe = useCallback(async () => {
-    if (!isSupported) return;
+    if (!isSupported) return false;
     if (!VAPID_PUBLIC_KEY) {
       console.warn("[push] NEXT_PUBLIC_VAPID_PUBLIC_KEY missing; cannot subscribe");
-      return;
+      return false;
     }
     try {
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") return;
+      if (permission !== "granted") return false;
 
       const registration = await ensureRegistration();
       let subscription = await registration.pushManager.getSubscription();
@@ -61,7 +61,7 @@ export function usePushSubscription(): UsePushSubscription {
 
       const p256dh = subscription.getKey("p256dh");
       const auth = subscription.getKey("auth");
-      if (!p256dh || !auth) return;
+      if (!p256dh || !auth) return false;
 
       const res = await fetch("/api/push/subscribe", {
         method: "POST",
@@ -72,10 +72,14 @@ export function usePushSubscription(): UsePushSubscription {
           auth: arrayBufferToBase64(auth),
         }),
       });
-      if (res.ok) setIsSubscribed(true);
+      if (res.ok) {
+        setIsSubscribed(true);
+        return true;
+      }
     } catch (err) {
       console.error("[push] subscribe failed", err);
     }
+    return false;
   }, [isSupported]);
 
   const unsubscribe = useCallback(async () => {

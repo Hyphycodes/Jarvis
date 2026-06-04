@@ -7,6 +7,7 @@ import type { IntentResult } from "@/lib/brain/intentClassifier";
 import type { ChatAttachment, ChatChip } from "@/lib/chat/types";
 import { useRealtimeVoice } from "@/lib/voice/useRealtimeVoice";
 import { buildSheetContext } from "@/lib/voice/buildSheetContext";
+import { usePushSubscription } from "@/lib/push/usePushSubscription";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,8 @@ type AttachmentContext = {
 const VOICE_PREF_KEY = "jarvis_voice_output";
 const SESSION_KEY = "jarvis_session";
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const PUSH_SUBSCRIBED_KEY = "push_subscribed";
+const PUSH_PUBLIC_KEY_AVAILABLE = Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,6 +51,14 @@ function readVoicePref(): boolean {
 }
 function saveVoicePref(on: boolean) {
   try { localStorage.setItem(VOICE_PREF_KEY, on ? "1" : "0"); } catch { /* noop */ }
+}
+
+function readPushSubscribedState(): string | null {
+  try { return localStorage.getItem(PUSH_SUBSCRIBED_KEY); } catch { return null; }
+}
+
+function savePushSubscribedState(value: "prompted" | "true") {
+  try { localStorage.setItem(PUSH_SUBSCRIBED_KEY, value); } catch { /* noop */ }
 }
 
 function saveSession(messages: Message[]) {
@@ -158,6 +169,8 @@ export function MicSheet({
   const photoInputRef = useRef<HTMLInputElement>(null);
   const didRestoreRef = useRef(false);
   const startListeningFiredRef = useRef(false);
+  const pushPromptShownRef = useRef(false);
+  const { isSupported: pushSupported, isSubscribed: pushSubscribed, subscribe: subscribePush } = usePushSubscription();
 
   // ── Realtime voice hook ─────────────────────────────────────────────────────
 
@@ -230,6 +243,22 @@ export function MicSheet({
       setState("listening");
     }
   }, [isListening]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const maybeAddPushPromptChip = useCallback((chips: ChatChip[]): ChatChip[] => {
+    if (!PUSH_PUBLIC_KEY_AVAILABLE) return chips;
+    if (!pushSupported || pushSubscribed || pushPromptShownRef.current) return chips;
+    if (readPushSubscribedState()) return chips;
+    pushPromptShownRef.current = true;
+    savePushSubscribedState("prompted");
+    return [
+      ...chips,
+      {
+        label: "Get notified when plans are ready",
+        message: "",
+        action_type: "enable_push" as const,
+      },
+    ].slice(0, 5);
+  }, [pushSupported, pushSubscribed]);
 
   // ── Mic toggle ──────────────────────────────────────────────────────────────
 
@@ -342,11 +371,12 @@ export function MicSheet({
               }
             } else if (event.type === "done") {
               if (accumulated) {
+                const chips = maybeAddPushPromptChip(intentChips);
                 const jarvisMsg: Message = {
                   role: "jarvis",
                   content: accumulated,
                   timestamp: Date.now(),
-                  chips: intentChips.length > 0 ? intentChips : undefined,
+                  chips: chips.length > 0 ? chips : undefined,
                 };
                 setMessages((prev) => [...prev, jarvisMsg]);
                 setCurrentResponse("");
@@ -364,9 +394,10 @@ export function MicSheet({
       }
 
       if (accumulated && !messages.find((m) => m.content === accumulated)) {
+        const chips = maybeAddPushPromptChip(intentChips);
         setMessages((prev) => {
           if (prev[prev.length - 1]?.role === "jarvis") return prev;
-          return [...prev, { role: "jarvis", content: accumulated, timestamp: Date.now(), chips: intentChips.length > 0 ? intentChips : undefined }];
+          return [...prev, { role: "jarvis", content: accumulated, timestamp: Date.now(), chips: chips.length > 0 ? chips : undefined }];
         });
         setCurrentResponse("");
         setState("idle");
@@ -378,7 +409,7 @@ export function MicSheet({
       setAnalyzingImage(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachment]);
+  }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachment, maybeAddPushPromptChip]);
 
   const busy = state === "thinking" || state === "responding";
 
@@ -429,6 +460,68 @@ export function MicSheet({
       return;
     }
 
+    if (chip.action_type === "enable_push") {
+      haptic(8);
+      const ok = await subscribePush();
+      if (ok) {
+        savePushSubscribedState("true");
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "jarvis",
+            content: "Got it — I'll notify you when things are ready.",
+            timestamp: Date.now(),
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "jarvis",
+            content: "No problem. Notifications are off for now.",
+            timestamp: Date.now(),
+          },
+        ]);
+      }
+      return;
+    }
+
+    if (chip.action_type === "build_plan") {
+      const itemId = stringPayload(chip.payload, "item_id");
+      const observationId = stringPayload(chip.payload, "observation_id");
+      if (!itemId && !observationId) return;
+      const chatContext = chatContextPayload(chip);
+      const jarvisMsg: Message = {
+        role: "jarvis",
+        content: "On it — I'll have the plan ready shortly. I'll let you know when it's done.",
+        timestamp: Date.now(),
+      };
+      const nextMessages = [...messages, jarvisMsg];
+      setMessages(nextMessages);
+      saveSession(nextMessages);
+      setState("idle");
+      onClose();
+
+      if (itemId) {
+        void fetch(`/api/items/${itemId}/generate-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_context: chatContext }),
+        }).catch(() => {});
+      } else if (observationId) {
+        void fetch("/api/chat/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action_type: "build_plan",
+            message: chip.message,
+            payload: { ...chip.payload, ...chatContext },
+          }),
+        }).catch(() => {});
+      }
+      return;
+    }
+
     haptic(8);
     const userMessage: Message = {
       role: "user",
@@ -472,7 +565,7 @@ export function MicSheet({
       setError(err instanceof Error ? err.message : "Action failed.");
       setState("idle");
     }
-  }, [busy, handleSendMessage]);
+  }, [busy, handleSendMessage, messages, onClose, subscribePush]);
 
   // ── Voice playback ──────────────────────────────────────────────────────────
 
@@ -775,6 +868,43 @@ export function MicSheet({
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
+
+function stringPayload(payload: ChatChip["payload"], key: string): string | undefined {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberPayload(payload: ChatChip["payload"], key: string): number | undefined {
+  const value = payload?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function chatContextPayload(chip: ChatChip): {
+  timing_hint?: string;
+  party_size?: number;
+  notes?: string;
+} {
+  const timingHint =
+    stringPayload(chip.payload, "timing_hint") ??
+    stringPayload(chip.payload, "timingHint") ??
+    inferTimingHint(chip.message);
+  const partySize =
+    numberPayload(chip.payload, "party_size") ??
+    numberPayload(chip.payload, "partySize");
+  const notes = stringPayload(chip.payload, "notes") ?? chip.message.trim();
+  return {
+    ...(timingHint ? { timing_hint: timingHint } : {}),
+    ...(partySize ? { party_size: partySize } : {}),
+    ...(notes ? { notes: notes.slice(0, 500) } : {}),
+  };
+}
+
+function inferTimingHint(text: string): string | undefined {
+  const match = text.match(
+    /\b(today|tonight|tomorrow|this week|this weekend|next weekend|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening|night))?)\b/i,
+  );
+  return match?.[0];
+}
 
 function AttachmentPreview({
   attachment,

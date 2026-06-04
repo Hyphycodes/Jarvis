@@ -43,6 +43,7 @@ export type ChatActionType =
   | "build_plan"
   | "stop_planning"
   | "remember"
+  | "enable_push"
   | "find_similar"
   | "compare"
   | "dismiss"

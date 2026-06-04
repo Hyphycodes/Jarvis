@@ -1,6 +1,7 @@
 import "server-only";
 
 import webpush from "web-push";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 export type PushSubscriptionKeys = {
   endpoint: string;
@@ -72,4 +73,35 @@ export async function sendPushNotification(
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+export async function sendPlanReadyPush(input: {
+  userId: string;
+  planSlug: string;
+  planTitle: string;
+}): Promise<void> {
+  if (!hasVapid()) return;
+
+  const supabase = getSupabaseServiceClient();
+  const { data: subs, error } = await supabase
+    .from("push_subscriptions")
+    .select("endpoint,p256dh,auth")
+    .eq("user_id", input.userId);
+  if (error) {
+    console.error("[push.planReady] subscription lookup failed", error);
+    return;
+  }
+
+  const subscriptions = (subs ?? []) as PushSubscriptionKeys[];
+  if (!subscriptions.length) return;
+
+  await Promise.allSettled(
+    subscriptions.map((subscription) =>
+      sendPushNotification(subscription, {
+        title: "Plan ready",
+        body: input.planTitle,
+        url: `/plan/${input.planSlug}`,
+      }),
+    ),
+  );
 }

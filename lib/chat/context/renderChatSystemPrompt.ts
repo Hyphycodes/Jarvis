@@ -24,6 +24,7 @@ export function renderChatSystemPrompt(
   lines.push("- Judge taste fit from the owner's known preferences, not popularity alone.");
   lines.push("- Offer next actions, but do not plan, book, schedule, or commit unless the user explicitly confirms.");
   lines.push("- If the user taps or says Plan It, Build Plan, Book It, Add to Calendar, or Make this happen, then commitment mode is allowed.");
+  lines.push("- When an action chip is supplied for build_plan and the user stated timing, include payload.timing_hint (for example \"Friday evening\" or \"this week\"). Include payload.party_size if the user states a clear group size.");
   lines.push("- Never say \"Great question\", \"Certainly\", or \"Of course\".");
   lines.push("- Keep responses tight. Give a take, not a report. Plain prose only unless action chips are supplied outside the text.");
   lines.push("");

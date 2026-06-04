@@ -22,6 +22,13 @@ import { buildInterestGraph } from "@/lib/brain/interestGraph";
 import { summarizeInterestGraph } from "@/lib/brain/interests";
 import { buildConsiderationBrief } from "@/lib/items/considerationBrief";
 import type { IndexedItem } from "@/lib/index/types";
+import { getDailyForecast } from "@/lib/sources/openMeteo";
+import {
+  hasGooglePlaces,
+  nearbyPlaces,
+  searchPlaceForEnrichment,
+} from "@/lib/sources/googlePlaces";
+import type { PlanChatContext } from "@/lib/plans/chatContext";
 import {
   generatedPlanSchema,
   slugify,
@@ -88,6 +95,15 @@ Strict JSON matching the GeneratedPlan schema:
 - best_window: optional; only when timing can be stated without inventing.
 - source_item_id: copy the source item id.
 
+CHAT-SOURCED PLAN CONTEXT
+- If chat_context.timingHint exists, treat it as the user's stated window and
+  make the plan respect it. Do not replace "Friday evening" with generic timing.
+- If chat_context.partySize exists, use it in cost posture and logistics.
+- If supplemental weather exists, include a weather-aware wear/bring suggestion.
+- If supplemental place details or alternatives exist, use them as verification
+  context, not as proof that booking is complete.
+- If cost_estimate exists, include a concise cost section.
+
 NEVER
 - Fabricate reservation confirmations, addresses, or phone numbers.
 - Pad sections with obvious advice.
@@ -99,6 +115,7 @@ NEVER
 
 export type GeneratePlanInput = {
   item: IndexedItem;
+  chatContext?: PlanChatContext;
 };
 
 export async function generatePlanFromItem(
@@ -106,7 +123,7 @@ export async function generatePlanFromItem(
 ): Promise<PlanGenerationResult> {
   if (!hasAnthropic()) {
     return {
-      plan: deterministicPlan(input.item),
+      plan: deterministicPlan(input.item, input.chatContext),
       fallbackUsed: true,
       reason: "no_anthropic_key",
     };
@@ -115,7 +132,14 @@ export async function generatePlanFromItem(
   try {
     const context = await buildBrainContext({ includeWeather: false });
     const graph = buildInterestGraph({ context });
-    const promptBody = renderPrompt(input.item, context, graph);
+    const supplemental = await buildSupplementalContext(input.item, input.chatContext);
+    const promptBody = renderPrompt(
+      input.item,
+      context,
+      graph,
+      input.chatContext,
+      supplemental,
+    );
 
     const raw = await generateStructured<unknown>({
       system: SYSTEM_PROMPT,
@@ -129,7 +153,7 @@ export async function generatePlanFromItem(
     if (!parsed.success) {
       console.error("[plan.generator] schema mismatch", parsed.error.message);
       return {
-        plan: deterministicPlan(input.item),
+        plan: deterministicPlan(input.item, input.chatContext),
         fallbackUsed: true,
         reason: "schema_invalid",
       };
@@ -143,7 +167,7 @@ export async function generatePlanFromItem(
   } catch (error) {
     console.error("[plan.generator] claude failed", error);
     return {
-      plan: deterministicPlan(input.item),
+      plan: deterministicPlan(input.item, input.chatContext),
       fallbackUsed: true,
       reason: "claude_error",
     };
@@ -156,6 +180,8 @@ function renderPrompt(
   item: IndexedItem,
   context: Awaited<ReturnType<typeof buildBrainContext>>,
   graph: ReturnType<typeof buildInterestGraph>,
+  chatContext: PlanChatContext | undefined,
+  supplemental: PlanSupplementalContext,
 ): string {
   const now = new Date();
   const isWeeknight = now.getDay() >= 1 && now.getDay() <= 4;
@@ -230,12 +256,19 @@ function renderPrompt(
         maxSubinterestsPerArea: 4,
       }),
       weather: context.weather,
+      chat_context: chatContext ?? null,
+      supplemental_context: supplemental,
       instructions: [
         "Generate a single plan for this item — the operator move.",
+        chatContext?.timingHint
+          ? `Respect this user-stated timing window: ${chatContext.timingHint}.`
+          : "If timing is unknown, include a 'timing' section that says what to confirm.",
         "Use 3–6 concise sections, only those that genuinely apply.",
         "Adapt the sections to the item type; do not force nightlife, route, or map sections onto products and ideas.",
-        "If timing is unknown, include a 'timing' section that says what to confirm.",
         "Include 'route' only if location data is available; otherwise omit or use placeholder language.",
+        "Use supplemental weather for outfit/wear guidance when present.",
+        "Use supplemental place details for verification only; do not claim a reservation or booking exists.",
+        "Use cost_estimate and party size to write a practical cost section when relevant.",
         "For products, style, articles, ideas, land, and creative inspiration, prefer research/compare/verify steps over fake execution logistics.",
         "Include 'detours' only when truly worth it. 0 is valid.",
         "Set effort_level and spending_posture honestly.",
@@ -254,14 +287,14 @@ function renderPrompt(
  * Real, honest fallback plan. Uses the item's actual fields. Does not
  * invent timing, prices, or atmosphere details it cannot know.
  */
-function deterministicPlan(item: IndexedItem): GeneratedPlan {
+function deterministicPlan(item: IndexedItem, chatContext?: PlanChatContext): GeneratedPlan {
   const brief = buildConsiderationBrief(item);
   const slug = slugify(`${item.title}-${item.id.slice(0, 6)}`);
   const planType = inferPlanType(item);
   const effort = inferEffort(item);
   const spending = inferSpending(item);
   const primaryMove = inferPrimaryMove(item, brief);
-  const bestWindow = inferBestWindow(item);
+  const bestWindow = chatContext?.timingHint ?? inferBestWindow(item);
   const whyThis =
     brief.jarvisTake ||
     brief.bestMoveBody ||
@@ -282,6 +315,8 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
       section_type: "timing",
       body: item.startsAt
         ? `Scheduled for ${formatWhen(item.startsAt)}. Confirm before leaving.`
+        : chatContext?.timingHint
+          ? `Use the window the user gave: ${chatContext.timingHint}. Confirm hours and availability before committing.`
         : bestWindow ?? "No date confirmed yet. Pick a real window before acting.",
       sort_order: 20,
     },
@@ -304,6 +339,13 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
         .filter(Boolean)
         .join("\n") || "No additional details. Confirm specifics before going.",
       sort_order: 40,
+    },
+    {
+      key: "cost",
+      title: "Cost Check",
+      section_type: "cost",
+      body: costEstimateForItem(item, chatContext?.partySize),
+      sort_order: 45,
     },
     {
       key: "next",
@@ -351,6 +393,227 @@ function deterministicPlan(item: IndexedItem): GeneratedPlan {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+type PlanSupplementalContext = {
+  weather: {
+    date: string;
+    highF: number;
+    lowF: number;
+    precipitationProbability: number;
+    weather: string;
+  } | null;
+  placeDetails: {
+    name?: string;
+    address?: string;
+    rating?: number;
+    userRatingCount?: number;
+    priceLevel?: string;
+    website?: string;
+    mapsUrl?: string;
+    hoursSummary?: string;
+    summary?: string;
+  } | null;
+  nearbyAlternatives: Array<{
+    name: string;
+    address?: string;
+    rating?: number;
+    priceLevel?: string;
+    mapsUrl?: string;
+  }>;
+  costEstimate: string;
+};
+
+async function buildSupplementalContext(
+  item: IndexedItem,
+  chatContext?: PlanChatContext,
+): Promise<PlanSupplementalContext> {
+  const [weatherResult, placeResult, alternativesResult] = await Promise.allSettled([
+    fetchWeatherForTiming(chatContext?.timingHint, item),
+    enrichPlaceFromGooglePlaces(item),
+    findNearbyAlternatives(item),
+  ]);
+
+  return {
+    weather: weatherResult.status === "fulfilled" ? weatherResult.value : null,
+    placeDetails: placeResult.status === "fulfilled" ? placeResult.value : null,
+    nearbyAlternatives:
+      alternativesResult.status === "fulfilled" ? alternativesResult.value : [],
+    costEstimate: costEstimateForItem(item, chatContext?.partySize),
+  };
+}
+
+async function fetchWeatherForTiming(
+  timingHint: string | undefined,
+  item: IndexedItem,
+): Promise<PlanSupplementalContext["weather"]> {
+  if (!timingHint || item.lat == null || item.lng == null) return null;
+  const targetDate = parseTimingDate(timingHint);
+  if (!targetDate) return null;
+  const daysOut = Math.floor((startOfDay(targetDate).getTime() - startOfDay(new Date()).getTime()) / 86_400_000);
+  if (daysOut < 0 || daysOut > 15) return null;
+
+  const forecast = await getDailyForecast({ lat: item.lat, lng: item.lng, days: Math.max(daysOut + 1, 1) });
+  const date = toDateKey(targetDate);
+  const idx = forecast.dates.indexOf(date);
+  if (idx === -1) return null;
+  return {
+    date,
+    highF: Math.round(forecast.highF[idx]),
+    lowF: Math.round(forecast.lowF[idx]),
+    precipitationProbability: forecast.precipitationProbability[idx],
+    weather: weatherWord(forecast.weatherCode[idx]),
+  };
+}
+
+async function enrichPlaceFromGooglePlaces(
+  item: IndexedItem,
+): Promise<PlanSupplementalContext["placeDetails"]> {
+  if (!hasGooglePlaces() || !needsPlaceEnrichment(item)) return null;
+  const query = [item.title, item.locationName, item.address].filter(Boolean).join(" ");
+  if (!query.trim()) return null;
+  const place = await searchPlaceForEnrichment({
+    query,
+    lat: item.lat,
+    lng: item.lng,
+  });
+  if (!place) return null;
+  return {
+    name: place.displayName?.text,
+    address: place.formattedAddress ?? place.shortFormattedAddress,
+    rating: place.rating,
+    userRatingCount: place.userRatingCount,
+    priceLevel: place.priceLevel,
+    website: place.websiteUri,
+    mapsUrl: place.googleMapsUri,
+    hoursSummary: place.regularOpeningHours?.weekdayDescriptions?.join(" | "),
+    summary: place.editorialSummary?.text,
+  };
+}
+
+async function findNearbyAlternatives(
+  item: IndexedItem,
+): Promise<PlanSupplementalContext["nearbyAlternatives"]> {
+  if (!hasGooglePlaces() || item.lat == null || item.lng == null) return [];
+  const places = await nearbyPlaces({
+    lat: item.lat,
+    lng: item.lng,
+    radiusMeters: 1_500,
+    maxResults: 6,
+    includedTypes: includedTypesForItem(item),
+  });
+  const canonical = canonicalTitle(item.title);
+  return places
+    .filter((place) => canonicalTitle(place.displayName?.text ?? "") !== canonical)
+    .slice(0, 3)
+    .map((place) => ({
+      name: place.displayName?.text ?? "Nearby option",
+      address: place.shortFormattedAddress ?? place.formattedAddress,
+      rating: place.rating,
+      priceLevel: place.priceLevel,
+      mapsUrl: place.googleMapsUri,
+    }));
+}
+
+function needsPlaceEnrichment(item: IndexedItem): boolean {
+  if (!["restaurant", "place", "event", "culture"].includes(item.type)) return false;
+  const raw = isRecord(item.rawPayload) ? item.rawPayload : {};
+  return !item.address || !stringValue(raw.hours_summary) || !stringValue(raw.price_level);
+}
+
+function includedTypesForItem(item: IndexedItem): string[] | undefined {
+  if (item.type === "restaurant") return ["restaurant"];
+  if (item.type === "culture" || item.type === "event") return ["performing_arts_theater"];
+  return undefined;
+}
+
+function costEstimateForItem(item: IndexedItem, partySize?: number): string {
+  const raw = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const price = stringValue(raw.price_level) ?? stringValue(raw.priceLevel);
+  const perPerson =
+    price === "$" || price === "PRICE_LEVEL_INEXPENSIVE" ? "$20-40/person" :
+    price === "$$" || price === "PRICE_LEVEL_MODERATE" ? "$40-80/person" :
+    price === "$$$" || price === "PRICE_LEVEL_EXPENSIVE" ? "$80-150/person" :
+    price === "$$$$" || price === "PRICE_LEVEL_VERY_EXPENSIVE" ? "$150+/person" :
+    price === "PRICE_LEVEL_FREE" ? "free" :
+    item.type === "restaurant" ? "$40-80/person until confirmed" :
+    item.type === "event" ? "ticket cost unknown until confirmed" :
+    item.type === "product" || item.type === "style" ? "purchase cost unknown until verified" :
+    "cost unknown until confirmed";
+  if (!partySize || partySize <= 1 || perPerson === "free") return perPerson;
+  return `${perPerson}; party of ${partySize}, so multiply before committing.`;
+}
+
+function parseTimingDate(timingHint: string): Date | null {
+  const lower = timingHint.toLowerCase();
+  const today = startOfDay(new Date());
+
+  if (/\btoday\b|\btonight\b/.test(lower)) return today;
+  if (/\btomorrow\b/.test(lower)) {
+    const next = new Date(today);
+    next.setDate(next.getDate() + 1);
+    return next;
+  }
+  if (/\b(this|next) weekend\b/.test(lower)) {
+    const next = new Date(today);
+    const saturday = 6;
+    const delta = (saturday - today.getDay() + 7) % 7 || 7;
+    next.setDate(next.getDate() + (lower.includes("next weekend") ? delta + 7 : delta));
+    return next;
+  }
+
+  const weekday = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ].findIndex((day) => lower.includes(day));
+  if (weekday >= 0) {
+    const next = new Date(today);
+    const delta = (weekday - today.getDay() + 7) % 7 || 7;
+    next.setDate(next.getDate() + delta);
+    return next;
+  }
+
+  const iso = lower.match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1];
+  if (iso) {
+    const parsed = new Date(`${iso}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
+function startOfDay(date: Date): Date {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function toDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function weatherWord(code: number): string {
+  if (code === 0) return "Clear";
+  if (code <= 3) return "Partly cloudy";
+  if (code <= 48) return "Fog";
+  if (code <= 67) return "Rain";
+  if (code <= 77) return "Snow";
+  if (code <= 82) return "Showers";
+  if (code <= 86) return "Snow showers";
+  return "Storms";
+}
+
+function canonicalTitle(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
 function inferPlanType(item: IndexedItem): GeneratedPlan["plan_type"] {
   const tags = new Set(item.tags.map((tag) => tag.toLowerCase()));
