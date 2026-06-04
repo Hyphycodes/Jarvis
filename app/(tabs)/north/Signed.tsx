@@ -1,48 +1,65 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { type ReactNode, type SVGProps } from "react";
 import { AppFrame } from "@/components";
 import { Chevron } from "@/components/icons";
-import type { NorthPayload } from "@/lib/ai/types";
+import type { NorthPayload, NorthPillar, NorthSignal } from "@/lib/ai/types";
 
-const PILLARS: Array<{ name: string; status: string; gradient: string }> = [
-  { name: "Body",          status: "Active",      gradient: "linear-gradient(165deg, #2a2018 0%, #100c08 72%)" },
-  { name: "Skill",         status: "Needs a rep", gradient: "linear-gradient(165deg, #1d1d20 0%, #0b0b0c 72%)" },
-  { name: "Creative",      status: "Warm",        gradient: "linear-gradient(165deg, #241813 0%, #0d0908 72%)" },
-  { name: "Ownership",     status: "Warm",        gradient: "linear-gradient(165deg, #20231c 0%, #0a0c08 72%)" },
-  { name: "Taste",         status: "Warm",        gradient: "linear-gradient(165deg, #261d22 0%, #0c0a0b 72%)" },
-  { name: "Relationships", status: "Nurturing",   gradient: "linear-gradient(165deg, #1b2126 0%, #080b0d 72%)" },
-  { name: "Peace",         status: "Protected",   gradient: "linear-gradient(165deg, #1a2420 0%, #080c0a 72%)" },
-];
+// TODO: pull from DB when north_star_title / north_star_subtitle fields exist in founder_profile
+const NORTH_STAR_TITLE = "A slower life. Owned.";
+const NORTH_STAR_SUBTITLE_LINES = ["Surrounded by beauty,", "craft, and real connection."];
 
-const NEXT_REPS: Array<{ title: string; category: string }> = [
-  { title: "Play basketball outside", category: "Body" },
-  { title: "Review one land listing", category: "Ownership" },
-  { title: "DJ crate cleanup",        category: "Creative" },
-];
+const REMINDER_FALLBACK = "Discipline today. Freedom tomorrow.";
 
-const REMINDER = "Discipline today. Freedom tomorrow.";
+// Deterministic gradient by pillar title. Falls back to neutral dark.
+const PILLAR_GRADIENTS: Record<string, string> = {
+  Body:          "linear-gradient(165deg, #2a2018 0%, #100c08 72%)",
+  Skill:         "linear-gradient(165deg, #1d1d20 0%, #0b0b0c 72%)",
+  Creative:      "linear-gradient(165deg, #241813 0%, #0d0908 72%)",
+  Ownership:     "linear-gradient(165deg, #20231c 0%, #0a0c08 72%)",
+  Taste:         "linear-gradient(165deg, #261d22 0%, #0c0a0b 72%)",
+  Relationships: "linear-gradient(165deg, #1b2126 0%, #080b0d 72%)",
+  Peace:         "linear-gradient(165deg, #1a2420 0%, #080c0a 72%)",
+  Jarvis:        "linear-gradient(165deg, #1a1d2a 0%, #080a0d 72%)",
+  Capital:       "linear-gradient(165deg, #20231c 0%, #0a0c08 72%)",
+};
+const DEFAULT_GRADIENT = "linear-gradient(165deg, #1e1e1e 0%, #0c0c0c 72%)";
 
-// payload preserved so the loader signature is unchanged.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function gradientForPillar(title: string): string {
+  return (
+    PILLAR_GRADIENTS[title] ??
+    PILLAR_GRADIENTS[title.split(" ")[0] ?? ""] ??
+    DEFAULT_GRADIENT
+  );
+}
+
+function statusForPillar(pillar: NorthPillar): string {
+  const p = pillar.progress;
+  if (p == null || p < 0.15) return "Getting started";
+  if (p < 0.35) return "Warm";
+  if (p < 0.6)  return "Active";
+  if (p < 0.8)  return "Strong";
+  return "Thriving";
+}
+
 export function NorthSigned({ payload }: { payload?: NorthPayload }) {
-  void payload;
+  const pillars = payload?.pillars ?? [];
+  const signals = payload?.signals ?? [];
+
   return (
     <AppFrame>
       <Header />
       <Hero />
       <NorthStar />
-      <Pillars />
-      <NextRightSteps />
+      <Pillars pillars={pillars} />
+      <NextRightSteps signals={signals} pillars={pillars} />
       <NorthReminder />
       <AccountRow />
     </AppFrame>
   );
 }
 
-// ── Header (Radar token treatment) ─────────────────────────────────────────
+// ── Header ───────────────────────────────────────────────────────────────────
 
 function Header() {
   return (
@@ -71,7 +88,7 @@ function formatNorthDate(): string {
     .toUpperCase();
 }
 
-// ── Hero ────────────────────────────────────────────────────────────────────
+// ── Hero ─────────────────────────────────────────────────────────────────────
 
 function Hero() {
   return (
@@ -96,7 +113,7 @@ function Hero() {
   );
 }
 
-// ── North Star ──────────────────────────────────────────────────────────────
+// ── North Star ───────────────────────────────────────────────────────────────
 
 function NorthStar() {
   return (
@@ -105,13 +122,13 @@ function NorthStar() {
         The North Star
       </div>
       <h2 className="mt-4 font-serif text-[40px] leading-[1.04] tracking-[-0.01em] text-warm-ivory">
-        A slower life. Owned.
+        {NORTH_STAR_TITLE}
       </h2>
       <div className="mt-4 h-px w-8 bg-muted-gold/30" />
       <p className="mt-5 max-w-[34ch] text-[15px] leading-[1.55] text-warm-ivory/62">
-        Surrounded by beauty,
+        {NORTH_STAR_SUBTITLE_LINES[0]}
         <br />
-        craft, and real connection.
+        {NORTH_STAR_SUBTITLE_LINES[1]}
       </p>
       <button
         type="button"
@@ -123,9 +140,9 @@ function NorthStar() {
   );
 }
 
-// ── Pillars ─────────────────────────────────────────────────────────────────
+// ── Pillars ──────────────────────────────────────────────────────────────────
 
-function Pillars() {
+function Pillars({ pillars }: { pillars: NorthPillar[] }) {
   return (
     <section className="mt-12">
       <div className="text-[11px] uppercase tracking-[0.22em] text-warm-ivory/70">
@@ -137,8 +154,14 @@ function Pillars() {
         style={{ touchAction: "pan-x" }}
       >
         <div className="flex gap-3">
-          {PILLARS.map((p, i) => (
-            <PillarCard key={p.name} index={i} {...p} />
+          {pillars.map((p, i) => (
+            <PillarCard
+              key={p.id}
+              index={i}
+              name={p.title}
+              status={statusForPillar(p)}
+              gradient={gradientForPillar(p.title)}
+            />
           ))}
         </div>
       </div>
@@ -168,9 +191,17 @@ function PillarCard({ index, name, status, gradient }: {
   );
 }
 
-// ── Next Right Steps ─────────────────────────────────────────────────────────
+// ── Next Right Steps ──────────────────────────────────────────────────────────
 
-function NextRightSteps() {
+function NextRightSteps({
+  signals,
+  pillars,
+}: {
+  signals: NorthSignal[];
+  pillars: NorthPillar[];
+}) {
+  const pillarById = new Map(pillars.map((p) => [p.id, p]));
+
   return (
     <section className="mt-12">
       <div className="flex items-center justify-between">
@@ -185,20 +216,20 @@ function NextRightSteps() {
         </button>
       </div>
       <ul className="mt-5 flex flex-col">
-        {NEXT_REPS.map((rep, i) => (
+        {signals.map((sig, i) => (
           <li
-            key={rep.title}
+            key={sig.id}
             className={
               "flex items-center gap-4 py-4 " +
-              (i !== NEXT_REPS.length - 1 ? "border-b border-divider/45" : "")
+              (i !== signals.length - 1 ? "border-b border-divider/45" : "")
             }
           >
             <span aria-hidden className="h-[18px] w-[18px] shrink-0 rounded-full border border-warm-ivory/30" />
             <span className="min-w-0 flex-1 text-[15px] leading-snug text-warm-ivory/90">
-              {rep.title}
+              {sig.title}
             </span>
             <span className="shrink-0 text-[10px] uppercase tracking-[0.18em] text-warm-ivory/45">
-              {rep.category}
+              {pillarById.get(sig.pillarId)?.title ?? "—"}
             </span>
           </li>
         ))}
@@ -216,7 +247,7 @@ function NorthReminder() {
         North Reminder
       </div>
       <p className="mt-2 font-serif text-[18px] italic leading-[1.4] text-warm-ivory">
-        {REMINDER}
+        {REMINDER_FALLBACK}
       </p>
     </section>
   );
