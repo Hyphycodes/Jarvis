@@ -244,7 +244,7 @@ export type CirclePerson = {
     | "real_estate"
     | "creatives"
     | "faith"
-    | "italy"
+    | "travel"
     | "family"
     | "business";
   role?: string;

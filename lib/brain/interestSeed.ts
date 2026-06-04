@@ -124,13 +124,12 @@ const TOP_LEVEL: SeedInterest[] = [
     effortLevel: "medium",
     avoidNotes: ["No content-farm aesthetics, no engagement-bait creative."],
   }),
-  area("travel_italy", "Travel — Italy & rural life", 0.8, {
+  area("travel", "Travel & global living", 0.75, {
     relatedSources: ["tavily", "brave"],
     spendingPosture: "high",
     effortLevel: "high",
     preferredDestinations: ["holding", "north"],
-    seasonality: "spring",
-    avoidNotes: ["No mass-tourism itineraries. No cruise-ship culture."],
+    avoidNotes: ["No mass-tourism itineraries. No cruise-ship culture. No packaged tours."],
   }),
   area("health_discipline", "Health & discipline", 0.75, {
     relatedSources: ["tavily", "brave", "localRadar"],
@@ -181,7 +180,7 @@ const SUBS: SeedInterest[] = [
   sub("quiet_luxury", "Quiet luxury", "style_menswear", 0.9),
   sub("rugged_masculine", "Rugged masculine", "style_menswear", 0.85),
   sub("sherpa_western", "Sherpa / western texture", "style_menswear", 0.8),
-  sub("italian_countryside_style", "Italian countryside", "style_menswear", 0.8),
+  sub("craftsmanship_materials", "Craftsmanship materials & texture", "style_menswear", 0.8),
   sub("vintage_texture", "Vintage texture", "style_menswear", 0.75),
   sub("boutique_releases", "Boutique releases", "style_menswear", 0.7),
 
@@ -200,7 +199,7 @@ const SUBS: SeedInterest[] = [
 
   // land_homestead
   sub("michigan_wisconsin_land", "Michigan / Wisconsin land", "land_homestead", 0.85),
-  sub("italy_countryside", "Italy countryside (Umbria/Tuscany)", "land_homestead", 0.8),
+  sub("rural_property_abroad", "Rural property abroad", "land_homestead", 0.75),
   sub("cabins_timber", "Cabins, timber, woodworking", "land_homestead", 0.8),
   sub("homestead_infra", "Wells, septic, water, privacy", "land_homestead", 0.7),
   sub("outdoor_kitchens", "Outdoor kitchens & fires", "land_homestead", 0.7),
@@ -211,11 +210,12 @@ const SUBS: SeedInterest[] = [
   sub("dj_crates", "DJ crates & analog texture", "creative_craft", 0.75),
   sub("narrative_creative", "Narrative-driven creative production", "creative_craft", 0.8),
 
-  // travel_italy
-  sub("umbria_tuscany", "Umbria & Tuscany", "travel_italy", 0.85),
-  sub("wwoof_farm_stays", "WWOOF / farm stays", "travel_italy", 0.7),
-  sub("countryside_food", "Countryside food", "travel_italy", 0.85),
-  sub("design_hotels_italy", "Italian design hotels", "travel_italy", 0.75),
+  // travel
+  sub("slow_travel", "Slow travel destinations", "travel", 0.85),
+  sub("craftsmanship_destinations", "Craftsmanship & artisan destinations", "travel", 0.85),
+  sub("culinary_travel", "Culinary travel destinations", "travel", 0.8),
+  sub("long_term_living", "Long-term living abroad", "travel", 0.75),
+  sub("international_neighborhoods", "World-class urban neighborhoods", "travel", 0.7),
 
   // health_discipline
   sub("animal_based_diet", "Animal-based diet", "health_discipline", 0.85),
@@ -252,8 +252,8 @@ const ADJACENCY: Array<[string, string]> = [
   ["watches", "style_menswear"],
   // Real estate ↔ Land: same wealth/ownership posture
   ["real_estate_wealth", "land_homestead"],
-  // Land ↔ Italy: countryside life
-  ["land_homestead", "travel_italy"],
+  // Land ↔ Travel: rural property and long-term living
+  ["land_homestead", "travel"],
   // Creative ↔ Tech: workflow tooling for craft
   ["creative_craft", "tech_ai_tools"],
   // Creative ↔ Culture: input feeds output
@@ -262,10 +262,10 @@ const ADJACENCY: Array<[string, string]> = [
   ["health_discipline", "outdoors_nature"],
   // Faith ↔ Health: discipline lineage
   ["faith_meaning", "health_discipline"],
-  // Italy ↔ Style: countryside aesthetic
-  ["travel_italy", "style_menswear"],
-  // Italy ↔ Dining: countryside food
-  ["travel_italy", "dining"],
+  // Travel ↔ Dining: culinary destinations
+  ["travel", "dining"],
+  // Travel ↔ Land: long-term living abroad
+  ["travel", "land_homestead"],
 ];
 
 // ── Build & export the seed ──────────────────────────────────────────────────

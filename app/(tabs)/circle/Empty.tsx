@@ -11,7 +11,6 @@ const FILTERS = [
   "Real Estate",
   "Creatives",
   "Faith",
-  "Italy",
 ] as const;
 type Filter = (typeof FILTERS)[number];
 

@@ -242,7 +242,7 @@ export type LocalRadarGroup =
   | "chicago_music"
   | "chicago_style"
   | "chicago_products"
-  | "italy_travel_lifestyle";
+  | "world_travel";
 
 type QueryGroupConfig = {
   group: LocalRadarGroup;
@@ -342,19 +342,19 @@ const QUERY_GROUPS: QueryGroupConfig[] = [
     ],
   },
   {
-    group: "italy_travel_lifestyle",
+    group: "world_travel",
     query:
-      "Italian craftsmanship lifestyle culture travel slow living artisan {year}",
+      "slow travel craftsmanship destinations culinary travel {year}",
     type: "culture",
     category: "culture",
-    tags: ["italy", "craft", "lifestyle", "culture", "local-radar", "italy_travel_lifestyle"],
+    tags: ["travel", "slow-living", "craftsmanship", "culinary", "world_travel"],
     preferredDomains: [
       "cntraveler.com",
-      "vogue.com",
       "theguardian.com",
       "wallpaper.com",
       "monocle.com",
       "slowtravelstories.com",
+      "kinfolk.com",
     ],
   },
 ];
@@ -759,7 +759,7 @@ function humanGroupLabel(group: LocalRadarGroup): string {
     chicago_music: "Local music",
     chicago_style: "Local style",
     chicago_products: "Local products",
-    italy_travel_lifestyle: "Italy / lifestyle",
+    world_travel: "World travel & global living",
   };
   return map[group] ?? group;
 }

@@ -41,11 +41,9 @@ as $$
 declare
   v_sparrow_plan_id uuid;
   v_pillar_jarvis_id uuid;
-  v_pillar_italy_id uuid;
   v_pillar_capital_id uuid;
   v_person_marco_id uuid;
   v_person_alex_id uuid;
-  v_person_lucia_id uuid;
 begin
   -- 1. Promote profile to owner
   update public.profiles
@@ -88,11 +86,10 @@ begin
   ) values (
     p_user_id,
     'Strong personal faith. Faith and intentionality are non-negotiable.',
-    'Long-term Italy chapter, with Umbria as a serious candidate. Ownership, craftsmanship, and a quieter life on chosen ground.',
+    'Ownership, craftsmanship, and a life built on chosen ground.',
     'Building Jarvis. Sharpening taste. Investing with intention.',
     array['faith', 'family', 'intentionality', 'ownership', 'precision', 'authenticity', 'discipline'],
     array[
-      'Italy matters — long-term direction includes a serious Italy chapter, possibly Umbria',
       'Prefers one strong recommendation over long lists',
       'Quality over quantity, always',
       'Subtle luxury, never flashy',
@@ -109,12 +106,12 @@ begin
     array['classic soul', 'jazz', 'house with taste', 'vinyl-led rooms'],
     array['quiet cigar lounges', 'hidden hotel bars', 'rooms with weight', 'craftsmanship-led venues'],
     array['tailored, never formal', 'quiet luxury', 'considered fabrics'],
-    array['Italy', 'Mediterranean', 'craftsmanship destinations', 'rugged + refined trips'],
+    array['craftsmanship destinations', 'slow travel', 'rugged + refined trips', 'culinary travel'],
     array['Jarvis', 'real estate investing', 'creative production', 'music / DJ', 'land ownership'],
-    array['build long-term capital base', 'acquire income-producing property', 'fund the Italy chapter'],
+    array['build long-term capital base', 'acquire income-producing property'],
     array['ship Jarvis', 'develop a body of music work', 'produce something that lasts'],
     array['steady fitness', 'mobility', 'longevity over aesthetics'],
-    array['serious Italy chapter (Umbria a candidate)', 'craftsmanship pilgrimages', 'rugged nature trips'],
+    array['craftsmanship pilgrimages', 'slow travel stays', 'rugged nature trips'],
     array['opera', 'jazz lineage', 'architecture exhibits', 'craftsmanship traditions', 'hosting', 'rugged nature']
   )
   on conflict (user_id) do update set
@@ -151,7 +148,6 @@ begin
     ('Values atmosphere, story, and conversation potential in venues', 'preference', 0.85, false),
     ('Responds well to craftsmanship-oriented experiences', 'pattern', 0.8, false),
     ('Dislikes overly trendy or influencer-driven recommendations', 'pattern', 0.85, false),
-    ('Long-term direction includes a serious Italy chapter, with Umbria as a candidate', 'identity', 0.9, true),
     ('Prefers subtle luxury over flashy luxury', 'principle', 0.9, true),
     ('Values faith, intentionality, and ownership as durable principles', 'identity', 0.9, true),
     ('Often prefers one strong recommendation over long undifferentiated lists', 'principle', 0.85, true),
@@ -326,28 +322,19 @@ begin
 
   insert into public.north_pillars (user_id, title, description, progress, active_signals)
   values
-    (p_user_id, 'Italy chapter',
-     'Long-term direction — Umbria a serious candidate. Ownership, craft, quieter ground.',
-     0.15, array['italy', 'land', 'craft'])
-  on conflict do nothing;
-
-  insert into public.north_pillars (user_id, title, description, progress, active_signals)
-  values
     (p_user_id, 'Capital base',
-     'Build durable income property and fund the Italy chapter.',
+     'Build durable income property and create ownership on chosen ground.',
      0.25, array['real_estate', 'capital'])
   on conflict do nothing;
 
   select id into v_pillar_jarvis_id from public.north_pillars where user_id = p_user_id and title = 'Jarvis' limit 1;
-  select id into v_pillar_italy_id from public.north_pillars where user_id = p_user_id and title = 'Italy chapter' limit 1;
   select id into v_pillar_capital_id from public.north_pillars where user_id = p_user_id and title = 'Capital base' limit 1;
 
   insert into public.north_signals (user_id, pillar_id, title, summary, action, source)
   select p_user_id, ns.pillar_id, ns.title, ns.summary, ns.action, ns.source
   from (values
-    (v_pillar_jarvis_id,  'Universal Index online',   'Surfaced items now persist with full lifecycle.', 'Validate dispatch end-to-end',  'manual'),
-    (v_pillar_italy_id,   'Umbria scouting list',     'Three candidate towns worth a closer look.',      'Build short list this month',   'manual'),
-    (v_pillar_capital_id, 'Off-market lead — South Loop', 'Two-unit deal worth a walkthrough.',         'Schedule a walkthrough',        'manual')
+    (v_pillar_jarvis_id,  'Universal Index online',       'Surfaced items now persist with full lifecycle.', 'Validate dispatch end-to-end', 'manual'),
+    (v_pillar_capital_id, 'Off-market lead — South Loop', 'Two-unit deal worth a walkthrough.',             'Schedule a walkthrough',       'manual')
   ) as ns(pillar_id, title, summary, action, source)
   where not exists (
     select 1 from public.north_signals s
@@ -358,15 +345,12 @@ begin
   insert into public.circle_people (user_id, name, category, role, closeness_score, last_interaction, next_action, current_thread, notes)
   select p_user_id, cp.name, cp.category, cp.role, cp.closeness_score, cp.last_interaction, cp.next_action, cp.current_thread, cp.notes
   from (values
-    ('Marco C.', 'homies',       'longtime friend', 0.9,
-     '2 days ago', 'Pick a Sparrow night', 'Talking about Italy logistics',
-     array['Already lived in Florence', 'Knows craftsmanship circles in Umbria']),
-    ('Alex R.',  'real_estate',  'broker',          0.7,
+    ('Marco C.', 'homies',      'longtime friend', 0.9,
+     '2 days ago', 'Pick a Sparrow night', 'Creative projects and next move',
+     array['Deep aesthetic alignment', 'Trusted voice on craft and culture']),
+    ('Alex R.',  'real_estate', 'broker',          0.7,
      'Last week',  'Walk the South Loop two-unit', 'Off-market deal queue',
-     array['Brings deals worth looking at', 'Quiet operator']),
-    ('Lucia M.', 'italy',        'Umbria contact',  0.6,
-     '3 weeks ago', 'Plan an introduction visit', 'Land ownership conversations',
-     array['Lives outside Perugia', 'Open to hosting'])
+     array['Brings deals worth looking at', 'Quiet operator'])
   ) as cp(name, category, role, closeness_score, last_interaction, next_action, current_thread, notes)
   where not exists (
     select 1 from public.circle_people p
@@ -375,7 +359,6 @@ begin
 
   select id into v_person_marco_id from public.circle_people where user_id = p_user_id and name = 'Marco C.' limit 1;
   select id into v_person_alex_id  from public.circle_people where user_id = p_user_id and name = 'Alex R.'  limit 1;
-  select id into v_person_lucia_id from public.circle_people where user_id = p_user_id and name = 'Lucia M.' limit 1;
 
   insert into public.circle_updates (user_id, person_id, title, summary, suggested_action, urgency, source)
   select p_user_id, cu.person_id, cu.title, cu.summary, cu.suggested_action, cu.urgency, cu.source
@@ -385,10 +368,7 @@ begin
      'Text Marco about a 10:30 PM drink', 'medium', 'manual'),
     (v_person_alex_id,  'New off-market deal arrived',
      'Two-unit, South Loop. Numbers look workable.',
-     'Schedule a walkthrough this week', 'medium', 'manual'),
-    (v_person_lucia_id, 'Umbria intro visit window',
-     'Lucia mentioned an open week in September.',
-     'Block the September window before it closes', 'low', 'manual')
+     'Schedule a walkthrough this week', 'medium', 'manual')
   ) as cu(person_id, title, summary, suggested_action, urgency, source)
   where not exists (
     select 1 from public.circle_updates u

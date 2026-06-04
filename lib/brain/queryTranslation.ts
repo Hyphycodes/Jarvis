@@ -65,12 +65,12 @@ const TRANSLATIONS: Array<{ match: RegExp; queries: string[] }> = [
     ],
   },
   {
-    match: /(italian countryside|italy|linen|natural materials|italian design)/i,
+    match: /(slow travel|craftsmanship destination|artisan travel|global living)/i,
     queries: [
-      "{city} Italian market",
+      "slow travel destinations craftsmanship",
+      "artisan travel destinations world",
       "{city} design store natural materials",
-      "{city} linen menswear",
-      "Italian design {city} event",
+      "world-class neighborhoods culinary travel",
     ],
   },
   {

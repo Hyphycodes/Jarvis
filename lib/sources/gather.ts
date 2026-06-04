@@ -435,7 +435,7 @@ function inferType(interestArea?: string): IndexItemType {
   if (interestArea === "real_estate_wealth") return "real_estate";
   if (interestArea === "land_homestead") return "real_estate";
   if (interestArea === "creative_craft") return "creative";
-  if (interestArea === "travel_italy") return "travel";
+  if (interestArea === "travel") return "travel";
   if (interestArea === "health_discipline") return "health";
   if (interestArea === "faith_meaning") return "recommendation";
   if (interestArea === "tech_ai_tools") return "recommendation";
@@ -453,7 +453,7 @@ function inferCategory(interestArea?: string): string {
     real_estate_wealth: "opportunity",
     land_homestead: "opportunity",
     creative_craft: "culture",
-    travel_italy: "travel",
+    travel: "travel",
     health_discipline: "places",
     faith_meaning: "culture",
     tech_ai_tools: "opportunity",

@@ -68,7 +68,6 @@ const CONSTITUTION: TasteConstitution = {
     "watches",
     "vintage seiko",
     "tailoring",
-    "italian countryside",
     "land",
     "cabins",
     "homesteading",
