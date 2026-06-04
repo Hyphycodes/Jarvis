@@ -701,22 +701,25 @@ export function MicSheet({
           style={{ borderTop: "1px solid rgba(246,239,221,0.07)" }}
         >
           <div className="flex items-center gap-3 px-4 py-3">
-            {/* Mic toggle button */}
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handlePhotoAttach(file);
+                e.currentTarget.value = "";
+              }}
+            />
             <button
               type="button"
-              aria-label={isListening ? "Stop recording" : "Start recording"}
-              onClick={() => void handleToggleMic()}
-              disabled={busy}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all duration-150 disabled:opacity-40"
-              style={{
-                border: isListening ? "1.5px solid rgba(208,173,104,0.9)" : "1.5px solid rgba(208,173,104,0.55)",
-                background: isListening ? "rgba(208,173,104,0.12)" : "rgba(184,137,55,0.035)",
-                color: "var(--gold)",
-                boxShadow: isListening ? "0 0 0 6px rgba(208,173,104,0.10), 0 0 14px rgba(208,173,104,0.18)" : "none",
-                animation: isListening ? "mic-pulse 1.6s ease-in-out infinite" : "none",
-              }}
+              aria-label="Attach photo"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={busy || photoLoading}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.12] text-[16px] text-warm-ivory/55 transition-colors hover:border-muted-gold/40 hover:text-warm-ivory/85 disabled:opacity-40"
             >
-              <Mic size={15} />
+              {photoLoading ? "…" : "📷"}
             </button>
 
             <input
@@ -740,25 +743,21 @@ export function MicSheet({
               className="flex-1 bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none disabled:opacity-40"
             />
 
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handlePhotoAttach(file);
-                e.currentTarget.value = "";
-              }}
-            />
             <button
               type="button"
-              aria-label="Attach photo"
-              onClick={() => photoInputRef.current?.click()}
-              disabled={busy || photoLoading}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.12] text-[16px] text-warm-ivory/55 transition-colors hover:border-muted-gold/40 hover:text-warm-ivory/85 disabled:opacity-40"
+              aria-label={isListening ? "Stop recording" : "Start recording"}
+              onClick={() => void handleToggleMic()}
+              disabled={busy}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all duration-150 disabled:opacity-40"
+              style={{
+                border: isListening ? "1.5px solid rgba(208,173,104,0.9)" : "1.5px solid rgba(208,173,104,0.55)",
+                background: isListening ? "rgba(208,173,104,0.12)" : "rgba(184,137,55,0.035)",
+                color: "var(--gold)",
+                boxShadow: isListening ? "0 0 0 6px rgba(208,173,104,0.10), 0 0 14px rgba(208,173,104,0.18)" : "none",
+                animation: isListening ? "mic-pulse 1.6s ease-in-out infinite" : "none",
+              }}
             >
-              {photoLoading ? "…" : "📷"}
+              <Mic size={15} />
             </button>
           </div>
         </div>
