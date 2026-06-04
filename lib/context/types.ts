@@ -328,6 +328,11 @@ export function toBrainContextPacket(packet: FounderContextPacket): BrainContext
       category: action.category,
     })),
     northTags: packet.north.tags,
+    northPillars: packet.north.pillars.map((pillar) => ({
+      id: pillar.id,
+      title: pillar.title,
+      progress: pillar.progress ?? null,
+    })),
     weather: packet.weather ?? null,
     activePlan: activePlan
       ? {

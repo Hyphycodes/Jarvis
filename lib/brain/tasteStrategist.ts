@@ -30,6 +30,23 @@ import {
 } from "@/lib/brain/constants";
 import { getSeasonalContext } from "@/lib/brain/seasonality";
 
+// Pillars below this progress are "cold" and get explicit lane guidance.
+// 0.35 matches the A2 status thresholds — anything under is "Getting started"
+// or "Warm" in the North tab.
+const COLD_PILLAR_THRESHOLD = 0.35;
+
+// Per-pillar exploration hints fed to the strategist when a pillar is cold.
+// Keyed by lowercased pillar title so it survives case drift in the DB.
+const COLD_PILLAR_HINTS: Record<string, string> = {
+  body: "active/sport/outdoor moves",
+  skill: "workshops/learning/practice events",
+  creative: "music/art/craft sessions",
+  ownership: "land/property/investment opportunities",
+  taste: "dining/experience discoveries",
+  relationships: "social occasions worth anchoring",
+  peace: "restorative/quiet experiences",
+};
+
 // ── Lane shape ───────────────────────────────────────────────────────────────
 
 export const explorationLaneSchema = z.object({
@@ -220,6 +237,26 @@ function renderPrompt(input: StrategistInput): string {
     maxSubinterestsPerArea: 5,
   });
 
+  const coldPillars = (context.northPillars ?? [])
+    .filter((pillar) => typeof pillar.progress === "number"
+      ? pillar.progress < COLD_PILLAR_THRESHOLD
+      : false)
+    .map((pillar) => ({
+      title: pillar.title,
+      progress: pillar.progress,
+      hint: COLD_PILLAR_HINTS[pillar.title.toLowerCase()] ?? null,
+    }));
+  const coldPillarsGuidance = coldPillars.length > 0
+    ? [
+        `Cold pillars (below ${COLD_PILLAR_THRESHOLD} progress): ${coldPillars
+          .map((p) => `${p.title} (${p.progress})`)
+          .join(", ")}.`,
+        "For each cold pillar, include at least one exploration lane that would generate a concrete rep for that pillar.",
+        "Body → active/sport/outdoor moves. Skill → workshops/learning/practice events. Creative → music/art/craft sessions. Ownership → land/property/investment opportunities. Taste → dining/experience discoveries. Relationships → social occasions worth anchoring. Peace → restorative/quiet experiences.",
+        "Weight these lanes higher than healthy pillars when deciding lane priority.",
+      ].join(" ")
+    : null;
+
   return JSON.stringify(
     {
       now: context.now,
@@ -251,6 +288,12 @@ function renderPrompt(input: StrategistInput): string {
           }
         : null,
       interest_graph: graphSummary,
+      north_pillars: (context.northPillars ?? []).map((pillar) => ({
+        title: pillar.title,
+        progress: pillar.progress,
+      })),
+      cold_pillars: coldPillars,
+      cold_pillars_guidance: coldPillarsGuidance,
       memory_summary: context.memory.slice(0, 10).map((m) => m.content),
       recent_actions: context.recentActions,
       active_radar_count: input.activeRadarCount,
@@ -276,6 +319,7 @@ function renderPrompt(input: StrategistInput): string {
         "Long-term / direction → 'north'. Time-sensitive + high confidence → 'radar'.",
         "Do not propose product/shopping lanes unless the interest_area is product/style/watch/gear.",
         "When an item could meaningfully involve someone from the people list (a place good for that person's heritage, family-friendly for a toddler, etc.), note the connection in why_it_fits.",
+        ...(coldPillarsGuidance ? [coldPillarsGuidance] : []),
       ],
     },
     null,

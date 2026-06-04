@@ -30,6 +30,7 @@ function buildMinimalContext(
     recentSignals: [],
     recentActions: [],
     northTags: [],
+    northPillars: [],
     people: [],
   };
 }

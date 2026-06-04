@@ -36,6 +36,8 @@ import {
 } from "@/lib/intelligence/budget";
 import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
 import { detectAndProposePatterns } from "@/lib/intelligence/patternDetector";
+import { recomputeNorth } from "@/lib/north/recomputeNorth";
+import { safeWriteIntelligenceTrace } from "@/lib/brain/intelligenceTrace";
 
 export type AmbientRunSummary = {
   ok: boolean;
@@ -133,6 +135,23 @@ export async function runAmbientIntelligence(input: {
       await detectAndProposePatterns(owner.id, supabase);
     } catch (err) {
       summary.errors.push(`patterns: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const recompute = await recomputeNorth(owner.id);
+      await safeWriteIntelligenceTrace({
+        userId: owner.id,
+        route: "ambient.daily_maintenance",
+        surface: "north",
+        decisionType: "north_recompute",
+        reasoning: {
+          updated: recompute.updated,
+          window_days: recompute.windowDays,
+          pillar_scores: recompute.pillarScores,
+        },
+        contextSummary: { pillar_scores: recompute.pillarScores },
+      });
+    } catch (err) {
+      summary.errors.push(`north_recompute: ${err instanceof Error ? err.message : String(err)}`);
     }
     summary.decision_run_id = await logAmbientRun(owner.id, runType, summary, supabase);
     return { ...summary, budget: budgetForLog(workingBudget) };

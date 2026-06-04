@@ -85,6 +85,11 @@ export type BrainContextPacket = {
     category?: string | null;
   }[];
   northTags: string[];
+  northPillars: Array<{
+    id: string;
+    title: string;
+    progress: number | null;
+  }>;
   weather?: {
     temperatureF: number;
     windMph: number;
