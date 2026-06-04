@@ -50,6 +50,10 @@
       "schedule": "30 */6 * * *"
     },
     {
+      "path": "/api/library/archive-mine",
+      "schedule": "0 3 * * 0"
+    },
+    {
       "path": "/api/push/evening",
       "schedule": "0 22 * * *"
     }

@@ -112,7 +112,7 @@ export async function seedCanonicalSources(userId: string): Promise<{
           novelty_score: 0.55,
           freshness_score: 0.55,
           cadence_hours: 48, // Re-check every 48h initially; behavior tunes this
-          status: "active",
+          status: "watching",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
