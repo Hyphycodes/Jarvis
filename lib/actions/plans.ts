@@ -312,6 +312,7 @@ export async function fillPlan(input: {
   const { plan, fallbackUsed } = await generatePlanFromItem({
     item,
     chatContext: input.chatContext,
+    userId: input.userId,
   });
 
   const afterGeneration = await readPlanBuildState(supabase, input.planId, input.userId);

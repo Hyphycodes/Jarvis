@@ -1,6 +1,7 @@
 import "server-only";
 
 import { analyzeImage } from "@/lib/chat/analyzeImage";
+import { ingestWardrobePhoto } from "@/lib/wardrobe/intake";
 import {
   entitiesFromImageAnalysis,
   upsertObservationEntities,
@@ -45,6 +46,18 @@ export async function handleImageDrop(input: {
     mediaType: input.attachment.image_media_type,
     userText: input.message,
   });
+  // Side-effect: if this looks like clothing, classify and store it in the
+  // wardrobe in the background. Fire-and-forget — never blocks the chat
+  // response. Direct in-process call (handleImageDrop is server-side and has
+  // userId), not an internal HTTP fetch which has no resolvable base URL here.
+  if (analysis.type === "outfit") {
+    void ingestWardrobePhoto({
+      userId: input.userId,
+      imageBase64: input.attachment.image_base64,
+      mediaType: input.attachment.image_media_type,
+    }).catch(() => {});
+  }
+
   const entities = entitiesFromImageAnalysis(analysis);
   await upsertObservationEntities({
     userId: input.userId,

@@ -29,6 +29,8 @@ import {
   searchPlaceForEnrichment,
 } from "@/lib/sources/googlePlaces";
 import type { PlanChatContext } from "@/lib/plans/chatContext";
+import { queryWardrobeForEvent } from "@/lib/wardrobe/wardrobeAgent";
+import { sourceWardrobeGaps } from "@/lib/wardrobe/sourcingAgent";
 import {
   generatedPlanSchema,
   slugify,
@@ -117,6 +119,8 @@ NEVER
 export type GeneratePlanInput = {
   item: IndexedItem;
   chatContext?: PlanChatContext;
+  /** Owner id — enables wardrobe lookups. When absent, wardrobe is skipped. */
+  userId?: string;
 };
 
 export async function generatePlanFromItem(
@@ -133,7 +137,11 @@ export async function generatePlanFromItem(
   try {
     const context = await buildBrainContext({ includeWeather: false });
     const graph = buildInterestGraph({ context });
-    const supplemental = await buildSupplementalContext(input.item, input.chatContext);
+    const supplemental = await buildSupplementalContext(
+      input.item,
+      input.chatContext,
+      input.userId,
+    );
     const promptBody = renderPrompt(
       input.item,
       context,
@@ -259,7 +267,26 @@ function renderPrompt(
       }),
       weather: context.weather,
       chat_context: chatContext ?? null,
-      supplemental_context: supplemental,
+      supplemental_context: {
+        ...supplemental,
+        wardrobe: supplemental.wardrobeContext
+          ? {
+              summary: supplemental.wardrobeContext.summary,
+              owned: supplemental.wardrobeContext.ownedPieces.map((p) => p.description),
+              gaps: supplemental.wardrobeContext.gaps,
+            }
+          : null,
+        sourcing:
+          supplemental.sourcingResults.length > 0
+            ? supplemental.sourcingResults.map((r) => ({
+                needed: r.gap,
+                options: r.options.map(
+                  (o) =>
+                    `${o.title}${o.price ? ` — ${o.price}` : ""}${o.link ? ` (${o.source ?? "buy"})` : ""}`,
+                ),
+              }))
+            : null,
+      },
       instructions: [
         "Generate a single plan for this item — the operator move.",
         chatContext?.timingHint
@@ -276,6 +303,7 @@ function renderPrompt(
         "Include an 'alternatives' section with 2–3 pivot options (if you change your mind at the last minute, these are the real nearby options). Same satellite bullet format.",
         "For shape 'occasion': focus sections on contribution (gift ideas in 'detours'), attendance logistics in 'before', and relational context in 'notes'.",
         "For shape 'acquisition': structure 'before' as sourcing options with prices and where to get them.",
+        "If wardrobe.owned is present, reference specific owned pieces in the wear section. If wardrobe.gaps + sourcing are present, include a sourcing note in the wear section: what to get, approximate price, and buy link.",
         "Set effort_level and spending_posture honestly.",
         "Set status to 'draft'. Activation is a user action.",
         "Set source_item_id to the provided item id.",
@@ -427,11 +455,33 @@ type PlanSupplementalContext = {
     mapsUrl?: string;
   }>;
   costEstimate: string;
+  wardrobeContext: {
+    ownedPieces: Array<{
+      category: string;
+      color: string | null;
+      formality: string | null;
+      description: string;
+      activityTags: string[];
+    }>;
+    gaps: string[];
+    summary: string;
+  } | null;
+  sourcingResults: Array<{
+    gap: string;
+    options: Array<{
+      title: string;
+      price: string | null;
+      link: string | null;
+      source: string | null;
+      rating: number | null;
+    }>;
+  }>;
 };
 
 async function buildSupplementalContext(
   item: IndexedItem,
   chatContext?: PlanChatContext,
+  userId?: string,
 ): Promise<PlanSupplementalContext> {
   const [weatherResult, placeResult, alternativesResult] = await Promise.allSettled([
     fetchWeatherForTiming(chatContext?.timingHint, item),
@@ -439,13 +489,65 @@ async function buildSupplementalContext(
     findNearbyAlternatives(item),
   ]);
 
+  // Wardrobe context — only for plans with a clear formality signal AND a
+  // known owner id (background plan fill has no session, so userId is threaded
+  // through explicitly). Skips gracefully to null otherwise.
+  const planFormality = inferFormality(item);
+  const wardrobeContext =
+    planFormality && userId
+      ? await queryWardrobeForEvent({
+          userId,
+          formality: planFormality,
+          activityTag: inferActivityTag(item),
+          season: currentSeason(),
+        }).catch(() => null)
+      : null;
+
+  // Source gaps if the wardrobe agent found any.
+  const sourcingResults = wardrobeContext?.gaps.length
+    ? await sourceWardrobeGaps({
+        gaps: wardrobeContext.gaps,
+        formality: planFormality ?? "casual",
+        activityTag: inferActivityTag(item),
+      }).catch(() => [])
+    : [];
+
   return {
     weather: weatherResult.status === "fulfilled" ? weatherResult.value : null,
     placeDetails: placeResult.status === "fulfilled" ? placeResult.value : null,
     nearbyAlternatives:
       alternativesResult.status === "fulfilled" ? alternativesResult.value : [],
     costEstimate: costEstimateForItem(item, chatContext?.partySize),
+    wardrobeContext,
+    sourcingResults,
   };
+}
+
+function inferFormality(
+  item: IndexedItem,
+): "casual" | "smart-casual" | "business" | "formal" | null {
+  const tags = new Set(item.tags.map((t) => t.toLowerCase()));
+  if (tags.has("fine-dining") || tags.has("formal") || item.type === "event")
+    return "smart-casual";
+  if (tags.has("casual") || item.type === "place") return "casual";
+  if (item.type === "restaurant") return "smart-casual";
+  return null; // skip wardrobe for products, ideas, etc.
+}
+
+function inferActivityTag(item: IndexedItem): string | undefined {
+  const tags = new Set(item.tags.map((t) => t.toLowerCase()));
+  if (tags.has("golf")) return "golf";
+  if (tags.has("outdoor") || tags.has("riding")) return "outdoor";
+  if (item.type === "restaurant" || tags.has("dining")) return "dining";
+  return undefined;
+}
+
+function currentSeason(): string {
+  const month = new Date().getMonth();
+  if (month >= 2 && month <= 4) return "spring";
+  if (month >= 5 && month <= 7) return "summer";
+  if (month >= 8 && month <= 10) return "fall";
+  return "winter";
 }
 
 async function fetchWeatherForTiming(
