@@ -634,12 +634,6 @@ function RadarEmptyState() {
         <p className="mt-4 text-[14px] leading-[1.55] text-warm-ivory/58">
           Jarvis checked the board. Nothing strong enough to interrupt the day.
         </p>
-        <Link
-          href="/account/intelligence"
-          className="mt-6 inline-flex items-center text-[11px] uppercase tracking-[0.2em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
-        >
-          Open Intelligence →
-        </Link>
       </div>
     </div>
   );

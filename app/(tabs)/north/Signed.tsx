@@ -259,7 +259,7 @@ function AccountRow() {
   return (
     <section className="mt-10 border-t border-divider/45">
       <Link
-        href="/settings"
+        href="/account"
         className="flex min-h-[52px] items-center justify-between py-4 transition-opacity duration-300 ease-atmospheric hover:opacity-80 active:translate-y-px"
       >
         <span className="text-[11px] uppercase tracking-[0.22em] text-warm-ivory/70">

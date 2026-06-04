@@ -11,11 +11,27 @@ import { readRadarPromotionDiagnostics, type RadarPromotionDiagnostic } from "@/
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { BackButton, MotionPage } from "@/components";
 import { ControlRoomActions } from "./ControlRoomActions";
+import {
+  CleanRadarButton,
+  IntelligenceRunButton,
+  RefreshRadarButton,
+} from "@/app/account/intelligence/client-bits";
 
-export const metadata = { title: "Library · Jarvis" };
+export const metadata = { title: "Control Room · Jarvis" };
 export const dynamic = "force-dynamic";
 
 const DISPLAY_TIME_ZONE = "America/Chicago";
+
+type DecisionRunSummary = {
+  id: string;
+  run_type: string;
+  created_at: string;
+  input_summary: string | null;
+  candidate_ids: string[];
+  selected_ids: string[];
+  rejected_ids: string[];
+  model: string;
+};
 
 export default async function SettingsLibraryPage() {
   const user = await getSessionUser();
@@ -36,9 +52,10 @@ export default async function SettingsLibraryPage() {
     bootstrapNeeded,
     supabase,
   });
-  const [preview, promotionDiagnostics] = await Promise.all([
+  const [preview, promotionDiagnostics, decisionRuns] = await Promise.all([
     readLibraryPreview({ userId: user.id, supabase, limit: 25 }),
     readRadarPromotionDiagnostics({ userId: user.id, supabase, limit: 20 }),
+    readRecentDecisionRuns({ userId: user.id, supabase }),
   ]);
   const { data: lastTasteSeedImport } = await supabase
     .from("intelligence_traces")
@@ -80,14 +97,14 @@ export default async function SettingsLibraryPage() {
       <MotionPage>
         <header>
           <div className="flex items-center gap-1">
-            <BackButton fallbackHref="/settings" />
-            <span className="lux-label">Library</span>
+            <BackButton fallbackHref="/account" />
+            <span className="lux-label">Control Room</span>
           </div>
           <h1 className="mt-6 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
-            Intelligence bank.
+            Control room.
           </h1>
           <p className="mt-3 max-w-[39ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
-            Quiet status for the permanent layer under Radar.
+            Diagnostic tooling for the permanent layer under Jarvis.
           </p>
           <div className="mt-5 h-px w-10 bg-muted-gold/50" />
         </header>
@@ -117,6 +134,44 @@ export default async function SettingsLibraryPage() {
                 foundationSprintEnabled={control.settings.foundationSprintEnabled}
               />
             </div>
+          </div>
+
+          <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
+            <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+              Intelligence
+            </div>
+            <div className="mt-2 font-serif text-[20px] italic text-warm-ivory">
+              {decisionRuns[0]
+                ? `Last run ${formatTimestamp(decisionRuns[0].created_at)}`
+                : "No decision runs yet"}
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-warm-ivory/55">
+              Provider status, manual runs, cleanup, and recent mission logs.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <IntelligenceRunButton
+                runType="daily_maintenance"
+                label="Daily Maintenance"
+              />
+              <IntelligenceRunButton
+                runType="radar_discovery"
+                label="Radar Discovery"
+              />
+              <IntelligenceRunButton
+                runType="weekend_preview"
+                label="Weekend Preview"
+              />
+              <IntelligenceRunButton
+                runType="holding_review"
+                label="Holding Review"
+              />
+              <IntelligenceRunButton
+                runType="north_reflection"
+                label="North Reflection"
+              />
+              <CleanRadarButton />
+            </div>
+            <RefreshRadarButton forceAllowed />
           </div>
 
           <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
@@ -227,6 +282,9 @@ export default async function SettingsLibraryPage() {
         </section>
 
         <section className="motion-card mt-8 grid gap-2">
+          <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+            Provider keys
+          </div>
           {control.providerStatus.map((provider) => (
             <StatusRow
               key={provider.key}
@@ -238,7 +296,7 @@ export default async function SettingsLibraryPage() {
 
         <section className="motion-card mt-8 grid gap-2">
           <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
-            Activity
+            Autopilot activity
           </div>
           {control.activity.length > 0 ? control.activity.slice(0, 12).map((event) => (
             <p
@@ -251,6 +309,29 @@ export default async function SettingsLibraryPage() {
           )) : (
             <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/50">
               No autopilot runs yet. Run Bootstrap to start building the intelligence bank.
+            </p>
+          )}
+        </section>
+
+        <section className="motion-card mt-8 grid gap-2">
+          <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
+            Mission logs
+          </div>
+          {decisionRuns.length > 0 ? decisionRuns.map((run) => (
+            <p
+              key={run.id}
+              className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/58"
+            >
+              <span className="text-warm-ivory/34">{formatTimestamp(run.created_at)} — </span>
+              <span className="text-warm-ivory/70">{run.run_type}</span>
+              {run.input_summary ? ` · ${run.input_summary}` : ""}
+              <span className="text-warm-ivory/34">
+                {" "}· {run.candidate_ids.length} shortlisted · {run.selected_ids.length} selected · {run.rejected_ids.length} rejected · {run.model}
+              </span>
+            </p>
+          )) : (
+            <p className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-3 text-[12px] leading-relaxed text-warm-ivory/50">
+              No decision runs yet.
             </p>
           )}
         </section>
@@ -360,6 +441,44 @@ function Metric({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+async function readRecentDecisionRuns({
+  userId,
+  supabase,
+}: {
+  userId: string;
+  supabase: Awaited<ReturnType<typeof getServerSupabase>>;
+}): Promise<DecisionRunSummary[]> {
+  const { data, error } = await supabase
+    .from("brain_decision_runs")
+    .select("id,run_type,created_at,input_summary,candidate_ids,selected_ids,rejected_ids,model")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(12);
+  if (error) {
+    console.error("[surface-loader] control.decisionRuns", error);
+    return [];
+  }
+  return ((data ?? []) as Array<{
+    id: string;
+    run_type: string;
+    created_at: string;
+    input_summary: string | null;
+    candidate_ids: string[] | null;
+    selected_ids: string[] | null;
+    rejected_ids: string[] | null;
+    model: string | null;
+  }>).map((row) => ({
+    id: row.id,
+    run_type: row.run_type,
+    created_at: row.created_at,
+    input_summary: row.input_summary,
+    candidate_ids: row.candidate_ids ?? [],
+    selected_ids: row.selected_ids ?? [],
+    rejected_ids: row.rejected_ids ?? [],
+    model: row.model ?? "unknown",
+  }));
 }
 
 function StatusRow({ label, value }: { label: string; value: string | number }) {

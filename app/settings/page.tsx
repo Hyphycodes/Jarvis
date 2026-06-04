@@ -4,14 +4,13 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { signOut } from "@/lib/actions/auth";
-import { authCallbackUrl, siteOrigin } from "@/lib/siteOrigin";
 import {
   DEFAULT_WEEKLY_RHYTHM,
   normalizeWeeklyRhythm,
 } from "@/lib/schedule/weeklyRhythm";
 import { Chevron } from "@/components/icons";
 import { BackButton, MotionPage } from "@/components";
-import { CopyButton, ShowOrigin, WeeklyRhythmForm } from "./client-bits";
+import { WeeklyRhythmForm } from "./client-bits";
 
 export const metadata = { title: "Settings · Jarvis" };
 export const dynamic = "force-dynamic";
@@ -21,13 +20,6 @@ export default async function SettingsPage() {
   if (!user) redirect("/login?next=/settings");
 
   const status = await loadAccountStatus(user.id);
-  const envCheck = {
-    supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-    supabaseAnon: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,
-    detectedOrigin: siteOrigin(),
-    callbackUrl: authCallbackUrl(),
-  };
   const owner = user.role === "owner";
 
   return (
@@ -47,10 +39,10 @@ export default async function SettingsPage() {
           </span>
         </div>
         <h1 className="mt-6 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
-          Control room.
+          Settings.
         </h1>
         <p className="mt-3 max-w-[38ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
-          Account, access, and the systems behind your private layer.
+          Account preferences and the rhythm Jarvis should respect.
         </p>
         <div className="mt-5 h-px w-10 bg-muted-gold/50" />
       </header>
@@ -111,20 +103,13 @@ export default async function SettingsPage() {
         </Link>
       </SettingsSection>
 
-      <SettingsSection label="Controls">
+      <SettingsSection label="Connections">
         <div className="grid gap-3">
           <SettingsCard
             href="/settings/integrations"
             title="Integrations"
-            copy="Control what Jarvis can access, when it refreshes, and how much it spends."
+            copy="Control which accounts and outside services Jarvis can access."
           />
-          {owner ? (
-            <SettingsCard
-              href="/settings/library"
-              title="Library"
-              copy="Review the permanent intelligence bank, source graph, and candidate queue."
-            />
-          ) : null}
           <SettingsCard
             title="Preferences"
             copy="Adjust how Jarvis presents itself."
@@ -146,14 +131,6 @@ export default async function SettingsPage() {
           />
         </SettingsSection>
       ) : null}
-
-      <SettingsSection label="System">
-        <SystemDiagnostics
-          userId={user.id}
-          envCheck={envCheck}
-          status={status}
-        />
-      </SettingsSection>
 
       <section className="mt-14 border-t border-divider/60 pt-8">
         <p className="max-w-[34ch] text-[12px] leading-[1.55] text-warm-ivory/45">
@@ -319,100 +296,6 @@ function SettingsCard({
     <button type="button" className={className}>
       {content}
     </button>
-  );
-}
-
-function SystemDiagnostics({
-  userId,
-  envCheck,
-  status,
-}: {
-  userId: string;
-  envCheck: {
-    supabaseUrl: boolean;
-    supabaseAnon: boolean;
-    siteUrl: string | null;
-    detectedOrigin: string;
-    callbackUrl: string;
-  };
-  status: {
-    hasProfile: boolean;
-    profileRole: string | null;
-    hasFounderProfile: boolean;
-    memoryCount: number;
-    signalCount: number;
-  };
-}) {
-  return (
-    <details className="lux-surface-quiet group rounded-[var(--radius-card)]">
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 text-[11px] uppercase tracking-editorial text-warm-ivory/60 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory">
-        <span>System Diagnostics</span>
-        <Chevron
-          direction="down"
-          size={14}
-          className="text-muted-gold transition-transform duration-300 ease-atmospheric group-open:rotate-180"
-        />
-      </summary>
-      <div className="border-t border-divider/45 px-4 pb-4 pt-2">
-        <DiagnosticRow label="User ID" value={userId} copy />
-        <DiagnosticRow
-          label="NEXT_PUBLIC_SITE_URL"
-          value={envCheck.siteUrl ?? "Not set"}
-          copy={!!envCheck.siteUrl}
-        />
-        <DiagnosticRow
-          label="Detected Origin"
-          value={envCheck.detectedOrigin}
-          copy
-        />
-        <DiagnosticRow label="Callback URL" value={envCheck.callbackUrl} copy />
-        <DiagnosticRow label="Window Origin" value={<ShowOrigin />} />
-        <DiagnosticRow
-          label="Supabase URL present"
-          value={envCheck.supabaseUrl ? "Yes" : "No"}
-        />
-        <DiagnosticRow
-          label="Supabase anon key present"
-          value={envCheck.supabaseAnon ? "Yes" : "No"}
-        />
-        <DiagnosticRow
-          label="profiles row"
-          value={status.hasProfile ? `Yes (${status.profileRole ?? "unknown"})` : "No"}
-        />
-        <DiagnosticRow
-          label="founder profile status"
-          value={status.hasFounderProfile ? "Active" : "Not set"}
-        />
-        <DiagnosticRow label="memory count" value={String(status.memoryCount)} />
-        <DiagnosticRow
-          label="taste signal count"
-          value={String(status.signalCount)}
-        />
-      </div>
-    </details>
-  );
-}
-
-function DiagnosticRow({
-  label,
-  value,
-  copy,
-}: {
-  label: string;
-  value: ReactNode;
-  copy?: boolean;
-}) {
-  const copyValue = typeof value === "string" ? value : null;
-  return (
-    <div className="grid grid-cols-[132px_1fr_auto] items-start gap-3 border-b border-divider/30 py-3 last:border-0">
-      <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/35">
-        {label}
-      </div>
-      <div className="min-w-0 break-words font-mono text-[11px] leading-[1.55] text-warm-ivory/58">
-        {value}
-      </div>
-      {copy && copyValue ? <CopyButton value={copyValue} /> : <span />}
-    </div>
   );
 }
 

@@ -2,18 +2,12 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { signOut } from "@/lib/actions/auth";
-import { isQaToolsEnabled } from "@/lib/qa/gate";
 import {
-  Brain,
   Chevron,
   Gear,
-  Link2,
   Lock,
   LogOut,
-  MapPin,
-  ShieldCheck,
   Sparkle,
   User,
 } from "@/components/icons";
@@ -22,23 +16,6 @@ import { PressLink, PressFormButton } from "./client-bits";
 
 export const metadata = { title: "Account · Jarvis" };
 export const dynamic = "force-dynamic";
-
-type CronStatusEntry = {
-  runType: string;
-  label: string;
-  lastRunAt: string | null;
-};
-
-type AccountStatus = {
-  hasFounderProfile: boolean;
-  memoryCount: number;
-  integrationCount: number;
-  libraryCount: number;
-  pendingCandidates: number;
-  libraryNewThisWeek: number;
-  tastemakerCount: number;
-  cronStatus: CronStatusEntry[];
-};
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Owner",
@@ -50,14 +27,12 @@ export default async function AccountPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=/account");
 
-  const status = await loadAccountStatus(user.id);
   const displayName =
     user.display_name?.trim() ||
     user.email?.split("@")[0] ||
     "Account";
   const roleKey = (user.role ?? "viewer").toLowerCase();
   const roleLabel = ROLE_LABEL[roleKey] ?? "Viewer";
-  const showQaTools = user.role === "owner" && isQaToolsEnabled();
 
   return (
     <main
@@ -85,7 +60,7 @@ export default async function AccountPage() {
           Your private layer.
         </h1>
         <p className="mt-4 max-w-[36ch] font-serif text-[22px] italic leading-[1.25] text-warm-ivory/70">
-          Identity, access, memory, and the systems wired into Jarvis.
+          Identity, memory, rhythm, and the people shaping your taste.
         </p>
       </section>
 
@@ -127,242 +102,41 @@ export default async function AccountPage() {
           description="Identity, North Star, taste, and personal direction."
         />
         <AccountNavRow
-          href="/settings/integrations"
-          icon={<Link2 size={20} />}
-          title="Integrations"
-          description="Connected accounts, APIs, and outside signals."
-        />
-        <AccountNavRow
-          href="/settings"
-          icon={<Gear size={20} />}
-          title="Settings"
-          description="Access, session, account state, and app preferences."
-        />
-        <AccountNavRow
-          href="/profile#memory"
-          icon={<Brain size={20} />}
-          title="Memory"
-          description="Pinned principles, learned signals, and what Jarvis keeps."
-        />
-        <AccountNavRow
           href="/account/memory"
           icon={<Sparkle size={20} />}
-          title="Memory proposals"
+          title="Memory"
           description="Pending patterns Jarvis wants to remember. Accept, reject, or archive."
-        />
-        <AccountNavRow
-          href="/account/history"
-          icon={<Brain size={20} />}
-          title="History"
-          description="Everything Jarvis has shown you — saved, passed, expired, archived."
-        />
-        <AccountNavRow
-          href="/account/intelligence"
-          icon={<Sparkle size={20} />}
-          title="Intelligence"
-          description="External sources, scoring, and the curation brain. Refresh Radar here."
-        />
-        {showQaTools ? (
-          <AccountNavRow
-            href="/account/qa"
-            icon={<ShieldCheck size={20} />}
-            title="QA fixtures"
-            description="Owner-only test records for Radar, Today, Upcoming, and plans."
-          />
-        ) : null}
-        <SignOutRow />
-      </nav>
-
-      <section className="mt-10">
-        <div className="lux-label">
-          Account State
-        </div>
-        <AccountStateCard
-          sessionActive
-          role={roleLabel}
-          profileSeeded={status.hasFounderProfile}
-          integrationCount={status.integrationCount}
-          memoryCount={status.memoryCount}
-        />
-        {!status.hasFounderProfile ? (
-          <p className="mt-4 max-w-[44ch] text-[13px] leading-[1.55] text-warm-ivory/45">
-            Founder profile not seeded yet. Run the seed function to unlock
-            editable identity, taste, and memory fields.
-          </p>
-        ) : null}
-      </section>
-
-      <section className="mt-10">
-        <div className="lux-label">
-          Places Library
-        </div>
-        <AccountNavRow
-          href="/account/library"
-          icon={<MapPin size={20} />}
-          title="Browse Library"
-          description={
-            status.libraryCount > 0
-              ? `${status.libraryCount} place${status.libraryCount !== 1 ? "s" : ""} known${status.libraryNewThisWeek > 0 ? ` · ${status.libraryNewThisWeek} new this week` : ""}`
-              : "The Scout is building your library autonomously."
-          }
         />
         <AccountNavRow
           href="/account/tastemakers"
           icon={<Sparkle size={20} />}
           title="Tastemakers"
-          description={
-            status.tastemakerCount > 0
-              ? `${status.tastemakerCount} people tracked · swept weekly`
-              : "Add the promoters, DJs, and chefs whose moves you follow."
-          }
+          description="Promoters, DJs, chefs, and curators whose moves you follow."
         />
-        {status.pendingCandidates > 0 ? (
-          <p className="mt-3 text-[13px] leading-[1.5] text-warm-ivory/40">
-            {status.pendingCandidates} candidate{status.pendingCandidates !== 1 ? "s" : ""} in the research queue.
-          </p>
-        ) : null}
-      </section>
+        <AccountNavRow
+          href="/settings"
+          icon={<Gear size={20} />}
+          title="Weekly Rhythm"
+          description="Workdays, commute windows, and the cadence Jarvis should respect."
+        />
+        <SignOutRow />
+      </nav>
 
-      {status.cronStatus.length > 0 ? (
-        <section className="mt-10">
-          <div className="lux-label">
-            Cron Status
-          </div>
-          <div className="lux-surface mt-4 rounded-[var(--radius-card)] px-5 py-2">
-            {status.cronStatus.map((entry, idx) => (
-              <StateRow
-                key={entry.runType}
-                icon={<Sparkle size={16} className="text-muted-gold" />}
-                label={entry.label}
-                value={entry.lastRunAt ? formatRelative(entry.lastRunAt) : "Not run yet"}
-                last={idx === status.cronStatus.length - 1}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <footer className="mt-12 flex items-center justify-center gap-2 text-[12px] text-warm-ivory/35">
-        <Lock size={12} />
-        <span>All data is private and encrypted.</span>
+      <footer className="mt-14 flex flex-col items-center justify-center gap-5 text-[12px] text-warm-ivory/35">
+        <div className="flex items-center gap-2">
+          <Lock size={12} />
+          <span>All data is private and encrypted.</span>
+        </div>
+        <Link
+          href="/settings/library"
+          className="text-[10px] uppercase tracking-[0.22em] text-warm-ivory/30 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/55"
+        >
+          · Control room ·
+        </Link>
       </footer>
       </MotionPage>
     </main>
   );
-}
-
-const CRON_RUN_TYPES: Array<{ runType: string; label: string }> = [
-  { runType: "daily_maintenance", label: "Daily maintenance" },
-  { runType: "weekend_preview", label: "Weekend preview" },
-  { runType: "scout", label: "Library Scout" },
-  { runType: "process-candidates", label: "Library Researcher" },
-  { runType: "event-scout", label: "Event Scout" },
-  { runType: "event-process", label: "Event Processor" },
-  { runType: "tastemaker-sweep", label: "Tastemaker Sweep" },
-  { runType: "library-refresh", label: "Library Refresher" },
-];
-
-async function loadAccountStatus(userId: string): Promise<AccountStatus> {
-  try {
-    const supabase = await getServerSupabase();
-    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    const [founderRes, memoryRes, libraryRes, pendingRes, newThisWeekRes, tastemakersRes, cronRes] =
-      await Promise.all([
-        supabase
-          .from("founder_profile")
-          .select("id")
-          .eq("user_id", userId)
-          .maybeSingle(),
-        supabase
-          .from("memory_items")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("status", "active"),
-        supabase
-          .from("places_library")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
-        supabase
-          .from("place_candidates")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("status", "pending"),
-        supabase
-          .from("places_library")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .gte("first_seen_at", oneWeekAgo),
-        supabase
-          .from("tastemakers")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
-        supabase
-          .from("brain_decision_runs")
-          .select("run_type, created_at")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(50),
-      ]);
-
-    if (founderRes.error) {
-      console.error("[surface-loader] account.founderProfile", founderRes.error);
-    }
-    if (memoryRes.error) {
-      console.error("[surface-loader] account.memoryCount", memoryRes.error);
-    }
-
-    // Build cron status: pick the most recent run per run_type
-    const runRows = (cronRes.data ?? []) as Array<{ run_type: string; created_at: string }>;
-    const latestByType = new Map<string, string>();
-    for (const row of runRows) {
-      if (!latestByType.has(row.run_type)) {
-        latestByType.set(row.run_type, row.created_at);
-      }
-    }
-    const cronStatus: CronStatusEntry[] = CRON_RUN_TYPES.map(({ runType, label }) => ({
-      runType,
-      label,
-      lastRunAt: latestByType.get(runType) ?? null,
-    })).filter((e) => e.lastRunAt !== null);
-
-    return {
-      hasFounderProfile: !!founderRes.data,
-      memoryCount: memoryRes.count ?? 0,
-      integrationCount: 0,
-      libraryCount: libraryRes.count ?? 0,
-      pendingCandidates: pendingRes.count ?? 0,
-      libraryNewThisWeek: newThisWeekRes.count ?? 0,
-      tastemakerCount: tastemakersRes.count ?? 0,
-      cronStatus,
-    };
-  } catch (error) {
-    console.error("[surface-loader] account.status", error);
-    return {
-      hasFounderProfile: false,
-      memoryCount: 0,
-      integrationCount: 0,
-      libraryCount: 0,
-      pendingCandidates: 0,
-      libraryNewThisWeek: 0,
-      tastemakerCount: 0,
-      cronStatus: [],
-    };
-  }
-}
-
-function formatRelative(iso: string): string {
-  try {
-    const diff = Date.now() - new Date(iso).getTime();
-    const minutes = Math.round(diff / 60_000);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.round(hours / 24);
-    return `${days}d ago`;
-  } catch {
-    return "—";
-  }
 }
 
 function Divider() {
@@ -465,110 +239,6 @@ function IconWell({ children }: { children: ReactNode }) {
   return (
     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.018]">
       {children}
-    </span>
-  );
-}
-
-function AccountStateCard({
-  sessionActive,
-  role,
-  profileSeeded,
-  integrationCount,
-  memoryCount,
-}: {
-  sessionActive: boolean;
-  role: string;
-  profileSeeded: boolean;
-  integrationCount: number;
-  memoryCount: number;
-}) {
-  return (
-    <div
-      className="lux-surface mt-4 rounded-[var(--radius-card)] px-5 py-2"
-    >
-      <StateRow
-        icon={<SessionDot active={sessionActive} />}
-        label="Session"
-        value={
-          <span
-            className={
-              sessionActive
-                ? "text-[#7BC4A0]"
-                : "text-warm-ivory/45"
-            }
-          >
-            {sessionActive ? "Active" : "Inactive"}
-          </span>
-        }
-      />
-      <StateRow
-        icon={<ShieldCheck size={16} className="text-muted-gold" />}
-        label="Access"
-        value={role}
-      />
-      <StateRow
-        icon={<User size={16} className="text-muted-gold" />}
-        label="Profile"
-        value={profileSeeded ? "Seeded" : "Not seeded"}
-      />
-      <StateRow
-        icon={<Link2 size={16} className="text-muted-gold" />}
-        label="Integrations"
-        value={`${integrationCount} connected`}
-      />
-      <StateRow
-        icon={<Brain size={16} className="text-muted-gold" />}
-        label="Memory"
-        value={`${memoryCount} active items`}
-        last
-      />
-    </div>
-  );
-}
-
-function StateRow({
-  icon,
-  label,
-  value,
-  last = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-  last?: boolean;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between gap-4 py-3.5"
-      style={
-        last
-          ? undefined
-          : { borderBottom: "1px solid rgba(255, 250, 240, 0.05)" }
-      }
-    >
-      <div className="flex items-center gap-3">
-        <span className="shrink-0">{icon}</span>
-        <span className="text-[14px] text-warm-ivory/85">{label}</span>
-      </div>
-      <span className="text-[14px] text-warm-ivory/65">{value}</span>
-    </div>
-  );
-}
-
-function SessionDot({ active }: { active: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className="inline-flex h-4 w-4 items-center justify-center"
-    >
-      <span
-        className={
-          "h-3 w-3 rounded-full border " +
-          (active
-            ? "border-[#7BC4A0]"
-            : "border-warm-ivory/30")
-        }
-      />
     </span>
   );
 }
