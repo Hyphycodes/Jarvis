@@ -37,6 +37,7 @@ import {
 import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
 import { detectAndProposePatterns } from "@/lib/intelligence/patternDetector";
 import { recomputeNorth } from "@/lib/north/recomputeNorth";
+import { triggerPlanBuildsForNewRadarItems } from "@/lib/plans/autoBuild";
 import { safeWriteIntelligenceTrace } from "@/lib/brain/intelligenceTrace";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import { hasVapid, sendPushNotification } from "@/lib/push/send";
@@ -182,6 +183,7 @@ export async function runAmbientIntelligence(input: {
     summary.decision_run_id = curation.decisionRunId;
     summary.fallback_used = curation.decision.fallbackUsed || !hasAnthropic();
     summary.fallback_reason = curation.decision.fallbackReason ?? summary.fallback_reason;
+    triggerRadarPlanAutoBuild(owner.id, "holding_review");
     return { ...summary, budget: budgetForLog(workingBudget) };
   }
 
@@ -303,7 +305,14 @@ export async function runAmbientIntelligence(input: {
     (strategist.fallbackUsed ? strategist.reason : undefined) ??
     summary.fallback_reason;
   summary.budget = budgetForLog(workingBudget);
+  triggerRadarPlanAutoBuild(owner.id, runType);
   return summary;
+}
+
+function triggerRadarPlanAutoBuild(userId: string, scope: string): void {
+  void triggerPlanBuildsForNewRadarItems(userId).catch((error) => {
+    console.error("[ambient] radar plan auto-build failed", { scope, error });
+  });
 }
 
 function syntheticMovesEnabled(): boolean {

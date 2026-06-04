@@ -110,12 +110,14 @@ export function ItemActionButton({
   label,
   variant = "secondary",
   redirectTo,
+  size = "normal",
 }: {
   itemId: string;
   action: ItemActionName;
   label: string;
   variant?: "primary" | "secondary" | "danger" | "ghost";
   redirectTo?: string;
+  size?: "normal" | "compact";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -142,7 +144,7 @@ export function ItemActionButton({
     });
   }
 
-  const className = buttonClass(variant, pending);
+  const className = buttonClass(variant, pending, size);
 
   return (
     <div className="flex flex-col items-stretch">
@@ -260,9 +262,12 @@ export function PlanLifecycleButton({
 function buttonClass(
   variant: "primary" | "secondary" | "danger" | "ghost",
   pending: boolean,
+  size: "normal" | "compact" = "normal",
 ): string {
   const base =
-    "flex min-h-[56px] w-full items-center justify-center rounded-2xl px-5 py-3 text-[11px] uppercase tracking-editorial transition-colors duration-300 ease-atmospheric";
+    size === "compact"
+      ? "flex min-h-[40px] w-full items-center justify-center rounded-2xl px-4 py-2 text-[10px] uppercase tracking-editorial transition-colors duration-300 ease-atmospheric"
+      : "flex min-h-[56px] w-full items-center justify-center rounded-2xl px-5 py-3 text-[11px] uppercase tracking-editorial transition-colors duration-300 ease-atmospheric";
   const disabled = pending ? " opacity-60" : "";
   switch (variant) {
     case "primary":

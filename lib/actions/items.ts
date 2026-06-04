@@ -45,11 +45,13 @@ async function transition(
     patchPayload?: Record<string, unknown>;
     planningState?: string;
     nextDestination?: IndexDestination;
+    recordBehavior?: boolean;
   } = {},
 ): Promise<ItemActionResult> {
   const owner = await requireOwner();
   const existing = await getIndexItem(itemId);
   if (!existing) throw new Error("Index item not found.");
+  const recordsBehavior = options.recordBehavior !== false;
 
   // Build payload patch
   const patch: { payload?: Json } = {};
@@ -70,14 +72,16 @@ async function transition(
     await updateItemDestination(itemId, options.nextDestination);
   }
 
-  await recordBehaviorSignal(signal);
-  const sourceAction = sourceActionForSignal(signal.type);
-  if (sourceAction) {
-    await updateSourceStatsFromAction({
-      userId: owner.id,
-      item: existing,
-      action: sourceAction,
-    });
+  if (recordsBehavior) {
+    await recordBehaviorSignal(signal);
+    const sourceAction = sourceActionForSignal(signal.type);
+    if (sourceAction) {
+      await updateSourceStatsFromAction({
+        userId: owner.id,
+        item: existing,
+        action: sourceAction,
+      });
+    }
   }
   await safeWriteIntelligenceTrace({
     userId: owner.id,
@@ -104,10 +108,11 @@ async function transition(
           : `Stayed in ${existing.destination}`,
       ],
       behaviorInfluence: [
-        signal.type === "item.pass" ? "Pass should reduce similar future confidence." : null,
-        signal.type === "item.save" ? "Save should increase similar future confidence." : null,
-        signal.type === "item.plan" ? "Plan should increase similar future confidence." : null,
-        signal.type === "item.intent" ? "Intent should tune future timing/source/category behavior." : null,
+        !recordsBehavior ? "Neutral move; no taste writeback recorded." : null,
+        recordsBehavior && signal.type === "item.pass" ? "Pass should reduce similar future confidence." : null,
+        recordsBehavior && signal.type === "item.save" ? "Save should increase similar future confidence." : null,
+        recordsBehavior && signal.type === "item.plan" ? "Plan should increase similar future confidence." : null,
+        recordsBehavior && signal.type === "item.intent" ? "Intent should tune future timing/source/category behavior." : null,
       ],
     }),
     selectedCandidate: {
@@ -420,8 +425,8 @@ export async function moveItemToHolding(input: { itemId: string }): Promise<Item
   return transition(
     input.itemId,
     "discovered",
-    { type: "item.archive", itemId: input.itemId },
-    { nextDestination: "holding" },
+    { type: "item.intent", itemId: input.itemId, intent: "wait" },
+    { nextDestination: "holding", recordBehavior: false },
   );
 }
 

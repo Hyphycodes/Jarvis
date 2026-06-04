@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
@@ -11,9 +12,11 @@ import { buildIntelligenceReason } from "@/lib/brain/intelligenceReason";
 import {
   buildContextTraceSummary,
   safeWriteIntelligenceTrace,
+  writeIntelligenceTraceWithClient,
 } from "@/lib/brain/intelligenceTrace";
 import { generatePlanFromItem } from "@/lib/brain/planGenerator";
 import { slugify, type GeneratedPlan } from "@/lib/brain/planTypes";
+import type { IndexedItem } from "@/lib/index/types";
 import type { PlanChatContext } from "@/lib/plans/chatContext";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
 
@@ -133,11 +136,18 @@ export async function createStubPlan(input: {
   force?: boolean;
   sourceObservationId?: string;
   chatContext?: PlanChatContext;
+  userId?: string;
+  preserveItemSurface?: boolean;
 }): Promise<CreateStubResult> {
-  const owner = await requireOwner();
-  const supabase = await getServerSupabase();
+  const owner = input.userId ? { id: input.userId } : await requireOwner();
+  const supabase = input.userId ? getSupabaseServiceClient() : await getServerSupabase();
 
-  const item = await getIndexItem(input.itemId);
+  const item = await readPlanSourceItem({
+    itemId: input.itemId,
+    userId: owner.id,
+    supabase,
+    serviceMode: Boolean(input.userId),
+  });
   if (!item) throw new Error("Item not found.");
 
   if (!input.force) {
@@ -155,6 +165,21 @@ export async function createStubPlan(input: {
           existing.planSlug ??
           readSlugFromKeyStats(planRow.key_stats) ??
           slugify(item.title);
+        if (!existing.planSlug) {
+          const currentPayload = isRecord(item.rawPayload) ? item.rawPayload : {};
+          await supabase
+            .from("surfaced_items")
+            .update({
+              payload: {
+                ...currentPayload,
+                plan_id: planRow.id,
+                plan_slug: slug,
+                plan_status: "draft",
+              } as Json,
+            })
+            .eq("id", item.id)
+            .eq("user_id", owner.id);
+        }
         return {
           planId: planRow.id,
           planSlug: slug,
@@ -165,7 +190,7 @@ export async function createStubPlan(input: {
     }
   }
 
-  const slug = await ensureUniqueSlug(owner.id, slugify(item.title), item.id);
+  const slug = await ensureUniqueSlug(owner.id, slugify(item.title), item.id, supabase);
 
   const { data: planInsert, error: planError } = await supabase
     .from("plans")
@@ -206,14 +231,17 @@ export async function createStubPlan(input: {
     planning_state: "planning_in_progress",
     source_observation_id: input.sourceObservationId ?? currentPayload.source_observation_id ?? null,
   } as Json;
+  const itemPatch: Record<string, unknown> = {
+    payload: nextPayload,
+    planning_state: "planning_in_progress",
+    source_observation_id: input.sourceObservationId ?? null,
+  };
+  if (!input.preserveItemSurface) {
+    itemPatch.status = "planned";
+  }
   await supabase
     .from("surfaced_items")
-    .update({
-      status: "planned",
-      payload: nextPayload,
-      planning_state: "planning_in_progress",
-      source_observation_id: input.sourceObservationId ?? null,
-    })
+    .update(itemPatch)
     .eq("id", item.id)
     .eq("user_id", owner.id);
 
@@ -230,6 +258,7 @@ export async function fillPlan(input: {
   userId: string;
   itemId: string;
   chatContext?: PlanChatContext;
+  preserveItemSurface?: boolean;
 }): Promise<{ ok: true; fallbackUsed: boolean; cancelled?: boolean; planTitle?: string }> {
   const supabase = getSupabaseServiceClient();
 
@@ -242,6 +271,7 @@ export async function fillPlan(input: {
     .from("surfaced_items")
     .select("*")
     .eq("id", input.itemId)
+    .eq("user_id", input.userId)
     .maybeSingle();
   if (!itemRow) throw new Error("Item not found.");
   const item = rowToIndexedItem(itemRow as SurfacedItemRow);
@@ -346,12 +376,15 @@ export async function fillPlan(input: {
   }
 
   // Mirror an inferred destination onto the source item (parity with legacy).
+  const sourcePatch: Record<string, unknown> = {
+    planning_state: "planned",
+  };
+  if (!input.preserveItemSurface) {
+    sourcePatch.destination = inferItemDestination(plan.starts_at);
+  }
   await supabase
     .from("surfaced_items")
-    .update({
-      destination: inferItemDestination(plan.starts_at),
-      planning_state: "planned",
-    })
+    .update(sourcePatch)
     .eq("id", input.itemId)
     .eq("user_id", input.userId);
 
@@ -366,11 +399,16 @@ export async function generatePlanForItem(input: {
   itemId: string;
   force?: boolean;
   chatContext?: PlanChatContext;
+  userId?: string;
+  recordSignal?: boolean;
+  preserveItemSurface?: boolean;
 }): Promise<GeneratePlanForItemResult> {
   const stub = await createStubPlan({
     itemId: input.itemId,
     force: input.force,
     chatContext: input.chatContext,
+    userId: input.userId,
+    preserveItemSurface: input.preserveItemSurface,
   });
   if (stub.reused) {
     return {
@@ -389,16 +427,25 @@ export async function generatePlanForItem(input: {
     userId: stub.userId,
     itemId: input.itemId,
     chatContext: input.chatContext,
+    preserveItemSurface: input.preserveItemSurface,
   });
 
-  await recordBehaviorSignal({
-    type: "plan.generated",
-    planId: stub.planId,
-    itemId: input.itemId,
-    fallbackUsed: filled.fallbackUsed,
+  const shouldRecordSignal = input.recordSignal ?? !input.userId;
+  if (shouldRecordSignal) {
+    await recordBehaviorSignal({
+      type: "plan.generated",
+      planId: stub.planId,
+      itemId: input.itemId,
+      fallbackUsed: filled.fallbackUsed,
+    });
+  }
+  const traceSupabase = input.userId ? getSupabaseServiceClient() : undefined;
+  const context = await buildBrainContext({
+    userId: stub.userId,
+    includeWeather: false,
+    supabase: traceSupabase,
   });
-  const context = await buildBrainContext({ userId: stub.userId, includeWeather: false });
-  await safeWriteIntelligenceTrace({
+  const traceInput = {
     userId: stub.userId,
     route: "lib/actions/plans.generatePlanForItem",
     surface: "plan",
@@ -424,7 +471,14 @@ export async function generatePlanForItem(input: {
     },
     confidence: filled.fallbackUsed ? 0.45 : 0.72,
     outcome: filled.fallbackUsed ? "generated_fallback" : "generated",
-  });
+  } as const;
+  if (traceSupabase) {
+    await safeWriteIntelligenceTrace(traceInput, (trace) =>
+      writeIntelligenceTraceWithClient(trace, traceSupabase),
+    );
+  } else {
+    await safeWriteIntelligenceTrace(traceInput);
+  }
 
   revalidatePath(`/item/${input.itemId}`);
   revalidatePath(`/plan/${stub.planSlug}`);
@@ -727,8 +781,8 @@ async function ensureUniqueSlug(
   userId: string,
   baseSlug: string,
   itemId: string,
+  supabase: SupabaseClient,
 ): Promise<string> {
-  const supabase = await getServerSupabase();
   const { data } = await supabase
     .from("plans")
     .select("key_stats")
@@ -750,6 +804,26 @@ async function ensureUniqueSlug(
     if (!existing.has(candidate)) return candidate;
   }
   return `${baseSlug}-${Date.now().toString(36)}`;
+}
+
+async function readPlanSourceItem(input: {
+  itemId: string;
+  userId: string;
+  supabase: SupabaseClient;
+  serviceMode: boolean;
+}): Promise<IndexedItem | null> {
+  if (!input.serviceMode) {
+    return getIndexItem(input.itemId);
+  }
+  const { data, error } = await input.supabase
+    .from("surfaced_items")
+    .select("*")
+    .eq("id", input.itemId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return rowToIndexedItem(data as SurfacedItemRow);
 }
 
 function readExistingPlan(

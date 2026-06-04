@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -12,7 +12,6 @@ import {
   Phone,
 } from "lucide-react";
 import { ItemActionButton } from "@/app/item/[id]/client-bits";
-import { DatePickerSheet } from "@/components/plan/DatePickerSheet";
 import type { BriefData } from "@/lib/items/briefFields";
 
 export type ConsiderationBriefProps = {
@@ -44,8 +43,6 @@ export function ConsiderationBrief({
   url,
   phone,
   dateLabel,
-  isEvent,
-  isSaved,
   hasPlan,
   planSlug,
   showActions,
@@ -129,79 +126,26 @@ export function ConsiderationBrief({
         {/* Actions */}
         {showActions ? (
           <div className="mt-7 space-y-3">
-            {hasPlan && planSlug ? (
-              <Link
-                href={`/plan/${planSlug}`}
-                className="flex min-h-[54px] w-full items-center justify-center rounded-2xl border border-[#D4AF53] px-5 text-[12px] uppercase tracking-[0.22em] text-[#D4AF53] transition-colors duration-300 ease-atmospheric hover:bg-[#D4AF53]/10"
-              >
-                View Plan
-              </Link>
-            ) : isSaved ? (
-              <PlanThisButton itemId={itemId} />
-            ) : isEvent ? (
-              <ItemActionButton
-                itemId={itemId}
-                action="add-upcoming"
-                label="Add to Upcoming"
-                variant="primary"
-              />
-            ) : (
-              <ItemActionButton
-                itemId={itemId}
-                action="save"
-                label="Save This"
-                variant="primary"
-              />
-            )}
-
+            <ItemActionButton
+              itemId={itemId}
+              action="save"
+              label="Go"
+              variant="primary"
+              redirectTo={hasPlan && planSlug ? `/plan/${planSlug}` : `/item/${itemId}`}
+            />
             <ItemActionButton
               itemId={itemId}
               action="move-holding"
-              label="Move to Holding"
+              label="Wait"
               variant="secondary"
             />
-
-            <div className="grid grid-cols-2 gap-3">
-              <ItemActionButton
-                itemId={itemId}
-                action="interested-later"
-                label="Later"
-                variant="ghost"
-              />
-              <ItemActionButton
-                itemId={itemId}
-                action="watch"
-                label="Watch"
-                variant="ghost"
-              />
-              <ItemActionButton
-                itemId={itemId}
-                action="better-version"
-                label="Better Version"
-                variant="ghost"
-              />
-              <ItemActionButton
-                itemId={itemId}
-                action="save-taste"
-                label="Save Taste"
-                variant="ghost"
-              />
-            </div>
-
-            <div className="h-px bg-white/[0.07]" />
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="pt-1">
               <ItemActionButton
                 itemId={itemId}
                 action="pass"
                 label="Pass"
                 variant="ghost"
-              />
-              <ItemActionButton
-                itemId={itemId}
-                action="mute"
-                label="Mute"
-                variant="ghost"
+                size="compact"
               />
             </div>
           </div>
@@ -298,118 +242,4 @@ function prettyUrl(url: string): string {
   } catch {
     return url;
   }
-}
-
-/**
- * Plan This — instant create + date picker flow. Creates the plan shell
- * immediately, opens the date picker while the plan builds in the background,
- * then surfaces a "building → ready" status that links to the finished plan.
- */
-function PlanThisButton({ itemId }: { itemId: string }) {
-  const [planId, setPlanId] = useState<string | null>(null);
-  const [planSlug, setPlanSlug] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [scheduled, setScheduled] = useState(false);
-  const [building, setBuilding] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function start() {
-    setError(null);
-    setPending(true);
-    try {
-      const res = await fetch("/api/plans/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ radar_item_id: itemId }),
-      });
-      const json = (await res.json()) as {
-        ok?: true;
-        plan_id?: string;
-        plan_slug?: string;
-        reused?: boolean;
-        error?: string;
-      };
-      if (!res.ok || json.error || !json.plan_id || !json.plan_slug) {
-        setError(json.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setPlanId(json.plan_id);
-      setPlanSlug(json.plan_slug);
-      setBuilding(!json.reused);
-      setSheetOpen(true);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setPending(false);
-    }
-  }
-
-  // Poll build status after scheduling, until the plan is ready.
-  useEffect(() => {
-    if (!scheduled || !planId || !building) return;
-    let active = true;
-    const timer = window.setInterval(async () => {
-      try {
-        const res = await fetch(`/api/plans/${planId}/status`);
-        const json = (await res.json()) as { build_status?: string };
-        if (active && json.build_status === "ready") {
-          setBuilding(false);
-          window.clearInterval(timer);
-        }
-      } catch {
-        /* keep polling */
-      }
-    }, 2500);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [scheduled, planId, building]);
-
-  if (scheduled && planSlug) {
-    return (
-      <div className="space-y-2">
-        {building ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-warm-ivory/55">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D4AF53]" />
-            Plan building…
-          </div>
-        ) : null}
-        <Link
-          href={`/plan/${planSlug}`}
-          className="flex min-h-[54px] w-full items-center justify-center rounded-2xl border border-[#D4AF53] px-5 text-[12px] uppercase tracking-[0.22em] text-[#D4AF53] transition-colors hover:bg-[#D4AF53]/10"
-        >
-          Open Plan
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-stretch">
-      <button
-        type="button"
-        onClick={start}
-        disabled={pending}
-        className="flex min-h-[54px] w-full items-center justify-center rounded-2xl border border-[#D4AF53] px-5 text-[12px] uppercase tracking-[0.22em] text-[#D4AF53] transition-colors hover:bg-[#D4AF53]/10 disabled:opacity-60"
-      >
-        {pending ? "Preparing…" : "Plan This"}
-      </button>
-      {error ? (
-        <span className="mt-1 text-[11px] text-[#E07A6E]">{error}</span>
-      ) : null}
-      {planId ? (
-        <DatePickerSheet
-          planId={planId}
-          open={sheetOpen}
-          onClose={() => setSheetOpen(false)}
-          onConfirmed={() => {
-            setScheduled(true);
-            setSheetOpen(false);
-          }}
-        />
-      ) : null}
-    </div>
-  );
 }

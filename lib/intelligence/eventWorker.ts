@@ -5,6 +5,7 @@ import { buildBrainContext } from "@/lib/brain/context";
 import { writeEventVerdict } from "@/lib/brain/eventVerdict";
 import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
+import { triggerPlanBuildsForNewRadarItems } from "@/lib/plans/autoBuild";
 import type { CurrentEventRow, PlacesLibraryRow } from "@/lib/types/database";
 
 const DEFAULT_LIMIT = 20;
@@ -158,8 +159,15 @@ export async function processEventCandidates(
             event: event.title,
             error: surfaceError.message,
           });
+        } else {
+          surfaced++;
+          void triggerPlanBuildsForNewRadarItems(userId).catch((error) => {
+            console.error("[eventWorker] radar plan auto-build failed", {
+              eventId: event.id,
+              error,
+            });
+          });
         }
-        surfaced++;
       } else {
         held++;
       }

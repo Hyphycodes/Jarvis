@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppFrame } from "@/components";
 import type { RadarCard as RadarPayloadCard } from "@/lib/ai/types";
@@ -28,6 +28,17 @@ type Card = {
   placeholderKind?: RadarPayloadCard["placeholderKind"];
   planSlug?: string;
   filter: Filter;
+};
+
+type HoldingItem = {
+  id: string;
+  category: string;
+  title: string;
+  body: string;
+  meta: string[];
+  footerLine: string;
+  imageUrl?: string;
+  planSlug?: string;
 };
 
 function adaptRadarToCard(item: RadarPayloadCard): Card {
@@ -157,6 +168,12 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("All");
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [holdingOpen, setHoldingOpen] = useState(false);
+  const [holdingItems, setHoldingItems] = useState<HoldingItem[]>([]);
+  const [holdingCount, setHoldingCount] = useState(0);
+  const [holdingLoading, setHoldingLoading] = useState(false);
+  const [holdingError, setHoldingError] = useState<string | null>(null);
 
   const cards = useMemo(() => {
     return items.map(adaptRadarToCard);
@@ -167,6 +184,55 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
       !dismissed[c.id] && (filter === "All" || c.filter === filter),
   );
 
+  async function loadHolding(openSheet = false) {
+    if (openSheet) setHoldingOpen(true);
+    setHoldingLoading(true);
+    setHoldingError(null);
+    try {
+      const res = await fetch("/api/items/holding");
+      const json = (await res.json().catch(() => ({}))) as {
+        count?: number;
+        items?: HoldingItem[];
+        error?: string;
+      };
+      if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const nextItems = json.items ?? [];
+      setHoldingItems(nextItems);
+      setHoldingCount(json.count ?? nextItems.length);
+    } catch (error) {
+      setHoldingError(error instanceof Error ? error.message : "Could not load Holding.");
+    } finally {
+      setHoldingLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadHolding();
+  }, []);
+
+  function dismissCard(id: string) {
+    setActionErrors((errors) => {
+      const next = { ...errors };
+      delete next[id];
+      return next;
+    });
+    setDismissed((current) => ({ ...current, [id]: true }));
+  }
+
+  function restoreCard(id: string, message: string) {
+    setDismissed((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setActionErrors((errors) => ({ ...errors, [id]: message }));
+  }
+
+  function refreshAfterAction() {
+    router.refresh();
+    void loadHolding();
+  }
+
   return (
     <AppFrame>
       <header className="flex flex-col gap-3 pt-6">
@@ -174,9 +240,18 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
           <h1 className="font-serif text-[52px] italic leading-[1.02] tracking-[-0.005em] text-warm-ivory">
             Radar
           </h1>
-          <span className="self-start pt-[8px] text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
-            {formatToday()}
-          </span>
+          <div className="self-start pt-[8px] text-right">
+            <span className="block text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
+              {formatToday()}
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadHolding(true)}
+              className="mt-2 text-[10px] uppercase tracking-[0.18em] text-warm-ivory/40 transition-colors duration-300 ease-atmospheric hover:text-muted-gold"
+            >
+              {holdingCount} held
+            </button>
+          </div>
         </div>
         <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/62">
           Curated signal for your taste and trajectory.
@@ -211,14 +286,34 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
             <RadarCard
               key={card.id}
               card={card}
-              onDismiss={() =>
-                setDismissed((d) => ({ ...d, [card.id]: true }))
-              }
-              onPersistedAction={() => router.refresh()}
+              error={actionErrors[card.id]}
+              onDismiss={() => dismissCard(card.id)}
+              onRestore={(message) => restoreCard(card.id, message)}
+              onPersistedAction={refreshAfterAction}
             />
           ))
         )}
       </section>
+      <HoldingSheet
+        open={holdingOpen}
+        items={holdingItems}
+        loading={holdingLoading}
+        error={holdingError}
+        onClose={() => setHoldingOpen(false)}
+        onItemsChange={(nextItems) => {
+          setHoldingItems(nextItems);
+          setHoldingCount(nextItems.length);
+        }}
+        onMoveBack={(itemId) => {
+          setDismissed((current) => {
+            const next = { ...current };
+            delete next[itemId];
+            return next;
+          });
+          refreshAfterAction();
+        }}
+        onPersistedAction={refreshAfterAction}
+      />
     </AppFrame>
   );
 }
@@ -270,24 +365,23 @@ function FilterRow({
 
 function RadarCard({
   card,
+  error,
   onDismiss,
+  onRestore,
   onPersistedAction,
 }: {
   card: Card;
+  error?: string;
   onDismiss: () => void;
+  onRestore: (message: string) => void;
   onPersistedAction: () => void;
 }) {
   const router = useRouter();
-  const [passing, setPassing] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [planning, setPlanning] = useState(false);
-  const [intentOpen, setIntentOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const hasMedia = Boolean(card.imageUrl) || Boolean(card.placeholderKind);
 
-  function persist(action: "save" | "pass") {
-    setError(null);
+  function persist(action: "save" | "move-holding") {
+    onDismiss();
     startTransition(async () => {
       try {
         const res = await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
@@ -295,81 +389,34 @@ function RadarCard({
         if (!res.ok || json.error) {
           throw new Error(json.error ?? `HTTP ${res.status}`);
         }
-        setTimeout(onDismiss, action === "pass" ? 380 : 180);
         onPersistedAction();
+        if (action === "save") {
+          router.push(card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`);
+        }
       } catch (err) {
-        setPassing(false);
-        setSaved(false);
-        setError((err as Error).message);
+        onRestore(err instanceof Error ? err.message : "Action failed.");
         console.error("radar action failed", err);
       }
     });
   }
 
-  function persistIntent(action: "interested-later" | "watch" | "better-version" | "save-taste") {
-    setError(null);
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok || json.error) {
-          throw new Error(json.error ?? `HTTP ${res.status}`);
-        }
-        setTimeout(onDismiss, action === "save-taste" ? 180 : 260);
-        onPersistedAction();
-      } catch (err) {
-        setError((err as Error).message);
-        console.error("radar intent action failed", err);
-      }
-    });
-  }
-
-  function handlePass(e: React.MouseEvent) {
+  function handleGo(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (passing) return;
-    setPassing(true);
-    persist("pass");
-  }
-
-  function handleSave(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (saved) return;
-    setSaved(true);
+    if (pending) return;
     persist("save");
-    setTimeout(() => setSaved(false), 1100);
   }
 
-  function handlePlan(e: React.MouseEvent) {
+  function handleWait(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (planning || pending) return;
-    setPlanning(true);
-    setError(null);
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/items/${card.id}/generate-plan`, { method: "POST" });
-        const json = (await res.json().catch(() => ({}))) as { plan_slug?: string; error?: string };
-        if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
-        if (json.plan_slug) {
-          router.push(`/plan/${json.plan_slug}`);
-        } else {
-          onPersistedAction();
-        }
-      } catch (err) {
-        setPlanning(false);
-        setError((err as Error).message);
-      }
-    });
+    if (pending) return;
+    persist("move-holding");
   }
 
   return (
     <article
-      className={
-        "lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric " +
-        (passing ? "fade-up-out" : "opacity-100")
-      }
+      className="lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric"
     >
       <Link
         href={`/item/${card.id}`}
@@ -421,86 +468,159 @@ function RadarCard({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-3 border-t border-white/[0.045]">
+      <div className="grid grid-cols-2 border-t border-white/[0.045]">
         <button
           type="button"
-          onClick={handleSave}
+          onClick={handleGo}
           disabled={pending}
           className="border-r border-white/[0.045] py-4 text-[11px] uppercase tracking-[0.22em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-60"
         >
-          {saved ? "✓" : "Save"}
+          Go
         </button>
-        {card.planSlug ? (
-          <Link
-            href={`/plan/${card.planSlug}`}
-            className="border-r border-white/[0.045] py-4 text-center text-[11px] uppercase tracking-[0.22em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
-          >
-            View plan
-          </Link>
-        ) : (
-          <button
-            type="button"
-            onClick={handlePlan}
-            disabled={pending || planning}
-            className="border-r border-white/[0.045] py-4 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/55 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
-          >
-            {planning ? "…" : "Plan it"}
-          </button>
-        )}
         <button
           type="button"
-          onClick={handlePass}
+          onClick={handleWait}
           disabled={pending}
           className="py-4 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
         >
-          Pass
+          Wait
         </button>
-      </div>
-      <div className="border-t border-white/[0.035] px-4 py-2">
-        {intentOpen ? (
-          <div className="grid grid-cols-4 gap-1.5">
-            <IntentChip label="Later" disabled={pending} onClick={() => persistIntent("interested-later")} />
-            <IntentChip label="Watch" disabled={pending} onClick={() => persistIntent("watch")} />
-            <IntentChip label="Better" disabled={pending} onClick={() => persistIntent("better-version")} />
-            <IntentChip label="Taste" disabled={pending} onClick={() => persistIntent("save-taste")} />
-          </div>
-        ) : (
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => setIntentOpen(true)}
-            className="w-full py-1.5 text-[10px] uppercase tracking-[0.2em] text-warm-ivory/34 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/58 disabled:opacity-40"
-          >
-            More intent
-          </button>
-        )}
       </div>
     </article>
   );
 }
 
-function IntentChip({
-  label,
-  disabled,
-  onClick,
+function HoldingSheet({
+  open,
+  items,
+  loading,
+  error,
+  onClose,
+  onItemsChange,
+  onMoveBack,
+  onPersistedAction,
 }: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
+  open: boolean;
+  items: HoldingItem[];
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onItemsChange: (items: HoldingItem[]) => void;
+  onMoveBack: (itemId: string) => void;
+  onPersistedAction: () => void;
 }) {
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  if (!open) return null;
+
+  async function runAction(item: HoldingItem, action: "move-radar" | "pass") {
+    if (pendingId) return;
+    const previous = items;
+    setPendingId(item.id);
+    setActionError(null);
+    onItemsChange(items.filter((entry) => entry.id !== item.id));
+    try {
+      const res = await fetch(`/api/items/${item.id}/${action}`, { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+      if (action === "move-radar") onMoveBack(item.id);
+      else onPersistedAction();
+    } catch (err) {
+      onItemsChange(previous);
+      setActionError(err instanceof Error ? err.message : "Action failed.");
+    } finally {
+      setPendingId(null);
+    }
+  }
+
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onClick();
-      }}
-      className="min-h-8 rounded-full border border-white/[0.055] px-2 text-[9px] uppercase tracking-[0.16em] text-warm-ivory/44 transition-colors duration-300 ease-atmospheric hover:border-muted-gold/30 hover:text-muted-gold disabled:opacity-35"
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0"
+      onClick={onClose}
     >
-      {label}
-    </button>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Holding"
+        className="max-h-[78dvh] w-full max-w-[440px] overflow-hidden rounded-t-[22px] border border-white/[0.08] bg-[#0B0B0B] shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-4">
+          <div>
+            <h2 className="font-serif text-[24px] italic leading-tight text-warm-ivory">
+              Holding
+            </h2>
+            <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-warm-ivory/38">
+              {items.length} held
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 w-9 rounded-full text-[18px] text-warm-ivory/38 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/70"
+            aria-label="Close Holding"
+          >
+            x
+          </button>
+        </div>
+        <div className="max-h-[calc(78dvh-88px)] overflow-y-auto px-5 py-4">
+          {error || actionError ? (
+            <div className="mb-3 rounded-[var(--radius-soft)] border border-[#E07A6E]/20 bg-[#E07A6E]/5 px-3 py-2 text-[11px] text-[#E07A6E]">
+              {actionError ?? error}
+            </div>
+          ) : null}
+          {loading ? (
+            <div className="py-10 text-center text-[12px] uppercase tracking-[0.2em] text-warm-ivory/35">
+              Loading
+            </div>
+          ) : items.length === 0 ? (
+            <div className="py-10 text-center font-serif text-[22px] italic text-warm-ivory/55">
+              Nothing is waiting.
+            </div>
+          ) : (
+            <div className="divide-y divide-white/[0.06]">
+              {items.map((item) => (
+                <article key={item.id} className="py-4">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-muted-gold/65">
+                    {item.category}
+                  </div>
+                  <h3 className="mt-2 font-serif text-[22px] leading-[1.08] text-warm-ivory">
+                    {item.title}
+                  </h3>
+                  <p className="mt-2 text-[13px] leading-[1.45] text-warm-ivory/58">
+                    {item.body}
+                  </p>
+                  {item.meta.length > 0 ? (
+                    <div className="mt-3 text-[9px] uppercase leading-[1.5] tracking-[0.18em] text-warm-ivory/35">
+                      {item.meta.slice(0, 2).join(" · ")}
+                    </div>
+                  ) : null}
+                  <div className="mt-4 flex items-center gap-4">
+                    <button
+                      type="button"
+                      disabled={Boolean(pendingId)}
+                      onClick={() => void runAction(item, "move-radar")}
+                      className="text-[10px] uppercase tracking-[0.2em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-40"
+                    >
+                      Back to Radar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(pendingId)}
+                      onClick={() => void runAction(item, "pass")}
+                      className="text-[10px] uppercase tracking-[0.2em] text-warm-ivory/36 transition-colors duration-300 ease-atmospheric hover:text-[#E07A6E] disabled:opacity-40"
+                    >
+                      Pass
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
