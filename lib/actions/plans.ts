@@ -15,6 +15,7 @@ import {
   writeIntelligenceTraceWithClient,
 } from "@/lib/brain/intelligenceTrace";
 import { detectPlanShape, generatePlanFromItem } from "@/lib/brain/planGenerator";
+import { updateSourceStatsFromAction } from "@/lib/library/sourceGraph";
 import { slugify, type GeneratedPlan, type PlanShape } from "@/lib/brain/planTypes";
 import type { IndexedItem } from "@/lib/index/types";
 import type { PlanChatContext } from "@/lib/plans/chatContext";
@@ -685,6 +686,12 @@ export async function completePlan(input: {
       status: "completed",
       live_enabled: false,
       live_label: "BEGIN",
+      // Stamp completion into key_stats for future provisioning reference.
+      key_stats: {
+        ...(isRecord(plan.key_stats) ? plan.key_stats : {}),
+        completed_at: new Date().toISOString(),
+        completion_notes: "Plan completed by user.",
+      } as Json,
     })
     .eq("id", input.planId)
     .eq("user_id", owner.id);
@@ -703,6 +710,22 @@ export async function completePlan(input: {
       .update({ status: "completed", payload: nextPayload })
       .eq("id", sourceItemId)
       .eq("user_id", owner.id);
+
+    // Close the feedback loop: a completed plan credits the source that
+    // discovered this place — its trust climbs in intelligence_sources.
+    // Non-blocking — a feedback failure must never break plan completion.
+    if (item) {
+      try {
+        await updateSourceStatsFromAction({
+          userId: owner.id,
+          item,
+          action: "completed",
+          supabase,
+        });
+      } catch (err) {
+        console.warn("[completePlan] source feedback loop failed", err);
+      }
+    }
   }
 
   await recordBehaviorSignal({

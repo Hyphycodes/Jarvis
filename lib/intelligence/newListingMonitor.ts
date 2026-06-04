@@ -33,16 +33,18 @@ Rules:
 - Skip places without a clear new-opening signal
 - Return empty places array if nothing qualifies`;
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 // Neighborhoods and categories to probe for new openings
 const NEW_LISTING_QUERIES = [
-  "new restaurant opening Chicago 2025",
-  "new bar opening Chicago 2025",
+  `new restaurant opening Chicago ${CURRENT_YEAR}`,
+  `new bar opening Chicago ${CURRENT_YEAR}`,
   "new restaurant West Loop Chicago",
   "new restaurant River North Chicago",
   "new restaurant Logan Square Chicago",
   "new wine bar Chicago opening",
   "new omakase Chicago opening",
-  "Chicago grand opening restaurant bar 2025",
+  `Chicago grand opening restaurant bar ${CURRENT_YEAR}`,
 ];
 
 export async function runNewListingMonitor(userId: string): Promise<{

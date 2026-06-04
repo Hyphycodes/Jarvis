@@ -29,11 +29,13 @@ Return strict JSON:
 
 Return empty places array if no specific places with genuine community enthusiasm are found.`;
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 const COMMUNITY_QUERIES = [
-  { query: "Chicago restaurant recommendation Reddit 2025", domains: ["reddit.com"] },
+  { query: `Chicago restaurant recommendation Reddit ${CURRENT_YEAR}`, domains: ["reddit.com"] },
   { query: "best new restaurant Chicago Reddit", domains: ["reddit.com"] },
   { query: "Chicago hidden gem restaurant bar", domains: ["reddit.com", "yelp.com"] },
-  { query: "Chicago food blog new opening 2025", domains: [] }, // open web
+  { query: `Chicago food blog new opening ${CURRENT_YEAR}`, domains: [] }, // open web
   { query: "must try Chicago restaurant neighborhood", domains: ["reddit.com"] },
 ];
 

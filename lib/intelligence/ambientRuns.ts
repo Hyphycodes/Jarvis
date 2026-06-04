@@ -27,6 +27,7 @@ import { runOccasionEngine } from "@/lib/intelligence/occasionEngine";
 import { runNewListingMonitor } from "@/lib/intelligence/newListingMonitor";
 import { runNetworkSignalAgent } from "@/lib/intelligence/networkSignalAgent";
 import { runSocialProofAggregator } from "@/lib/intelligence/socialProofAggregator";
+import { runDayOrchestrator } from "@/lib/intelligence/dayOrchestrator";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -168,6 +169,11 @@ export async function runAmbientIntelligence(input: {
       await runSocialProofAggregator(owner.id);
     } catch (err) {
       summary.errors.push(`social_proof: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      await runDayOrchestrator(owner.id, supabase);
+    } catch (err) {
+      summary.errors.push(`day_orchestrator: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
       const promoted = await runDayOfPromotion();

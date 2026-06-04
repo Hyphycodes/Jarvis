@@ -715,10 +715,15 @@ function shouldSurfaceCircleMoment(row: CircleUpdateRow): boolean {
 }
 
 function rowToCircleTodayItem(row: CircleUpdateRow): TodayCommandItem {
+  // Day Orchestrator writes seam-awareness rows with source='day_orchestrator';
+  // these render as inline-expandable day alerts rather than relationship moments.
+  const signalType: TodayCommandItem["signalType"] =
+    (row.source as string) === "day_orchestrator" ? "day_alert" : "life";
+
   return {
     id: row.id,
     title: row.title,
-    subtitle: "Circle",
+    subtitle: signalType === "day_alert" ? "Today" : "Circle",
     summary: row.suggested_action ?? row.summary,
     source: "circle",
     type: "relationship_update",
@@ -731,11 +736,14 @@ function rowToCircleTodayItem(row: CircleUpdateRow): TodayCommandItem {
       suggestedAction: row.suggested_action,
       urgency: row.urgency,
     }),
-    signalType: "life",
-    occasionContext: {
-      occasionType: detectCircleOccasionType(row.title),
-      clusterNote: row.summary,
-    },
+    signalType,
+    occasionContext:
+      signalType === "life"
+        ? {
+            occasionType: detectCircleOccasionType(row.title),
+            clusterNote: row.summary,
+          }
+        : undefined,
     score: scoreCircleUrgency(row.urgency),
   };
 }
