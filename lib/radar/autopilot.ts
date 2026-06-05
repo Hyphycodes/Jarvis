@@ -8,7 +8,7 @@ import {
   writeIntelligenceTraceWithClient,
 } from "@/lib/brain/intelligenceTrace";
 import { buildIntelligenceReason } from "@/lib/brain/intelligenceReason";
-import { runScout } from "@/lib/brain/scout";
+import { runCategoryScout } from "@/lib/brain/categoryAgents";
 import { runEventScout } from "@/lib/brain/eventScout";
 import { processCandidates } from "@/lib/intelligence/libraryWorker";
 import { processEventCandidates } from "@/lib/intelligence/eventWorker";
@@ -768,8 +768,8 @@ async function executeOperation(input: {
         const isSprint = input.base.mode === "foundation_sprint";
         const scout = isSprint || input.runBudget.shouldStopSoon()
           || !reserveClaudeTokens(input.spendBudget, AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE, "library_scout")
-          ? { candidates_added: 0, sources_added: 0 }
-          : await runScout(input.userId);
+          ? { candidates_added: 0, sources_added: 0, week_shape: null as string | null, nothing_categories: [] as string[] }
+          : await runCategoryScout({ userId: input.userId, supabase: input.supabase });
         const conversion = await convertCandidateInboxToLibrary({
           userId: input.userId,
           supabase: input.supabase,
@@ -791,7 +791,7 @@ async function executeOperation(input: {
         result.timeBudgetReached = conversion.timeBudgetReached || input.runBudget.shouldStopSoon();
         result.summary = result.timeBudgetReached
           ? `Library conversion saved partial progress: converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s). Continuing next run.`
-          : `Library build ran Scout, converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s), and processed ${processed.researched} place candidate(s).`;
+          : `Library build ran ${scout.candidates_added} category-agent candidate(s)${scout.nothing_categories.length ? ` (quiet: ${scout.nothing_categories.join(", ")})` : ""}, converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s), and processed ${processed.researched} place candidate(s).${scout.week_shape ? ` Week shape: ${scout.week_shape}` : ""}`;
         result.errors = [...(processed.errors ?? []), ...conversion.errors];
         break;
       }
@@ -891,7 +891,7 @@ async function executeOperation(input: {
             if (providerGather.errors.length) result.errors = providerGather.errors;
           } else {
             if (reserveClaudeTokens(input.spendBudget, AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE, "source_building_scout")) {
-              const scout = await runScout(input.userId);
+              const scout = await runCategoryScout({ userId: input.userId, supabase: input.supabase });
               result.candidatesDiscovered += scout.candidates_added;
             }
           }
