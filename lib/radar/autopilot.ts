@@ -39,7 +39,6 @@ import {
   sourceKeyForItem,
   upsertSourceFromCandidate,
 } from "@/lib/library/sourceGraph";
-import { enrichPending } from "@/lib/library/enrichPending";
 import { planRadarCampaigns, type RadarCampaign } from "@/lib/radar/campaigns";
 import {
   assessBootstrapNeed,
@@ -920,21 +919,6 @@ async function executeOperation(input: {
       }
       case "promotion_review": {
         // Bridge: convert strong Library inventory into the surfaced pool before promoting.
-        // Enrich a batch of pending library places first. Enrichment fills photos,
-        // categories, and flips enrichment_status to 'enriched' — which is what the
-        // materializer gate requires. Running it here (every autopilot cycle) keeps the
-        // bank flowing to Radar continuously instead of waiting on the 6-hour cron.
-        try {
-          const enriched = await enrichPending(input.userId, 30);
-          if (enriched.enriched > 0) {
-            result.summary = `Enriched ${enriched.enriched} place(s). `;
-          }
-        } catch (err) {
-          result.errors = [
-            ...(result.errors ?? []),
-            `Enrichment batch failed: ${err instanceof Error ? err.message : String(err)}`,
-          ];
-        }
         const materialized = await materializeEligibleLibraryItems(input.userId);
         if (materialized.materialized > 0) {
           result.summary += `Materialized ${materialized.materialized} library item(s) into promotion pool. `;
