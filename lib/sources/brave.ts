@@ -49,3 +49,51 @@ export async function webSearch(input: {
     return data.web?.results ?? [];
   });
 }
+
+export type BraveImageResult = {
+  title: string;
+  pageUrl: string;
+  source?: string;
+  imageUrl: string;
+  width?: number;
+  height?: number;
+};
+
+/** Brave image search — used as the last-resort image source during enrichment. */
+export async function imageSearch(input: {
+  query: string;
+  count?: number;
+}): Promise<BraveImageResult[]> {
+  const cacheKey = `brave:img:${input.query}:${input.count ?? 5}`;
+  return cached(cacheKey, TTL.webSearch, async () => {
+    const data = await fetchJson<{
+      results?: Array<{
+        title?: string;
+        url?: string;
+        source?: string;
+        thumbnail?: { src?: string };
+        properties?: { url?: string; width?: number; height?: number };
+      }>;
+    }>(`${BASE}/images/search`, {
+      service: "brave",
+      headers: {
+        "X-Subscription-Token": key(),
+      },
+      query: {
+        q: input.query,
+        count: Math.min(input.count ?? 5, 20),
+        safesearch: "strict",
+      },
+    });
+    return (data.results ?? [])
+      .map((r) => ({
+        title: r.title ?? "",
+        pageUrl: r.url ?? "",
+        source: r.source,
+        imageUrl: r.properties?.url ?? r.thumbnail?.src ?? "",
+        width: r.properties?.width,
+        height: r.properties?.height,
+      }))
+      .filter((r) => r.imageUrl);
+  });
+}

@@ -6,6 +6,7 @@ import { upsertCandidateInboxFromIndexedCandidate } from "@/lib/radar/candidateI
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import { normalizeRadarCategory } from "@/lib/radar/category";
+import { resolveItemImage, isHttpUrl } from "@/lib/sources/images";
 import type {
   CreateIndexedItemInput,
   IndexDestination,
@@ -51,6 +52,25 @@ export async function ingestCandidates(input: {
     errors: [],
   };
   if (input.candidates.length === 0) return summary;
+
+  // Best-effort: give every candidate without an image a real photo attempt, all
+  // in parallel (total time ≈ slowest source). Failures leave imageUrl null — a
+  // great fit with no image still surfaces; the card renders a tasteful fallback.
+  await Promise.all(
+    input.candidates.map(async (candidate) => {
+      if (isHttpUrl(candidate.imageUrl)) return;
+      const resolved = await resolveItemImage({
+        name: candidate.title,
+        city: candidate.locationName ?? null,
+        category: normalizeRadarCategory(candidate.category),
+        url: candidate.url ?? null,
+        lat: candidate.lat ?? null,
+        lng: candidate.lng ?? null,
+        existingImageUrl: candidate.imageUrl ?? null,
+      });
+      if (resolved) candidate.imageUrl = resolved.url;
+    }),
+  );
 
   const owner = input.userId ? { id: input.userId } : await requireOwner();
   const supabase = await getServerSupabase();

@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { assessResultQuality } from "@/lib/sources/resultQuality";
+import { resolveItemImage, isHttpUrl } from "@/lib/sources/images";
 import type { RunBudget } from "@/lib/radar/foundationSprint";
 import type { Json, RadarCandidateInboxRow } from "@/lib/types/database";
 
@@ -103,6 +104,24 @@ export async function convertCandidateInboxToLibrary(input: {
         continue;
       }
       const entityType = classifyCandidate(row);
+      // Enrich the inbox row with a real photo so promoted items already carry it.
+      if ((entityType === "place" || entityType === "event") && !isHttpUrl(row.image_url)) {
+        const resolved = await resolveItemImage({
+          name: row.title,
+          city: readNeighborhood(row),
+          category: entityType === "place" ? "places" : "events",
+          url: row.url,
+          existingImageUrl: stringValue(readRaw(row, ["image_url"])) ?? stringValue(readRaw(row, ["images", "0", "url"])),
+        });
+        if (resolved) {
+          await input.supabase
+            .from("radar_candidate_inbox")
+            .update({ image_url: resolved.url, updated_at: new Date().toISOString() })
+            .eq("id", row.id)
+            .eq("user_id", input.userId);
+          row.image_url = resolved.url;
+        }
+      }
       if (entityType === "place") {
         const conversion = await convertPlace(input.supabase, input.userId, row);
         result.placesCreated += conversion.created ? 1 : 0;
