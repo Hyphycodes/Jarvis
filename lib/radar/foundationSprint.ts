@@ -3,15 +3,15 @@ import { RADAR_MIN_ACTIVE_ITEM_TARGET } from "@/lib/brain/constants";
 import type { SourceHealth } from "@/lib/sources/types";
 
 export const FOUNDATION_SPRINT_TARGETS = {
-  places: 300,
-  activeEvents: 150,
-  sources: 100,
-  candidateInbox: 500,
-  tierAPlusB: 75,
-  recurringSignals: 50,
-  tastemakers: 50,
-  organizations: 50,
-  neighborhoods: 15,
+  places: 1000,
+  activeEvents: 500,
+  sources: 500,
+  candidateInbox: 2000,
+  tierAPlusB: 300,
+  recurringSignals: 200,
+  tastemakers: 200,
+  organizations: 200,
+  neighborhoods: 50,
 } as const;
 
 export const FOUNDATION_BATCH_BUDGET = {

@@ -728,7 +728,7 @@ function testCronMiddlewareBypass() {
 
 function testAutopilotRunStateMigrationAndControls() {
   const migration = readFileSync(
-    "supabase/migrations/0013_radar_autopilot_control_room.sql",
+    "supabase/migrations/20260101000013_radar_autopilot_control_room.sql",
     "utf8",
   );
   assert.match(migration, /create table if not exists public\.radar_autopilot_runs/);
@@ -756,7 +756,7 @@ function testAutopilotRunStateMigrationAndControls() {
   assert.match(actions, /Stop After Current Step/);
 
   const foundationMigration = readFileSync(
-    "supabase/migrations/0014_foundation_sprint_mode.sql",
+    "supabase/migrations/20260101000014_foundation_sprint_mode.sql",
     "utf8",
   );
   assert.match(foundationMigration, /foundation_sprint_enabled/);
@@ -986,9 +986,11 @@ function testQualityFiltersReachCandidateConversionAndPreviews() {
 function testPromotionFollowThroughContract() {
   const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
   assert.match(autopilot, /eligibleDiagnostics/);
-  assert.match(autopilot, /RADAR_MIN_ACTIVE_ITEM_TARGET - input\.base\.activeCount/);
+  assert.match(autopilot, /slots: RADAR_PROMOTIONS_PER_RUN/);
+  assert.match(autopilot, /promoteHoldingWithService/);
+  assert.match(autopilot, /planLivingFive/);
   assert.match(autopilot, /Promotion review found \$\{eligibleDiagnostics\.length\} eligible item\(s\) but promoted 0/);
-  assert.match(autopilot, /No available Active Radar slots under target/);
+  assert.match(autopilot, /Active Radar is at or above target/);
   assert.match(autopilot, /reasons:/);
 
   const diagnostics = readFileSync("lib/radar/promotionDiagnostics.ts", "utf8");
@@ -1224,9 +1226,10 @@ function testPromotionBridgeAndVisibleCountContracts() {
   const autopilot = readFileSync("lib/radar/autopilot.ts", "utf8");
   assert.match(autopilot, /evaluateActiveRadarItem\(item\)\.allowed/);
   assert.match(autopilot, /mergeRadarIntelligencePayload/);
-  assert.match(autopilot, /shortlistRadarMoves/);
+  assert.match(autopilot, /planLivingFive/);
+  assert.match(autopilot, /compositeFor/);
   assert.match(autopilot, /promotion write failed/);
-  assert.match(autopilot, /moved to Radar as a composed move/);
+  assert.match(autopilot, /promoted to \$\{meta\.radar\.category\}/);
 
   const curator = readFileSync("lib/intelligence/radarCurator.ts", "utf8");
   assert.match(curator, /composeRadarMove/);

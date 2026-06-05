@@ -39,6 +39,7 @@ export type SourceGraphRow = {
   total_passed: number;
   total_planned: number;
   last_checked_at: string | null;
+  last_produced_at: string | null;
   next_check_at: string | null;
   cadence_hours: number;
   status: SourceStatus;

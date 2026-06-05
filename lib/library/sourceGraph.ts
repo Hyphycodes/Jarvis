@@ -235,6 +235,7 @@ export async function selectSourcesDueForCheck(input: {
   supabase?: SupabaseClient;
 }): Promise<SourceGraphRow[]> {
   const supabase = input.supabase ?? await getServerSupabase();
+  const limit = input.limit ?? 8;
   const { data } = await supabase
     .from("intelligence_sources")
     .select("*")
@@ -242,8 +243,9 @@ export async function selectSourcesDueForCheck(input: {
     .in("status", ["testing", "watching", "cooldown"])
     .lte("next_check_at", new Date().toISOString())
     .order("next_check_at", { ascending: true, nullsFirst: true })
-    .limit(input.limit ?? 8);
-  return (data ?? []) as SourceGraphRow[];
+    .limit(Math.max(limit * 5, limit));
+  const staleCutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return ((data ?? []) as SourceGraphRow[]).sort((a, b) => compareSourceProductionPriority(a, b, staleCutoffMs)).slice(0, limit);
 }
 
 export function sourceKeyForItem(item: IndexedItem): string | null {
@@ -259,6 +261,27 @@ function sourceTypeForItem(item: IndexedItem): SourceType {
   if (item.source === "places") return "venue";
   if (sourceKeyFromUrl(item.url)) return "domain";
   return "search_pattern";
+}
+
+function compareSourceProductionPriority(a: SourceGraphRow, b: SourceGraphRow, staleCutoffMs: number): number {
+  const priorityDiff = sourceProductionPriority(a, staleCutoffMs) - sourceProductionPriority(b, staleCutoffMs);
+  if (priorityDiff !== 0) return priorityDiff;
+  return timestampMs(a.last_produced_at) - timestampMs(b.last_produced_at)
+    || timestampMs(a.next_check_at) - timestampMs(b.next_check_at)
+    || timestampMs(a.updated_at) - timestampMs(b.updated_at);
+}
+
+function sourceProductionPriority(row: SourceGraphRow, staleCutoffMs: number): number {
+  const producedAt = timestampMs(row.last_produced_at);
+  if (producedAt === 0) return 0;
+  if (producedAt < staleCutoffMs) return 1;
+  return 2;
+}
+
+function timestampMs(value: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function sourceTypeForKey(key: string, sourceName: string): SourceType {

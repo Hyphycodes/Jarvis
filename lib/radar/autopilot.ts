@@ -33,6 +33,7 @@ import { readLibraryHealth, type LibraryHealth } from "@/lib/library";
 import {
   selectSourcesDueForCheck,
   scoreSourceQuality,
+  sourceKeyForItem,
   upsertSourceFromCandidate,
 } from "@/lib/library/sourceGraph";
 import { planRadarCampaigns, type RadarCampaign } from "@/lib/radar/campaigns";
@@ -1103,6 +1104,13 @@ async function promoteHoldingWithService(input: {
       reasons.push(`${meta.row.title}: promotion write failed (${error.message}).`);
       return false;
     }
+    await markSourceProducedForPromotion({
+      row: meta.row,
+      item: rowToIndexedItem(meta.row),
+      supabase: input.supabase,
+      userId: input.userId,
+      producedAt: new Date().toISOString(),
+    });
     promoted++;
     selectedIds.push(id);
     reasons.push(`${meta.row.title}: promoted to ${meta.radar.category} (${meta.composite.toFixed(2)})${viaDisplacement ? " via displacement" : ""}.`);
@@ -1159,6 +1167,40 @@ async function promoteHoldingWithService(input: {
     promoted,
     reasons,
   };
+}
+
+async function markSourceProducedForPromotion(input: {
+  row: SurfacedItemRow;
+  item: ReturnType<typeof rowToIndexedItem>;
+  supabase: SupabaseClient;
+  userId: string;
+  producedAt: string;
+}): Promise<void> {
+  const update = {
+    last_produced_at: input.producedAt,
+    updated_at: input.producedAt,
+  };
+  if (input.row.source_id) {
+    const { error } = await input.supabase
+      .from("intelligence_sources")
+      .update(update)
+      .eq("id", input.row.source_id)
+      .eq("user_id", input.userId);
+    if (error) {
+      console.warn("[radarAutopilot] source production marker by id failed", error.message);
+    }
+    return;
+  }
+  const sourceKey = sourceKeyForItem(input.item);
+  if (!sourceKey) return;
+  const { error } = await input.supabase
+    .from("intelligence_sources")
+    .update(update)
+    .eq("user_id", input.userId)
+    .eq("source_key", sourceKey);
+  if (error) {
+    console.warn("[radarAutopilot] source production marker by key failed", error.message);
+  }
 }
 
 /** Blends an enriched Radar item's sub-scores + live-location proximity into the
