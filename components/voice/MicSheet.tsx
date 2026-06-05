@@ -108,6 +108,26 @@ function normalizeChips(chips: Array<string | ChatChip> | undefined): ChatChip[]
   });
 }
 
+/** Strip <chips>...</chips> block from a Claude response string. */
+function stripChipMarkup(text: string): string {
+  return text
+    .replace(/<chips>[\s\S]*?<\/chips>/gi, "")
+    .replace(/<chips>[\s\S]*$/i, "")
+    .trimEnd();
+}
+
+/** Extract and parse chips embedded in a Claude response string. */
+function extractInlineChips(text: string): ChatChip[] {
+  const match = text.match(/<chips>([\s\S]*?)<\/chips>/i);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    return Array.isArray(parsed) ? normalizeChips(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
 function attachmentForApi(attachment: AttachmentContext): ChatAttachment {
   if (attachment.type === "image" && attachment.imageBase64) {
     return {
@@ -163,6 +183,10 @@ export function MicSheet({
   const [, setDetectedLinkUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [analyzingImage, setAnalyzingImage] = useState(false);
+  const [schedulePicker, setSchedulePicker] = useState<{
+    planId: string;
+    label: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
@@ -227,13 +251,14 @@ export function MicSheet({
       setPlanCard(null);
       setAttachment(null);
       setDetectedLinkUrl(null);
+      setSchedulePicker(null);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, currentResponse]);
+  }, [messages, currentResponse, schedulePicker]);
 
   // Sync state with isListening. Only drive "listening" here — the transition
   // to "thinking" is owned by handleSendMessage (real transcript) and the
@@ -371,16 +396,23 @@ export function MicSheet({
               }
             } else if (event.type === "done") {
               if (accumulated) {
-                const chips = maybeAddPushPromptChip(intentChips);
+                const inlineChips = extractInlineChips(accumulated);
+                const cleanContent = stripChipMarkup(accumulated);
+                const mergedChips = maybeAddPushPromptChip([
+                  ...intentChips,
+                  ...inlineChips.filter(
+                    (ic) => !intentChips.some((c) => c.action_type === ic.action_type),
+                  ),
+                ]);
                 const jarvisMsg: Message = {
                   role: "jarvis",
-                  content: accumulated,
+                  content: cleanContent,
                   timestamp: Date.now(),
-                  chips: chips.length > 0 ? chips : undefined,
+                  chips: mergedChips.length > 0 ? mergedChips : undefined,
                 };
                 setMessages((prev) => [...prev, jarvisMsg]);
                 setCurrentResponse("");
-                if (voiceOn) void playJarvisVoice(accumulated);
+                if (voiceOn) void playJarvisVoice(cleanContent);
               }
               setState("idle");
               setAnalyzingImage(false);
@@ -394,10 +426,22 @@ export function MicSheet({
       }
 
       if (accumulated && !messages.find((m) => m.content === accumulated)) {
-        const chips = maybeAddPushPromptChip(intentChips);
+        const inlineChips = extractInlineChips(accumulated);
+        const cleanContent = stripChipMarkup(accumulated);
+        const mergedChips = maybeAddPushPromptChip([
+          ...intentChips,
+          ...inlineChips.filter(
+            (ic) => !intentChips.some((c) => c.action_type === ic.action_type),
+          ),
+        ]);
         setMessages((prev) => {
           if (prev[prev.length - 1]?.role === "jarvis") return prev;
-          return [...prev, { role: "jarvis", content: accumulated, timestamp: Date.now(), chips: chips.length > 0 ? chips : undefined }];
+          return [...prev, {
+            role: "jarvis",
+            content: cleanContent,
+            timestamp: Date.now(),
+            chips: mergedChips.length > 0 ? mergedChips : undefined,
+          }];
         });
         setCurrentResponse("");
         setState("idle");
@@ -519,6 +563,17 @@ export function MicSheet({
           }),
         }).catch(() => {});
       }
+      return;
+    }
+
+    if (chip.action_type === "add_to_schedule") {
+      const planId = stringPayload(chip.payload, "plan_id");
+      if (!planId) {
+        void handleSendMessage("Build the plan first, then I can schedule it.");
+        return;
+      }
+      haptic(8);
+      setSchedulePicker({ planId, label: chip.label });
       return;
     }
 
@@ -728,12 +783,49 @@ export function MicSheet({
             </div>
           ))}
 
+          {schedulePicker ? (
+            <SchedulePicker
+              planId={schedulePicker.planId}
+              label={schedulePicker.label}
+              onConfirm={async (date, time) => {
+                try {
+                  const res = await fetch(`/api/plans/${schedulePicker.planId}/schedule`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ scheduled_date: date, scheduled_time: time }),
+                  });
+                  if (!res.ok) throw new Error("Schedule failed");
+                  setSchedulePicker(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: "jarvis",
+                      content: `Done — locked in for ${date} at ${time}.`,
+                      timestamp: Date.now(),
+                    },
+                  ]);
+                } catch {
+                  setSchedulePicker(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: "jarvis",
+                      content: "Couldn't save that — try again.",
+                      timestamp: Date.now(),
+                    },
+                  ]);
+                }
+              }}
+              onDismiss={() => setSchedulePicker(null)}
+            />
+          ) : null}
+
           {/* Streaming response */}
           {currentResponse ? (
             <div className="mb-5 text-left">
               <span className="mr-2 text-[10px] uppercase tracking-[0.16em] text-muted-gold/60">J.</span>
               <span className="text-[15px] leading-[1.6] text-warm-ivory/88">
-                {currentResponse}
+                {stripChipMarkup(currentResponse)}
                 <span aria-hidden className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-muted-gold/60" />
               </span>
             </div>
@@ -958,6 +1050,61 @@ function ChipButton({
     >
       {label}
     </button>
+  );
+}
+
+function SchedulePicker({
+  planId: _planId,
+  label,
+  onConfirm,
+  onDismiss,
+}: {
+  planId: string;
+  label: string;
+  onConfirm: (date: string, time: string) => void;
+  onDismiss: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(today);
+  const [time, setTime] = useState("19:00");
+
+  return (
+    <div className="mb-4 rounded-xl border border-warm-ivory/10 bg-white/[0.03] px-4 py-3">
+      <p className="mb-3 text-[12px] uppercase tracking-[0.14em] text-muted-gold/70">
+        {label}
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="date"
+          value={date}
+          min={today}
+          onChange={(e) => setDate(e.target.value)}
+          className="flex-1 rounded-lg bg-white/[0.06] px-3 py-2 text-[14px] text-warm-ivory/90 outline-none"
+        />
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          className="w-28 rounded-lg bg-white/[0.06] px-3 py-2 text-[14px] text-warm-ivory/90 outline-none"
+        />
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={() => onConfirm(date, time)}
+          className="flex-1 rounded-lg bg-muted-gold/20 py-2 text-[13px] uppercase tracking-[0.12em] text-muted-gold"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-lg px-4 py-2 text-[13px] text-warm-ivory/35"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

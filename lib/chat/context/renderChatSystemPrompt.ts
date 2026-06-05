@@ -29,11 +29,17 @@ export function renderChatSystemPrompt(
   lines.push("- When an action chip is supplied for build_plan and the user stated timing, include payload.timing_hint (for example \"Friday evening\" or \"this week\"). Include payload.party_size if the user states a clear group size.");
   lines.push("");
   lines.push("At the end of your response, if there is a clear next action, emit it as a chip — don't ask about it as prose. A question AND a chip for the same thing is redundant. Pick one. Chips replace questions.");
+  lines.push("When you emit chips, limit your prose to 1-2 sentences. The chip carries the action. Prose is recognition only.");
   lines.push("");
   lines.push("Format: output after your prose on a new line, wrapped in <chips>...</chips>:");
   lines.push("[{\"label\": \"Put on Radar\", \"action_type\": \"save_to_radar\", \"message\": \"Put Naia on Radar for Friday evening.\"}]");
   lines.push("");
-  lines.push("Chip types: save_to_radar | add_to_calendar | build_plan | remember | find_similar | enable_push");
+  lines.push("Chip types: save_to_radar | add_to_schedule | build_plan | remember | find_similar | enable_push");
+  lines.push(
+    `Available action types: build_plan, add_to_schedule, save_to_radar, send_message, find_similar.` +
+    ` Use add_to_schedule when the user wants to commit a plan to their calendar. ` +
+    `Its payload must include plan_id if one exists.`,
+  );
   lines.push("Only emit chips when confident. No chip for pure information exchanges.");
   lines.push("");
   lines.push(`Today: ${c.today.localDateLabel} (${c.today.timezone}). Home base: ${c.today.homeCity ?? "unknown"}.`);
@@ -82,7 +88,7 @@ export function renderChatSystemPrompt(
   if (c.activePlans.length) {
     lines.push(
       `Active/nearby plans: ${c.activePlans
-        .map((p) => `${p.title} (${p.status}${p.scheduledDate ? ` ${p.scheduledDate}` : ""})`)
+        .map((p) => `${p.title} (id ${p.id}, ${p.status}${p.scheduledDate ? ` ${p.scheduledDate}` : ""})`)
         .join(" | ")}.`,
     );
   }
