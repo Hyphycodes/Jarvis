@@ -24,6 +24,7 @@ import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { normalizeRadarCategory } from "@/lib/radar/category";
 import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
 import { planLivingFive, type LivingFiveMember } from "@/lib/radar/livingFive";
+import { preBuildPlansForShownItems } from "@/lib/radar/planPreBuilder";
 import {
   blendRadarComposite,
   deriveCompositeDimensions,
@@ -988,6 +989,21 @@ async function executeOperation(input: {
         result.summary = promoted.promoted > 0
           ? `${materializedSummary}Promotion review promoted ${promoted.promoted} qualified Holding item(s).`
           : `${materializedSummary}Promotion review promoted 0 items. ${diagnostics.summary}`;
+        // Pre-build plans for newly-shown Radar items so they open instantly.
+        // Capped at 2 items; skipped if the run is already short on time.
+        if (!input.runBudget.shouldStopSoon()) {
+          const preBuild = await preBuildPlansForShownItems(
+            input.userId,
+            input.supabase,
+            { maxItems: 2 },
+          );
+          if (preBuild.built > 0) {
+            result.summary += ` Pre-built ${preBuild.built} plan(s).`;
+          }
+          if (preBuild.errors.length) {
+            result.errors = [...(result.errors ?? []), ...preBuild.errors];
+          }
+        }
         break;
       }
       case "stale_cleanup":
