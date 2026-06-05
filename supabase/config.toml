@@ -1,0 +1,22 @@
+# Supabase project configuration.
+# Repo is the single source of truth for schema; migrations live in ./migrations
+# and are tracked in the 14-digit timestamp convention.
+
+project_id = "duyvpznvwnkwgavsmstd"
+
+[db]
+# Production runs Postgres 17.
+major_version = 17
+
+[db.seed]
+# Founder/demo seed data. `supabase db reset` applies this after migrations.
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+# HaveIBeenPwned leaked-password protection. Captured here for reproducibility.
+# Applying to the remote project requires `supabase config push` (CLI) or the
+# dashboard toggle (Authentication → Providers → Email → leaked password
+# protection). The MCP path used to reconcile this project cannot push Auth
+# config, so this remains a one-click dashboard toggle until the CLI is wired.
+enable_leaked_password_protection = true
