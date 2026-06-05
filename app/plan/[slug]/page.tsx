@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { loadPlanBriefBySlug } from "@/lib/plans/loadBrief";
 import { loadPlanBySlugV2 } from "@/lib/plans/loadPlan";
+import type { LoadedPlanMenuHighlight } from "@/lib/plans/loadPlan";
 import { enrichInfoStrip, resolveHeroImage } from "@/lib/plans/enrichLogistics";
 import {
   PlanChapterRow,
@@ -35,6 +36,7 @@ export default async function DynamicPlanPage({
   // Sample plans (no planId) skip enrichment — keep their designed fallbacks.
   let infoStrip = brief.infoStrip;
   let heroImage: string | null | undefined = brief.heroImage;
+  let menuHighlights: LoadedPlanMenuHighlight[] = [];
   if (brief.planId) {
     const loaded = await loadPlanBySlugV2(slug);
     if (loaded) {
@@ -42,6 +44,7 @@ export default async function DynamicPlanPage({
         enrichInfoStrip(brief, loaded),
         resolveHeroImage(loaded),
       ]);
+      menuHighlights = loaded.menuHighlights;
     }
   }
 
@@ -80,6 +83,8 @@ export default async function DynamicPlanPage({
 
       <PlanInfoStrip blocks={infoStrip} />
 
+      <WhatToOrder highlights={menuHighlights} />
+
       <nav aria-label="Plan chapters" className="mt-2">
         {brief.chapters.map((chapter) => (
           <PlanChapterRow key={chapter.key} chapter={chapter} />
@@ -107,5 +112,60 @@ export default async function DynamicPlanPage({
         <PlanDispositionBar itemId={brief.sourceId} planSlug={slug} />
       ) : null}
     </PlanShell>
+  );
+}
+
+function WhatToOrder({
+  highlights,
+}: {
+  highlights: LoadedPlanMenuHighlight[];
+}) {
+  if (highlights.length === 0) return null;
+  return (
+    <section
+      className="px-5 py-6"
+      style={{ borderBottom: "1px solid var(--border)" }}
+    >
+      <h2
+        className="font-serif italic"
+        style={{
+          color: "var(--text-primary)",
+          fontSize: "28px",
+          lineHeight: 1.05,
+        }}
+      >
+        What to order
+      </h2>
+      <ul className="mt-5 space-y-4">
+        {highlights.map((item) => (
+          <li key={item.dish} className="grid grid-cols-[18px_minmax(0,1fr)] gap-3">
+            <span
+              className="mt-2 h-1.5 w-1.5 rounded-full"
+              style={{ background: "var(--gold)" }}
+            />
+            <div>
+              <div
+                className="font-serif"
+                style={{
+                  color: "var(--text-primary)",
+                  fontSize: "18px",
+                  lineHeight: 1.15,
+                }}
+              >
+                {item.dish}
+              </div>
+              {item.note ? (
+                <p
+                  className="mt-1 text-[13px] leading-[1.5]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {item.note}
+                </p>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -33,6 +33,11 @@ export type LoadedPlanTimelineItem = {
   sortOrder: number;
 };
 
+export type LoadedPlanMenuHighlight = {
+  dish: string;
+  note?: string;
+};
+
 export type LoadedPlan = {
   id: string;
   title: string;
@@ -66,6 +71,7 @@ export type LoadedPlan = {
   fallbackUsed: boolean;
   cautions: string[];
   grabList: Array<{ label: string; reason?: string }>;
+  menuHighlights: LoadedPlanMenuHighlight[];
   sections: LoadedPlanSection[];
   timeline: LoadedPlanTimelineItem[];
 };
@@ -253,6 +259,7 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
         : false,
     cautions: readStringArray(keyStats.cautions),
     grabList: readGrabList(keyStats.grab_list),
+    menuHighlights: readMenuHighlights(keyStats.menu_highlights),
     sections,
     timeline,
   };
@@ -282,6 +289,19 @@ function readGrabList(value: unknown): Array<{ label: string; reason?: string }>
       ? { label, reason }
       : { label };
     out.push(item);
+  }
+  return out;
+}
+
+function readMenuHighlights(value: unknown): LoadedPlanMenuHighlight[] {
+  if (!Array.isArray(value)) return [];
+  const out: LoadedPlanMenuHighlight[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const dish = typeof entry.dish === "string" ? entry.dish.trim() : "";
+    if (!dish) continue;
+    const note = typeof entry.note === "string" ? entry.note.trim() : "";
+    out.push(note ? { dish, note } : { dish });
   }
   return out;
 }

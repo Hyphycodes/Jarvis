@@ -391,6 +391,7 @@ export async function fillPlan(input: {
     best_window: plan.best_window,
     primary_move: plan.primary_move,
     hero_image_url: result.selectedPhotoUrl ?? null,
+    menu_highlights: plan.menu_highlights ?? [],
     reservation: result.reservation
       ? {
           ...result.reservation,

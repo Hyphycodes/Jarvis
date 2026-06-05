@@ -23,7 +23,7 @@ import { summarizeInterestGraph } from "@/lib/brain/interests";
 import { buildConsiderationBrief } from "@/lib/items/considerationBrief";
 import type { IndexedItem } from "@/lib/index/types";
 import { getDailyForecast } from "@/lib/sources/openMeteo";
-import { hasTavily, searchWeb } from "@/lib/sources/tavily";
+import { extractUrls, hasTavily, searchWeb } from "@/lib/sources/tavily";
 import {
   hasGooglePlaces,
   nearbyPlaces,
@@ -112,6 +112,13 @@ CHAT-SOURCED PLAN CONTEXT
 - If supplemental place details or alternatives exist, use them as verification
   context, not as proof that booking is complete.
 - If cost_estimate exists, include a concise cost section.
+
+MENU
+- If menu context is provided, populate menu_highlights with 3-5 SPECIFIC dishes
+  the founder should order. Use real dish names from the context — never invent
+  menu items. Bias toward animal-based, refined, signature plates; skip generic
+  apps and filler. Each note is one short reason. If the menu context is thin or
+  unclear, return fewer items or omit menu_highlights entirely. Do not guess.
 
 NEVER
 - Fabricate reservation confirmations, addresses, or phone numbers.
@@ -284,6 +291,7 @@ function renderPrompt(
       chat_context: chatContext ?? null,
       supplemental_context: {
         ...supplemental,
+        menu_corpus: supplemental.menuCorpus,
         reservation: supplemental.reservation
           ? {
               reservable: supplemental.reservation.reservable,
@@ -321,6 +329,7 @@ function renderPrompt(
         "Use supplemental weather for outfit/wear guidance when present.",
         "Use supplemental place details for verification only; do not claim a reservation or booking exists.",
         "Use supplemental reservation context to suggest a specific booking time when present; if a booking URL exists, refer to the Reserve action instead of writing the URL.",
+        "If menu_corpus is present, extract real dish names into menu_highlights. Never invent menu items that are not clearly present in the corpus.",
         "Use cost_estimate and party size to write a practical cost section when relevant.",
         "For products, style, articles, ideas, land, and creative inspiration, prefer research/compare/verify steps over fake execution logistics.",
         "For 'detours' and 'after' sections: structure as satellites — specific named places with what they are, why they fit, distance/timing, and rough cost. Format: one paragraph intro, then each satellite as a bullet: '**Name** — [what it is, why it fits, ~X min away, ~$Y]'. Max 2 before, 2 instead, 2 after. If nothing genuinely fits, omit the section entirely.",
@@ -474,6 +483,7 @@ type PlanSupplementalContext = {
     reservable?: boolean;
   } | null;
   selectedPhotoUrl: string | null;
+  menuCorpus: string | null;
   reservation: {
     reservable: boolean;
     bookingUrl: string | null;
@@ -530,7 +540,10 @@ async function buildSupplementalContext(
         category: item.category ?? "places",
       }).catch(() => null)
     : null;
-  const reservation = await resolveReservation(item, placeDetails).catch(() => null);
+  const [reservation, menuCorpus] = await Promise.all([
+    resolveReservation(item, placeDetails).catch(() => null),
+    gatherMenuCorpus(item, placeDetails).catch(() => null),
+  ]);
 
   // Wardrobe context — only for plans with a clear formality signal AND a
   // known owner id (background plan fill has no session, so userId is threaded
@@ -559,6 +572,7 @@ async function buildSupplementalContext(
     weather: weatherResult.status === "fulfilled" ? weatherResult.value : null,
     placeDetails,
     selectedPhotoUrl,
+    menuCorpus,
     reservation,
     nearbyAlternatives:
       alternativesResult.status === "fulfilled" ? alternativesResult.value : [],
@@ -653,6 +667,49 @@ function isDiningReservationCandidate(item: IndexedItem): boolean {
       ["dining", "restaurant", "bar"].includes(tag.toLowerCase()),
     )
   );
+}
+
+function isDiningMenuCandidate(item: IndexedItem): boolean {
+  return (
+    item.type === "restaurant" ||
+    item.category === "dining" ||
+    item.tags.some((tag) =>
+      ["dining", "restaurant"].includes(tag.toLowerCase()),
+    )
+  );
+}
+
+async function gatherMenuCorpus(
+  item: IndexedItem,
+  placeDetails: PlanSupplementalContext["placeDetails"],
+): Promise<string | null> {
+  if (!isDiningMenuCandidate(item) || !hasTavily()) return null;
+
+  const website = placeDetails?.website ?? item.url ?? null;
+  let corpus = "";
+
+  if (website) {
+    const extracted = await extractUrls({ urls: [website] }).catch(() => null);
+    corpus =
+      extracted?.results?.[0]?.rawContent ??
+      extracted?.results?.[0]?.content ??
+      "";
+  }
+
+  if (corpus.length < 200) {
+    const res = await searchWeb({
+      query: `${item.title} menu what to order best dishes`,
+      maxResults: 3,
+    }).catch(() => null);
+    corpus = [
+      res?.answer ?? "",
+      ...(res?.results ?? []).map((result) => result.content),
+    ].join(" ");
+  }
+
+  corpus = corpus.trim();
+  if (corpus.length < 120) return null;
+  return corpus.length > 4000 ? corpus.slice(0, 4000) : corpus;
 }
 
 async function resolveReservation(

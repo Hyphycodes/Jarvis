@@ -126,6 +126,15 @@ export const generatedPlanSchema = z.object({
   sections: z.array(planSectionSchema).min(2).max(11),
   timeline: z.array(planTimelineEntrySchema).max(8).default([]),
   grab_list: z.array(planGrabItemSchema).max(8).default([]),
+  menu_highlights: z
+    .array(
+      z.object({
+        dish: z.string().min(1).max(80),
+        note: z.string().max(160).optional(),
+      }),
+    )
+    .max(6)
+    .optional(),
   cautions: z.array(z.string().min(1).max(200)).max(4).optional(),
   source_item_id: z.string().uuid().optional(),
 });
