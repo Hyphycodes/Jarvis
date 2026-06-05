@@ -44,12 +44,31 @@ async function main() {
   const { getSupabaseServiceClient } = await import("../lib/supabase/server");
   const { RADAR_CATEGORIES } = await import("../lib/radar/category");
 
+  // Preflight: this script needs *real* prod credentials. A fresh checkout ships
+  // .env.local with placeholders, so fail fast with guidance instead of a cryptic
+  // "fetch failed" on the first DB call.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  if (supabaseUrl.includes("placeholder") || serviceKey.length < 100) {
+    console.error(
+      "Refusing to run: .env.local has placeholder Supabase credentials.\n" +
+        "Pull the real env first:  vercel env pull .env.local\n" +
+        "Or trigger the deployed autopilot instead:\n" +
+        '  curl -H "Authorization: Bearer $CRON_SECRET" "https://<your-app>/api/radar/autopilot?mode=manual_force"',
+    );
+    process.exit(1);
+  }
+
   const supabase = getSupabaseServiceClient();
-  const { data: owner } = await supabase
+  const { data: owner, error: ownerError } = await supabase
     .from("founder_profile")
     .select("user_id")
     .limit(1)
     .maybeSingle();
+  if (ownerError) {
+    console.error(`Could not read founder_profile: ${ownerError.message}`);
+    process.exit(1);
+  }
   const userId = process.env.DRAIN_USER_ID ?? (owner as { user_id?: string } | null)?.user_id;
   if (!userId) {
     console.error("No owner user_id found (set DRAIN_USER_ID or seed founder_profile).");
