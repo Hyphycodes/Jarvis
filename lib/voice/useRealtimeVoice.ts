@@ -2,6 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 
+const MIC_GRANT_KEY = "jarvis_mic_granted";
+
 function getSupportedMimeType() {
   const types = [
     "audio/webm;codecs=opus",
@@ -18,6 +20,37 @@ function audioExtensionForMime(mimeType: string): "webm" | "ogg" | "mp4" {
   return "mp4";
 }
 
+function readMicGrantCache(): "granted" | "denied" | null {
+  try {
+    const v = localStorage.getItem(MIC_GRANT_KEY);
+    if (v === "granted" || v === "denied") return v;
+  } catch { /* noop */ }
+  return null;
+}
+
+function saveMicGrantCache(state: "granted" | "denied") {
+  try { localStorage.setItem(MIC_GRANT_KEY, state); } catch { /* noop */ }
+}
+
+// Returns the current mic permission state. Guards for iOS Safari where
+// permissions.query({name:'microphone'}) may throw or not be supported.
+// Falls back to a cached value from a previous session, or "prompt" if unknown.
+async function queryMicPermission(): Promise<"granted" | "denied" | "prompt"> {
+  const cached = readMicGrantCache();
+  try {
+    const result = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    // Sync cache with the live state (covers the case where user revoked in OS settings)
+    if (result.state === "granted" || result.state === "denied") {
+      saveMicGrantCache(result.state);
+    }
+    return result.state as "granted" | "denied" | "prompt";
+  } catch {
+    // iOS Safari: permissions.query is unsupported for microphone.
+    // Use our cached grant if we have one; otherwise treat as prompt.
+    return cached ?? "prompt";
+  }
+}
+
 // Below this captured duration we treat the take as "nothing said" and skip the
 // transcription round-trip entirely.
 const MIN_CAPTURE_MS = 300;
@@ -27,6 +60,7 @@ export function useRealtimeVoice(
   onError: (msg: string) => void,
 ) {
   const [isListening, setIsListening] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -53,15 +87,31 @@ export function useRealtimeVoice(
   const start = useCallback(async () => {
     if (isListening) return;
 
-    // Reuse a retained stream if we already have mic permission this session;
-    // otherwise request it once and keep it across start/stop.
+    // Check mic permission before touching getUserMedia.
+    // On iOS Safari, permissions.query may be unsupported — queryMicPermission
+    // handles the fallback and caches the resolved state in localStorage.
+    const permState = await queryMicPermission();
+    if (permState === "denied") {
+      setMicDenied(true);
+      onError("Microphone is off. Go to Settings → Safari → Microphone to enable it.");
+      return;
+    }
+
+    // Reuse a retained stream if we already have mic access this session;
+    // otherwise request it once (must be inside a user gesture) and keep it.
     let stream = streamRef.current;
     if (!stream || !stream.active) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
+        // Persist grant so future sessions skip the re-prompt check.
+        saveMicGrantCache("granted");
+        setMicDenied(false);
       } catch {
-        onError("Microphone access denied.");
+        // getUserMedia threw — permission was denied (or device error).
+        saveMicGrantCache("denied");
+        setMicDenied(true);
+        onError("Microphone is off. Go to Settings → Safari → Microphone to enable it.");
         return;
       }
     }
@@ -113,5 +163,5 @@ export function useRealtimeVoice(
     setIsListening(false);
   }, []);
 
-  return { start, stop, release, isListening };
+  return { start, stop, release, isListening, micDenied };
 }

@@ -80,6 +80,7 @@ export async function buildFounderContextPacket(options: {
 
   const [
     profileRes,
+    liveLocationRes,
     founderRes,
     memoryRes,
     recentMemoryRes,
@@ -99,6 +100,11 @@ export async function buildFounderContextPacket(options: {
       .from("profiles")
       .select("display_name,home_city,timezone,home_latitude,home_longitude")
       .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("live_location")
+      .select("latitude,longitude,accuracy_m,captured_at")
+      .eq("user_id", userId)
       .maybeSingle(),
     supabase
       .from("founder_profile")
@@ -199,6 +205,7 @@ export async function buildFounderContextPacket(options: {
   ]);
 
   logQueryError("context.profile", profileRes.error);
+  logQueryError("context.live_location", liveLocationRes.error);
   logQueryError("context.founder", founderRes.error);
   logQueryError("context.memory", memoryRes.error);
   logQueryError("context.memory.recent", recentMemoryRes.error);
@@ -224,7 +231,13 @@ export async function buildFounderContextPacket(options: {
   const founder = (founderRes.data ?? null) as FounderProfileRow | null;
   const weeklyRhythm = readWeeklyRhythm(founder?.weekly_rhythm);
   const timezone = profile?.timezone ?? weeklyRhythm?.timezone ?? "UTC";
-  const location = await readLocation(profile);
+  const liveLocation = (liveLocationRes.data ?? null) as {
+    latitude: number;
+    longitude: number;
+    accuracy_m: number;
+    captured_at: string;
+  } | null;
+  const location = await readLocation(profile, liveLocation);
   const weather = await readWeather(location, Boolean(options.includeWeather));
 
   // Stable preferences: semantic when a contextQuery is supplied and an
@@ -466,12 +479,27 @@ function readWeeklyRhythm(value: Json | null | undefined): FounderWeeklyRhythm |
   };
 }
 
-async function readLocation(profile: {
-  home_city?: string | null;
-  home_latitude?: number | string | null;
-  home_longitude?: number | string | null;
-} | null): Promise<FounderLocationContext> {
+async function readLocation(
+  profile: {
+    home_city?: string | null;
+    home_latitude?: number | string | null;
+    home_longitude?: number | string | null;
+  } | null,
+  liveLocation: { latitude: number; longitude: number } | null,
+): Promise<FounderLocationContext> {
   const homeCity = profile?.home_city ?? process.env.DEFAULT_CITY ?? null;
+
+  // Priority 1: live GPS fix from the browser (written by useLiveLocation).
+  if (liveLocation?.latitude != null && liveLocation?.longitude != null) {
+    return {
+      homeCity,
+      homeState: process.env.DEFAULT_STATE ?? null,
+      homeLat: liveLocation.latitude,
+      homeLng: liveLocation.longitude,
+    };
+  }
+
+  // Priority 2: home coordinates saved in the user's profile.
   const dbLat = readNumber(profile?.home_latitude);
   const dbLng = readNumber(profile?.home_longitude);
   if (dbLat != null && dbLng != null) {
@@ -483,6 +511,7 @@ async function readLocation(profile: {
     };
   }
 
+  // Priority 3: geocode home_city string; Priority 4: DEFAULT_HOME_* env vars; Priority 5: Bolingbrook hardcode.
   const geocoded = await geocodeHomeCity(homeCity);
   const lat = geocoded?.lat ?? readNumberEnv("DEFAULT_HOME_LAT") ?? BOLINGBROOK_DEFAULT_LOCATION.lat;
   const lng = geocoded?.lng ?? readNumberEnv("DEFAULT_HOME_LNG") ?? BOLINGBROOK_DEFAULT_LOCATION.lng;

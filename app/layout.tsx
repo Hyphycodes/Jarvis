@@ -3,6 +3,7 @@ import { Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { DayPlanProvider } from "@/lib/dayPlanStore";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { LiveLocationProvider } from "@/components/LiveLocationProvider";
 
 const instrumentSerif = Instrument_Serif({
   weight: "400",
@@ -50,7 +51,9 @@ export default function RootLayout({
       </head>
       <body className="bg-near-black text-warm-ivory antialiased">
         <ServiceWorkerRegister />
-        <DayPlanProvider>{children}</DayPlanProvider>
+        <LiveLocationProvider>
+          <DayPlanProvider>{children}</DayPlanProvider>
+        </LiveLocationProvider>
       </body>
     </html>
   );

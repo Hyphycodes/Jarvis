@@ -188,7 +188,7 @@ export function MicSheet({
     setState("idle"); // failed mic attempt must not leave the sheet stuck in "thinking"
   }, []);
 
-  const { start: rtStart, stop: rtStop, release: rtRelease, isListening } = useRealtimeVoice(handleTranscript, handleVoiceError);
+  const { start: rtStart, stop: rtStop, release: rtRelease, isListening, micDenied } = useRealtimeVoice(handleTranscript, handleVoiceError);
 
   // ── Init on mount ───────────────────────────────────────────────────────────
 
@@ -747,6 +747,11 @@ export function MicSheet({
             </div>
           ) : null}
 
+          {micDenied && !error ? (
+            <div className="mb-4 text-[13px] text-warm-ivory/35">
+              Mic is off — enable it in Settings → Safari → Microphone.
+            </div>
+          ) : null}
           {error ? <div className="mb-4 text-[13px] text-[#E07A6E]/80">{error}</div> : null}
 
           <div ref={messagesEndRef} />
@@ -840,7 +845,7 @@ export function MicSheet({
               type="button"
               aria-label={isListening ? "Stop recording" : "Start recording"}
               onClick={() => void handleToggleMic()}
-              disabled={busy}
+              disabled={busy || micDenied}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all duration-150 disabled:opacity-40"
               style={{
                 border: isListening ? "1.5px solid rgba(208,173,104,0.9)" : "1.5px solid rgba(208,173,104,0.55)",
