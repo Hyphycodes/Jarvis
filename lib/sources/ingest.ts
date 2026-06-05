@@ -5,6 +5,7 @@ import { upsertSourceFromCandidate } from "@/lib/library/sourceGraph";
 import { upsertCandidateInboxFromIndexedCandidate } from "@/lib/radar/candidateInbox";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { rowToIndexedItem } from "@/lib/index/repo";
+import { normalizeRadarCategory } from "@/lib/radar/category";
 import type {
   CreateIndexedItemInput,
   IndexDestination,
@@ -216,7 +217,7 @@ async function upsertOne(
     source,
     source_id: candidate.sourceId ?? null,
     type: candidate.type,
-    category: candidate.category ?? null,
+    category: normalizeRadarCategory(candidate.category),
     title: candidate.title,
     subtitle: candidate.subtitle ?? null,
     description: candidate.description ?? null,

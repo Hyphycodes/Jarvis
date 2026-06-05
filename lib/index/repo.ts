@@ -3,6 +3,7 @@ import "server-only";
 import { getViewableProfileId, requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
+import { normalizeRadarCategory } from "@/lib/radar/category";
 import type {
   IndexItemStatus,
   SurfacedItemRow,
@@ -146,7 +147,7 @@ export async function createIndexItem(
       source: input.source ?? "system",
       source_id: input.sourceId ?? null,
       type: input.type,
-      category: input.category ?? null,
+      category: normalizeRadarCategory(input.category),
       title: input.title,
       subtitle: input.subtitle ?? null,
       description: input.description ?? null,

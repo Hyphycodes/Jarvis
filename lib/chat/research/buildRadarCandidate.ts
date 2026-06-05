@@ -2,6 +2,7 @@ import "server-only";
 
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { recordAiAction } from "@/lib/chat/aiActions";
+import { normalizeRadarCategory } from "@/lib/radar/category";
 import type { Json } from "@/lib/types/database";
 import type {
   ImageAnalysisResult,
@@ -74,7 +75,7 @@ export async function buildRadarCandidate(input: {
       source_id: input.observationId,
       source_observation_id: input.observationId,
       type: itemType(input.analysis, input.research),
-      category: input.analysis?.extracted.cuisine_or_category ?? input.research?.subjectType ?? null,
+      category: normalizeRadarCategory(input.analysis?.extracted.cuisine_or_category ?? input.research?.subjectType),
       title,
       subtitle: subtitle(input.analysis, input.research),
       description: description(input.analysis, input.research, input.taste),
