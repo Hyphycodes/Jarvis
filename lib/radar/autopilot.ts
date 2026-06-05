@@ -22,6 +22,7 @@ import {
 } from "@/lib/intelligence/radarCurator";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { normalizeRadarCategory } from "@/lib/radar/category";
+import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
 import { planLivingFive, type LivingFiveMember } from "@/lib/radar/livingFive";
 import {
   blendRadarComposite,
@@ -823,9 +824,16 @@ async function executeOperation(input: {
           result.sourcesCreated += providerGather.sources;
           result.timeBudgetReached = providerGather.timeBudgetReached;
           if (providerGather.errors.length) result.errors = providerGather.errors;
+          const surfaced = input.runBudget.shouldStopSoon()
+            ? { surfaced: 0, held: 0, rejected: 0, errors: [] as string[] }
+            : await processEventCandidates(input.userId, 8);
+          result.candidatesPromoted += surfaced.surfaced;
+          result.candidatesHeld += surfaced.held;
+          result.candidatesRejected += surfaced.rejected;
+          if (surfaced.errors.length) result.errors = [...(result.errors ?? []), ...surfaced.errors];
           result.summary = result.timeBudgetReached
-            ? "Event Pulse intake saved partial provider results before the time budget."
-            : `Event Pulse intake created ${providerGather.candidates} candidate(s) and ${providerGather.sources} source(s). Conversion continues in a later mission.`;
+            ? "Event Pulse intake saved partial results before the time budget."
+            : `Event Pulse intake created ${providerGather.candidates} candidate(s) and surfaced ${surfaced.surfaced} event(s).`;
           break;
         }
         const scout = await runEventScout(input.userId);
@@ -908,6 +916,12 @@ async function executeOperation(input: {
         break;
       }
       case "promotion_review": {
+        // Bridge: convert strong Library inventory into the surfaced pool before promoting.
+        const materialized = await materializeEligibleLibraryItems(input.userId);
+        if (materialized.materialized > 0) {
+          result.summary = `Materialized ${materialized.materialized} library item(s) into promotion pool. `;
+        }
+        if (materialized.errors.length) result.errors = [...(result.errors ?? []), ...materialized.errors];
         const diagnostics = await readRadarPromotionDiagnostics({
           userId: input.userId,
           supabase: input.supabase,
@@ -968,9 +982,12 @@ async function executeOperation(input: {
             supabase: input.supabase,
           });
         }
+        const materializedSummary = materialized.materialized > 0
+          ? `Materialized ${materialized.materialized} library item(s) into promotion pool. `
+          : "";
         result.summary = promoted.promoted > 0
-          ? `Promotion review promoted ${promoted.promoted} qualified Holding item(s).`
-          : `Promotion review promoted 0 items. ${diagnostics.summary}`;
+          ? `${materializedSummary}Promotion review promoted ${promoted.promoted} qualified Holding item(s).`
+          : `${materializedSummary}Promotion review promoted 0 items. ${diagnostics.summary}`;
         break;
       }
       case "stale_cleanup":
