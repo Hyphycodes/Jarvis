@@ -141,21 +141,42 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     logQueryError("today.tonightEvents", tonightEventsRes.error);
     logQueryError("today.circleUpdates", circleUpdatesRes.error);
 
+    // Fetch source_ids of current_events rows the user has committed to.
+    // A surfaced_item with source_id = current_events.id and status saved/planned
+    // means the user explicitly acted on that event.
+    const tonightEventIds = tonightEventsRes.data?.map((ev) => ev.id) ?? [];
+    let committedEventIds = new Set<string>();
+    if (tonightEventIds.length > 0) {
+      const { data: committedRows } = await supabase
+        .from("surfaced_items")
+        .select("source_id")
+        .eq("user_id", id)
+        .in("status", ["saved", "planned"])
+        .in("source_id", tonightEventIds);
+      committedEventIds = new Set(
+        (committedRows ?? [])
+          .map((row) => row.source_id)
+          .filter((sourceId): sourceId is string => typeof sourceId === "string"),
+      );
+    }
+
     const tonightEventRows = (tonightEventsRes.data ?? []) as CurrentEventRow[];
-    const tonightEvents: TodayCommandItem[] = tonightEventRows.map((ev) => ({
-      id: ev.id,
-      title: ev.title,
-      subtitle: ev.venue_name,
-      summary: ev.verdict ?? ev.description ?? undefined,
-      source: "event_pulse",
-      type: "event",
-      category: "events",
-      destination: "radar",
-      status: ev.status,
-      startsAt: ev.starts_at,
-      locationName: ev.venue_name,
-      reason: ev.verdict ?? undefined,
-    }));
+    const tonightEvents: TodayCommandItem[] = tonightEventRows
+      .filter((ev) => committedEventIds.has(ev.id))
+      .map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        subtitle: ev.venue_name,
+        summary: ev.verdict ?? ev.description ?? undefined,
+        source: "event_pulse",
+        type: "event",
+        category: "events",
+        destination: "radar",
+        status: ev.status,
+        startsAt: ev.starts_at,
+        locationName: ev.venue_name,
+        reason: ev.verdict ?? undefined,
+      }));
     const circleTodayItems = ((circleUpdatesRes.data ?? []) as CircleUpdateRow[])
       .filter(shouldSurfaceCircleMoment)
       .slice(0, 3)

@@ -58,7 +58,7 @@ export async function findDayOfItems(
     .eq("user_id", userId)
     .gte("starts_at", startIso)
     .lt("starts_at", endIso)
-    .in("status", ["discovered", "shown", "saved", "planned", "opened"])
+    .in("status", ["saved", "planned", "opened"])
     .in("destination", ["today", "upcoming", "radar", "holding", "plan"])
     .order("starts_at", { ascending: true })
     .limit(20);
