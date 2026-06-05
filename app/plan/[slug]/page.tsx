@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { loadPlanBriefBySlug } from "@/lib/plans/loadBrief";
 import { loadPlanBySlugV2 } from "@/lib/plans/loadPlan";
-import { enrichInfoStrip } from "@/lib/plans/enrichLogistics";
+import { enrichInfoStrip, resolveHeroImage } from "@/lib/plans/enrichLogistics";
 import {
   PlanChapterRow,
   PlanHero,
@@ -34,9 +34,15 @@ export default async function DynamicPlanPage({
   // Enrich the info strip with real weather / in-the-area data when available.
   // Sample plans (no planId) skip enrichment — keep their designed fallbacks.
   let infoStrip = brief.infoStrip;
+  let heroImage: string | null | undefined = brief.heroImage;
   if (brief.planId) {
     const loaded = await loadPlanBySlugV2(slug);
-    if (loaded) infoStrip = await enrichInfoStrip(brief, loaded);
+    if (loaded) {
+      [infoStrip, heroImage] = await Promise.all([
+        enrichInfoStrip(brief, loaded),
+        resolveHeroImage(loaded),
+      ]);
+    }
   }
 
   const backHref = brief.sourceId ? `/item/${brief.sourceId}` : "/";
@@ -53,7 +59,7 @@ export default async function DynamicPlanPage({
       />
 
       <PlanHero
-        image={brief.heroImage}
+        image={heroImage ?? brief.heroImage}
         categoryLabel={categoryLabel(brief.category)}
         title={brief.title}
         meta={[brief.areaLabel ?? brief.locationLabel, brief.timeLabel]}

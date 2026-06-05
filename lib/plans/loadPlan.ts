@@ -50,6 +50,7 @@ export type LoadedPlan = {
   dateLabel?: string;
   locationLine?: string;
   summary?: string;
+  keyStats: Json;
   heroAngle?: string;
   whyThisFits?: string;
   bestWindow?: string;
@@ -207,6 +208,7 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
     dateLabel: planRow.date ?? undefined,
     locationLine: planRow.location_line ?? undefined,
     summary: planRow.summary ?? undefined,
+    keyStats: planRow.key_stats,
     heroAngle:
       typeof keyStats.hero_angle === "string"
         ? keyStats.hero_angle

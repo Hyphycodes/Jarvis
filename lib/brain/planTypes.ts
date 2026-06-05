@@ -138,6 +138,7 @@ export type PlanGenerationResult = {
   plan: GeneratedPlan;
   fallbackUsed: boolean;
   reason?: string;
+  selectedPhotoUrl?: string | null;
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

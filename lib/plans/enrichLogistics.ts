@@ -41,6 +41,17 @@ export async function enrichInfoStrip(
   return blocks;
 }
 
+export async function resolveHeroImage(
+  loaded: LoadedPlan,
+): Promise<string | null> {
+  const keyStats = isRecord(loaded.keyStats) ? loaded.keyStats : {};
+  const cached =
+    typeof keyStats.hero_image_url === "string"
+      ? keyStats.hero_image_url
+      : null;
+  return cached && cached.startsWith("http") ? cached : null;
+}
+
 async function resolveParking(
   brief: PlanBrief,
   loaded: LoadedPlan,
@@ -156,4 +167,8 @@ function weatherWord(code: number): string {
   if (code <= 82) return "Showers";
   if (code <= 86) return "Snow showers";
   return "Storms";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

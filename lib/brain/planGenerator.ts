@@ -26,6 +26,7 @@ import { getDailyForecast } from "@/lib/sources/openMeteo";
 import {
   hasGooglePlaces,
   nearbyPlaces,
+  pickBestVenuePhoto,
   searchPlaceForEnrichment,
 } from "@/lib/sources/googlePlaces";
 import type { PlanChatContext } from "@/lib/plans/chatContext";
@@ -126,22 +127,24 @@ export type GeneratePlanInput = {
 export async function generatePlanFromItem(
   input: GeneratePlanInput,
 ): Promise<PlanGenerationResult> {
+  const supplemental = await buildSupplementalContext(
+    input.item,
+    input.chatContext,
+    input.userId,
+  );
+
   if (!hasAnthropic()) {
     return {
       plan: deterministicPlan(input.item, input.chatContext),
       fallbackUsed: true,
       reason: "no_anthropic_key",
+      selectedPhotoUrl: supplemental.selectedPhotoUrl,
     };
   }
 
   try {
     const context = await buildBrainContext({ includeWeather: false });
     const graph = buildInterestGraph({ context });
-    const supplemental = await buildSupplementalContext(
-      input.item,
-      input.chatContext,
-      input.userId,
-    );
     const promptBody = renderPrompt(
       input.item,
       context,
@@ -165,6 +168,7 @@ export async function generatePlanFromItem(
         plan: deterministicPlan(input.item, input.chatContext),
         fallbackUsed: true,
         reason: "schema_invalid",
+        selectedPhotoUrl: supplemental.selectedPhotoUrl,
       };
     }
 
@@ -172,6 +176,7 @@ export async function generatePlanFromItem(
     return {
       plan: { ...parsed.data, status: "draft" },
       fallbackUsed: false,
+      selectedPhotoUrl: supplemental.selectedPhotoUrl,
     };
   } catch (error) {
     console.error("[plan.generator] claude failed", error);
@@ -179,6 +184,7 @@ export async function generatePlanFromItem(
       plan: deterministicPlan(input.item, input.chatContext),
       fallbackUsed: true,
       reason: "claude_error",
+      selectedPhotoUrl: supplemental.selectedPhotoUrl,
     };
   }
 }
@@ -446,7 +452,9 @@ type PlanSupplementalContext = {
     mapsUrl?: string;
     hoursSummary?: string;
     summary?: string;
+    photoNames?: string[];
   } | null;
+  selectedPhotoUrl: string | null;
   nearbyAlternatives: Array<{
     name: string;
     address?: string;
@@ -488,6 +496,15 @@ async function buildSupplementalContext(
     enrichPlaceFromGooglePlaces(item),
     findNearbyAlternatives(item),
   ]);
+  const placeDetails = placeResult.status === "fulfilled" ? placeResult.value : null;
+  const photoNames = placeDetails?.photoNames ?? [];
+  const selectedPhotoUrl = photoNames.length
+    ? await pickBestVenuePhoto({
+        photoNames,
+        venueName: item.title,
+        category: item.category ?? "places",
+      }).catch(() => null)
+    : null;
 
   // Wardrobe context — only for plans with a clear formality signal AND a
   // known owner id (background plan fill has no session, so userId is threaded
@@ -514,7 +531,8 @@ async function buildSupplementalContext(
 
   return {
     weather: weatherResult.status === "fulfilled" ? weatherResult.value : null,
-    placeDetails: placeResult.status === "fulfilled" ? placeResult.value : null,
+    placeDetails,
+    selectedPhotoUrl,
     nearbyAlternatives:
       alternativesResult.status === "fulfilled" ? alternativesResult.value : [],
     costEstimate: costEstimateForItem(item, chatContext?.partySize),
@@ -595,6 +613,7 @@ async function enrichPlaceFromGooglePlaces(
     mapsUrl: place.googleMapsUri,
     hoursSummary: place.regularOpeningHours?.weekdayDescriptions?.join(" | "),
     summary: place.editorialSummary?.text,
+    photoNames: place.photos?.map((photo) => photo.name).filter(Boolean) ?? [],
   };
 }
 

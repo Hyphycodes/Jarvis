@@ -390,6 +390,7 @@ export async function fillPlan(input: {
     why_this_fits: plan.why_this_fits,
     best_window: plan.best_window,
     primary_move: plan.primary_move,
+    hero_image_url: result.selectedPhotoUrl ?? null,
     location_name: plan.location_name,
     address: plan.address,
     plan_type: plan.plan_type,

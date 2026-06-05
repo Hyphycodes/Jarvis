@@ -1,6 +1,8 @@
 import { ApiError, fetchJson } from "@/lib/http";
+import { getAnthropicClient, hasAnthropic, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import { cached, TTL } from "@/lib/cache";
 import { hasEnv } from "@/lib/env";
+import type { MessageCreateParamsNonStreaming } from "@anthropic-ai/sdk/resources/messages";
 
 /**
  * Google Places API (New). Field masks are mandatory for cost control.
@@ -203,6 +205,7 @@ const ENRICHMENT_FIELDS = [
   "places.primaryType",
   "places.types",
   "places.regularOpeningHours.weekdayDescriptions",
+  "places.photos.name",
 ].join(",");
 
 /**
@@ -252,4 +255,111 @@ export function getPlacePhotoUrl(input: {
   return `${BASE}/${input.photoName}/media?maxWidthPx=${max}&key=${encodeURIComponent(
     process.env.GOOGLE_PLACES_API_KEY ?? "",
   )}`;
+}
+
+/**
+ * Resolve a Google Places photo resource name to its actual CDN URI.
+ * Uses skipHttpRedirect=true so we get the real URL without following a redirect.
+ * Returns null if the fetch fails or returns no URI.
+ */
+export async function resolvePhotoUri(input: {
+  photoName: string;
+  maxWidthPx?: number;
+}): Promise<string | null> {
+  const max = input.maxWidthPx ?? 1080;
+  const url =
+    `${BASE}/${input.photoName}/media` +
+    `?maxWidthPx=${max}&skipHttpRedirect=true&key=${encodeURIComponent(key())}`;
+  try {
+    const data = await fetchJson<{ photoUri?: string }>(url, {
+      service: "google-places",
+      method: "GET",
+    });
+    return data.photoUri ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Given a list of Google Places photo resource names, pick the one that works
+ * best as a cinematic full-bleed hero image for this venue type.
+ * Returns null if no photos can be resolved.
+ */
+export async function pickBestVenuePhoto(input: {
+  photoNames: string[];
+  venueName: string;
+  category: string;
+}): Promise<string | null> {
+  if (!input.photoNames.length) return null;
+
+  const candidates = input.photoNames.slice(0, 5);
+  const uris = await Promise.all(
+    candidates.map((name) =>
+      resolvePhotoUri({ photoName: name, maxWidthPx: 1080 }),
+    ),
+  );
+  const valid = uris.filter((uri): uri is string => uri !== null);
+  if (!valid.length) return null;
+  if (valid.length === 1 || !hasAnthropic()) return valid[0];
+
+  try {
+    const client = getAnthropicClient();
+    const imageBlocks = valid.map((url) => ({
+      type: "image" as const,
+      source: { type: "url" as const, url },
+    }));
+
+    console.info("[pickBestVenuePhoto] vision selection", {
+      venueName: input.venueName,
+      category: input.category,
+      candidates: valid.length,
+    });
+
+    const request = {
+      model: DEFAULT_MODEL,
+      max_tokens: 64,
+      stream: false,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                `These are photos of ${input.venueName} (${input.category}). ` +
+                "Pick the best one as a cinematic full-bleed hero image — " +
+                "prefer interior atmosphere, architectural character, or strong mood. " +
+                "Avoid: food close-ups as the sole subject, parking lots, generic exteriors, blurry shots. " +
+                'Reply with only a JSON object: { "best_index": <0-based index> }',
+            },
+            ...imageBlocks,
+          ],
+        },
+      ],
+    } as unknown as MessageCreateParamsNonStreaming;
+
+    const response = await client.messages.create(request);
+
+    const text = response.content
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("")
+      .trim();
+    const parsed = JSON.parse(text.replace(/```json|```/g, "").trim()) as {
+      best_index?: number;
+    };
+    const idx = typeof parsed.best_index === "number" ? parsed.best_index : 0;
+    const clamped = Math.max(0, Math.min(idx, valid.length - 1));
+    console.info("[pickBestVenuePhoto] selected", {
+      venueName: input.venueName,
+      bestIndex: clamped,
+    });
+    return valid[clamped] ?? valid[0];
+  } catch (error) {
+    console.warn("[pickBestVenuePhoto] vision fallback", {
+      venueName: input.venueName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return valid[0];
+  }
 }
