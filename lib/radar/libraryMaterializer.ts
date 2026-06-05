@@ -36,7 +36,7 @@ export async function materializeEligibleLibraryItems(
   ] = await Promise.all([
     supabase
       .from("places_library")
-      .select("id, name, slug, place_type, neighborhood, address, lat, lng, cuisine_or_focus, price_level, hours_summary, vibe_keywords, best_for, verdict, verdict_strength, quality_tier, quality_score, seasonal_notes, last_surfaced_at, times_surfaced")
+      .select("id, name, slug, place_type, neighborhood, address, lat, lng, cuisine_or_focus, price_level, hours_summary, vibe_keywords, best_for, verdict, verdict_strength, quality_tier, quality_score, seasonal_notes, last_surfaced_at, times_surfaced, image_url")
       .eq("user_id", userId)
       .in("quality_tier", ["A", "B"])
       .gte("quality_score", RADAR_UNDERFILLED_PROMOTION_FLOOR)
@@ -133,7 +133,10 @@ function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): Surfaced
     lat: place.lat ?? null,
     lng: place.lng ?? null,
     url: null,
-    image_url: null,
+    image_url:
+      typeof place.image_url === "string" && place.image_url.startsWith("http")
+        ? place.image_url
+        : null,
     score: place.quality_score ?? null,
     reasons: place.best_for ?? [],
     tags: place.vibe_keywords ?? [],

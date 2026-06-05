@@ -219,6 +219,9 @@ async function convertPlace(
       verdict_strength: score,
       quality_score: score,
       quality_tier: qualityTierFromScore(score),
+      image_url: typeof row.image_url === "string" && row.image_url.startsWith("http")
+        ? row.image_url
+        : null,
       best_for: tags(row).slice(0, 4),
       not_for: [],
       events_observed: [{

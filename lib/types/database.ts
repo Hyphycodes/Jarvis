@@ -1668,6 +1668,7 @@ export type PlacesLibraryRow = {
   verdict_strength: number | null;
   quality_tier?: string | null;
   quality_score?: number | null;
+  image_url?: string | null;
   next_refresh_at?: string | null;
   source_id?: string | null;
   best_for: string[];
