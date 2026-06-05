@@ -58,6 +58,8 @@ export async function getProfile(): Promise<ProfileBundle> {
         email: viewer.email,
         display_name: viewer.display_name,
         home_city: viewer.home_city,
+        home_latitude: null,
+        home_longitude: null,
         timezone: viewer.timezone,
         app_role: viewer.role,
         created_at: new Date().toISOString(),

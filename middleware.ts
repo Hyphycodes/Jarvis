@@ -9,6 +9,7 @@ export const CRON_API_PATHS = [
   "/api/library/process-candidates",
   "/api/library/refresh",
   "/api/library/enrich",
+  "/api/library/archive-mine",
   "/api/events/scout",
   "/api/events/process",
   "/api/tastemakers/sweep",

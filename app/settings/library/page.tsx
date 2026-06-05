@@ -296,7 +296,7 @@ export default async function SettingsLibraryPage() {
 
         <section className="motion-card mt-8 grid gap-2">
           <div className="text-[11px] uppercase tracking-editorial text-warm-ivory/45">
-            Autopilot activity
+            Autopilot Activity
           </div>
           {control.activity.length > 0 ? control.activity.slice(0, 12).map((event) => (
             <p

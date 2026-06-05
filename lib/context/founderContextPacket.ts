@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireOwner } from "@/lib/auth";
 import { normalizeWeeklyRhythm } from "@/lib/schedule/weeklyRhythm";
 import { getCurrentWeather } from "@/lib/sources/openMeteo";
+import { geocode, hasMapbox } from "@/lib/sources/mapbox";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { hasEmbeddings } from "@/lib/ai/embeddings";
 import { semanticMemorySearch } from "@/lib/memory/memoryStore";
@@ -37,6 +38,12 @@ import {
 const MEMORY_LIMIT = 24;
 const RECENT_SIGNAL_LIMIT = 40;
 const RECENT_ACTION_LIMIT = 40;
+const BOLINGBROOK_DEFAULT_LOCATION = {
+  city: "Bolingbrook",
+  state: "IL",
+  lat: 41.6986,
+  lng: -88.0684,
+} as const;
 
 // Narrow projection of places_library used for chat context (see knownPlaces query).
 type KnownPlaceRow = {
@@ -90,7 +97,7 @@ export async function buildFounderContextPacket(options: {
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("display_name,home_city,timezone")
+      .select("display_name,home_city,timezone,home_latitude,home_longitude")
       .eq("id", userId)
       .maybeSingle(),
     supabase
@@ -211,11 +218,13 @@ export async function buildFounderContextPacket(options: {
     display_name?: string | null;
     home_city?: string | null;
     timezone?: string | null;
+    home_latitude?: number | string | null;
+    home_longitude?: number | string | null;
   } | null;
   const founder = (founderRes.data ?? null) as FounderProfileRow | null;
   const weeklyRhythm = readWeeklyRhythm(founder?.weekly_rhythm);
   const timezone = profile?.timezone ?? weeklyRhythm?.timezone ?? "UTC";
-  const location = readLocation(profile);
+  const location = await readLocation(profile);
   const weather = await readWeather(location, Boolean(options.includeWeather));
 
   // Stable preferences: semantic when a contextQuery is supplied and an
@@ -457,15 +466,74 @@ function readWeeklyRhythm(value: Json | null | undefined): FounderWeeklyRhythm |
   };
 }
 
-function readLocation(profile: { home_city?: string | null } | null): FounderLocationContext {
-  const lat = readNumberEnv("DEFAULT_HOME_LAT");
-  const lng = readNumberEnv("DEFAULT_HOME_LNG");
+async function readLocation(profile: {
+  home_city?: string | null;
+  home_latitude?: number | string | null;
+  home_longitude?: number | string | null;
+} | null): Promise<FounderLocationContext> {
+  const homeCity = profile?.home_city ?? process.env.DEFAULT_CITY ?? null;
+  const dbLat = readNumber(profile?.home_latitude);
+  const dbLng = readNumber(profile?.home_longitude);
+  if (dbLat != null && dbLng != null) {
+    return {
+      homeCity,
+      homeState: process.env.DEFAULT_STATE ?? null,
+      homeLat: dbLat,
+      homeLng: dbLng,
+    };
+  }
+
+  const geocoded = await geocodeHomeCity(homeCity);
+  const lat = geocoded?.lat ?? readNumberEnv("DEFAULT_HOME_LAT") ?? BOLINGBROOK_DEFAULT_LOCATION.lat;
+  const lng = geocoded?.lng ?? readNumberEnv("DEFAULT_HOME_LNG") ?? BOLINGBROOK_DEFAULT_LOCATION.lng;
   return {
-    homeCity: profile?.home_city ?? process.env.DEFAULT_CITY ?? null,
-    homeState: process.env.DEFAULT_STATE ?? null,
+    homeCity: geocoded?.city ?? homeCity ?? BOLINGBROOK_DEFAULT_LOCATION.city,
+    homeState: geocoded?.state ?? process.env.DEFAULT_STATE ?? BOLINGBROOK_DEFAULT_LOCATION.state,
     homeLat: lat,
     homeLng: lng,
   };
+}
+
+async function geocodeHomeCity(homeCity: string | null): Promise<{ city: string; state: string | null; lat: number; lng: number } | null> {
+  const query = homeCity?.trim();
+  if (!query) return null;
+  const local = geocodeKnownHomeCity(query);
+  if (local) return local;
+  if (!hasMapbox()) return null;
+  try {
+    const result = (await geocode(query))[0];
+    if (!result) return null;
+    return {
+      city: result.placeName,
+      state: result.context?.find((part) => /^[A-Z]{2}$/.test(part)) ?? null,
+      lat: result.lat,
+      lng: result.lng,
+    };
+  } catch (error) {
+    console.warn("[context.packet] home_city geocode failed; using configured/default home coordinates", error);
+    return null;
+  }
+}
+
+function geocodeKnownHomeCity(value: string): { city: string; state: string | null; lat: number; lng: number } | null {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("bolingbrook")) {
+    return {
+      city: "Bolingbrook",
+      state: "IL",
+      lat: BOLINGBROOK_DEFAULT_LOCATION.lat,
+      lng: BOLINGBROOK_DEFAULT_LOCATION.lng,
+    };
+  }
+  if (normalized.includes("chicago")) {
+    return {
+      city: "Chicago",
+      state: "IL",
+      lat: 41.8781,
+      lng: -87.6298,
+    };
+  }
+  return null;
 }
 
 async function readWeather(
@@ -496,6 +564,10 @@ function readPlanId(value: unknown): string | null {
 
 function readNumberEnv(key: string): number | null {
   const raw = process.env[key];
+  return readNumber(raw);
+}
+
+function readNumber(raw: unknown): number | null {
   if (!raw) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;

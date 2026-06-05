@@ -66,8 +66,11 @@ import {
   createRunBudget,
   DEFAULT_RUN_BUDGET_MS,
   FOUNDATION_BATCH_BUDGET,
+  FOUNDATION_SPRINT_TARGETS,
+  FOUNDATION_PROMOTION_RESERVE_MS,
   FOUNDATION_RUN_BUDGET_MS,
   foundationWorkDone,
+  isCandidateInboxNearTarget,
   nextMissionCursor,
   type RunBudget,
   selectFoundationMissions,
@@ -115,6 +118,7 @@ export type RadarAutopilotResult = {
   operationsRun?: RadarAutopilotOperation[];
   providerStatus?: SourceHealth;
   missingProviders?: string[];
+  budget?: AutopilotSpendBudgetSnapshot;
   libraryBefore?: RadarAutopilotResult["libraryCounts"];
   libraryAfter?: RadarAutopilotResult["libraryCounts"];
   candidateInboxAfter?: number;
@@ -129,6 +133,30 @@ export type RadarAutopilotResult = {
   timeBudgetReached?: boolean;
   timeRemainingMs?: number;
 };
+
+const AUTOPILOT_PAID_PROVIDER_CALLS_PER_DAY_ENV = "RADAR_AUTOPILOT_MAX_PAID_PROVIDER_CALLS_PER_DAY";
+const AUTOPILOT_CLAUDE_TOKENS_PER_DAY_ENV = "RADAR_AUTOPILOT_MAX_CLAUDE_TOKENS_PER_DAY";
+const AUTOPILOT_PAID_PROVIDER_CALLS_PER_RUN_ENV = "RADAR_AUTOPILOT_MAX_PAID_PROVIDER_CALLS_PER_RUN";
+const AUTOPILOT_CLAUDE_TOKENS_PER_RUN_ENV = "RADAR_AUTOPILOT_MAX_CLAUDE_TOKENS_PER_RUN";
+const DEFAULT_AUTOPILOT_PAID_PROVIDER_CALLS_PER_DAY = 80;
+const DEFAULT_AUTOPILOT_CLAUDE_TOKENS_PER_DAY = 200_000;
+const DEFAULT_AUTOPILOT_PAID_PROVIDER_CALLS_PER_RUN = 6;
+const DEFAULT_AUTOPILOT_CLAUDE_TOKENS_PER_RUN = 25_000;
+const AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE = 8_000;
+
+type AutopilotSpendBudget = {
+  paidProviderCallsPerDay: number;
+  claudeTokensPerDay: number;
+  paidProviderCallsPerRun: number;
+  claudeTokensPerRun: number;
+  paidProviderCallsUsedToday: number;
+  claudeTokensUsedToday: number;
+  paidProviderCallsThisRun: number;
+  claudeTokensThisRun: number;
+  skipped: string[];
+};
+
+type AutopilotSpendBudgetSnapshot = ReturnType<typeof budgetSnapshot>;
 
 export async function runRadarAutopilot(input: {
   userId: string;
@@ -173,6 +201,10 @@ export async function runRadarAutopilot(input: {
   const foundation = assessFoundationSprint(health);
   const providerStatus = describeSourceHealth();
   const missing = missingProviders(providerStatus);
+  const spendBudget = await readAutopilotSpendBudget({
+    userId: input.userId,
+    supabase,
+  });
   if (mode === "foundation_sprint" && !settings.foundation_sprint_enabled && !input.force) {
     return {
       ...baseResult("no_op", health, campaigns[0]),
@@ -181,12 +213,13 @@ export async function runRadarAutopilot(input: {
       bootstrap,
       providerStatus,
       missingProviders: missing,
+      budget: budgetSnapshot(spendBudget),
       skipped: true,
       runStatus: "paused",
       summary: "Foundation Sprint is off. Cron no-op.",
     };
   }
-  if (mode === "foundation_sprint" && foundation.completed) {
+  if (mode === "foundation_sprint" && foundation.completed && health.activeCount >= RADAR_MIN_ACTIVE_ITEM_TARGET && health.discoveredBacklogCount === 0) {
     await advanceFoundationMissionCursor({
       userId: input.userId,
       cursor: Number(settings.foundation_sprint_mission_cursor ?? 0),
@@ -200,6 +233,7 @@ export async function runRadarAutopilot(input: {
       bootstrap,
       providerStatus,
       missingProviders: missing,
+      budget: budgetSnapshot(spendBudget),
       skipped: true,
       runStatus: "succeeded",
       summary: "Foundation Sprint targets are healthy. Returning to normal maintenance.",
@@ -212,6 +246,7 @@ export async function runRadarAutopilot(input: {
     paused.bootstrap = bootstrap;
     paused.providerStatus = providerStatus;
     paused.missingProviders = missing;
+    paused.budget = budgetSnapshot(spendBudget);
     paused.skipped = true;
     paused.runStatus = "paused";
     paused.summary = "Scheduled Radar Autopilot is paused. Owner-requested runs can still be started manually.";
@@ -245,6 +280,7 @@ export async function runRadarAutopilot(input: {
   base.bootstrap = bootstrap;
   base.providerStatus = providerStatus;
   base.missingProviders = missing;
+  base.budget = budgetSnapshot(spendBudget);
   const runId = await createAutopilotRun({
     userId: input.userId,
     mode,
@@ -252,6 +288,22 @@ export async function runRadarAutopilot(input: {
     providerStatus: providerStatus as Json,
     missingProviders: missing as Json,
     countsBefore: countsFromHealth(health),
+    supabase,
+  });
+  await logAutopilotActivity({
+    userId: input.userId,
+    runId,
+    level: "info",
+    message: "Autopilot spend budget loaded.",
+    metadata: {
+      ...budgetSnapshot(spendBudget),
+      env: {
+        paid_provider_calls_per_day: AUTOPILOT_PAID_PROVIDER_CALLS_PER_DAY_ENV,
+        claude_tokens_per_day: AUTOPILOT_CLAUDE_TOKENS_PER_DAY_ENV,
+        paid_provider_calls_per_run: AUTOPILOT_PAID_PROVIDER_CALLS_PER_RUN_ENV,
+        claude_tokens_per_run: AUTOPILOT_CLAUDE_TOKENS_PER_RUN_ENV,
+      },
+    },
     supabase,
   });
   const result = await executeOperation({
@@ -266,9 +318,11 @@ export async function runRadarAutopilot(input: {
     providerStatus,
     runId,
     runBudget,
+    spendBudget,
   });
   result.runId = runId;
   result.timeRemainingMs = runBudget.timeRemainingMs();
+  result.budget = budgetSnapshot(spendBudget);
   if (operation === "foundation_build_mode") {
     const after = await readAutopilotHealth({
       userId: input.userId,
@@ -303,6 +357,18 @@ export async function runRadarAutopilot(input: {
               ? "blocked"
               : "succeeded";
   result.runStatus = runStatus;
+  await logAutopilotActivity({
+    userId: input.userId,
+    runId,
+    level: "info",
+    message: "Autopilot spend reserved for this run.",
+    metadata: {
+      paid_provider_calls: result.budget?.paidProviderCallsThisRun ?? 0,
+      claude_tokens_estimate: result.budget?.claudeTokensThisRun ?? 0,
+      budget: result.budget ?? {},
+    },
+    supabase,
+  });
   await finishAutopilotRun({
     userId: input.userId,
     runId,
@@ -357,6 +423,7 @@ export async function runRadarAutopilot(input: {
         library_before: result.libraryBefore ?? libraryCountsFromHealth(health),
         library_after: result.libraryAfter ?? null,
         sources_created: result.sourcesCreated,
+        budget: result.budget,
       },
       outcome: result.summary,
     },
@@ -375,6 +442,7 @@ async function readAutopilotHealth(input: {
   const [
     activeRes,
     holdingRes,
+    discoveredRes,
     inboxRes,
     sourceRes,
     eventFreshRes,
@@ -383,6 +451,7 @@ async function readAutopilotHealth(input: {
   ] = await Promise.all([
     input.supabase.from("surfaced_items").select("*").eq("user_id", input.userId).eq("destination", "radar").in("status", ["shown", "opened"]).limit(RADAR_ACTIVE_ITEM_LIMIT * 2),
     input.supabase.from("surfaced_items").select("id", { count: "exact", head: true }).eq("user_id", input.userId).eq("destination", "holding").in("status", ["discovered", "shown", "opened"]),
+    input.supabase.from("surfaced_items").select("id", { count: "exact", head: true }).eq("user_id", input.userId).eq("status", "discovered"),
     input.supabase.from("radar_candidate_inbox").select("id", { count: "exact", head: true }).eq("user_id", input.userId).in("status", ["new", "evaluated"]),
     input.supabase.from("intelligence_sources").select("id", { count: "exact", head: true }).eq("user_id", input.userId).in("status", ["testing", "watching", "cooldown"]),
     input.supabase.from("current_events").select("discovered_at").eq("user_id", input.userId).gte("starts_at", now).order("discovered_at", { ascending: false }).limit(1).maybeSingle(),
@@ -401,6 +470,7 @@ async function readAutopilotHealth(input: {
   return {
     activeCount: visibleActiveCount,
     holdingCount: holdingRes.count ?? 0,
+    discoveredBacklogCount: discoveredRes.count ?? 0,
     candidateInboxCount: inboxRes.count ?? 0,
     sourceCount: sourceRes.count ?? 0,
     sourcesDue: dueSources.length,
@@ -425,6 +495,7 @@ async function executeOperation(input: {
   providerStatus: SourceHealth;
   runId?: string | null;
   runBudget: RunBudget;
+  spendBudget: AutopilotSpendBudget;
 }): Promise<RadarAutopilotResult> {
   const result = { ...input.base };
   try {
@@ -446,12 +517,13 @@ async function executeOperation(input: {
               maxOperations: FOUNDATION_BATCH_BUDGET.maxOperations,
             })
           : [];
-        const stack = isSprint
+        const rawStack = isSprint
           ? missions.map((mission) => mission.operation)
           : foundationOperationStack({
               health: input.health,
               maxOperations: BOOTSTRAP_RUN_BUDGET.maxCampaigns,
             });
+        const stack = orderPromotionFirst(rawStack);
         const errors: string[] = [];
         for (const [idx, operation] of stack.entries()) {
           if (input.runBudget.shouldStopSoon()) {
@@ -463,6 +535,23 @@ async function executeOperation(input: {
               level: "warning",
               message: "Time budget reached before starting the next Foundation Sprint step. Continuing next run.",
               metadata: { timeRemainingMs: input.runBudget.timeRemainingMs() },
+              supabase: input.supabase,
+            });
+            break;
+          }
+          if (
+            operation !== "promotion_review" &&
+            stack.slice(idx).includes("promotion_review") &&
+            input.runBudget.timeRemainingMs() <= FOUNDATION_PROMOTION_RESERVE_MS
+          ) {
+            result.timeBudgetReached = true;
+            result.summary = "Time budget reserved for Promotion Review. Continuing intake on the next scheduled run.";
+            await logAutopilotActivity({
+              userId: input.userId,
+              runId: input.runId,
+              level: "warning",
+              message: result.summary,
+              metadata: { timeRemainingMs: input.runBudget.timeRemainingMs(), operation },
               supabase: input.supabase,
             });
             break;
@@ -587,16 +676,19 @@ async function executeOperation(input: {
           userId: input.userId,
           supabase: input.supabase,
           slots: Math.max(0, RADAR_MIN_ACTIVE_ITEM_TARGET - input.base.activeCount),
+          runId: input.runId,
         });
         result.candidatesPromoted += promoted.promoted;
         result.candidatesHeld += promoted.reviewed - promoted.promoted;
         if (promoted.promoted === 0) {
-          const ambient = await runAmbientIntelligence({
-            runType: "radar_discovery",
-            force: input.force,
-            ownerUserId: input.userId,
-          }).catch((error) => ({ error }));
-          if (!("error" in ambient)) {
+          const ambient = reserveClaudeTokens(input.spendBudget, AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE, "front_room_refill_ambient")
+            ? await runAmbientIntelligence({
+                runType: "radar_discovery",
+                force: input.force,
+                ownerUserId: input.userId,
+              }).catch((error) => ({ error }))
+            : { skipped: true as const };
+          if (!("error" in ambient) && !("skipped" in ambient)) {
             result.candidatesDiscovered += ambient.candidates_found;
             result.candidatesRejected += ambient.rejected;
             result.candidatesPromoted += ambient.selected;
@@ -615,29 +707,39 @@ async function executeOperation(input: {
       case "north_priority_campaign": {
         const isSprint = input.base.mode === "foundation_sprint";
         const ambient = isSprint || input.runBudget.shouldStopSoon()
+          || !reserveClaudeTokens(input.spendBudget, AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE, "campaign_ambient")
           ? { skipped: true as const }
           : await runAmbientIntelligence({
               runType: input.operation === "weekend_campaign" ? "weekend_preview" : "radar_discovery",
               force: input.force,
               ownerUserId: input.userId,
             }).catch((error) => ({ error }));
-        const inbox = await syncCandidateInboxFromExistingPipelines({
-          userId: input.userId,
-          supabase: input.supabase,
-        });
-        const providerGather = input.operation === "candidate_inbox_build"
+        const skipInboxDiscovery = isSprint && isCandidateInboxNearTarget(input.health);
+        const inbox = skipInboxDiscovery
+          ? { created: 0, updated: 0 }
+          : await syncCandidateInboxFromExistingPipelines({
+              userId: input.userId,
+              supabase: input.supabase,
+            });
+        const maxCandidates = isSprint
+          ? Math.max(0, Math.min(
+              FOUNDATION_BATCH_BUDGET.maxCandidatesCreated,
+              FOUNDATION_SPRINT_TARGETS.candidateInbox - input.health.candidateInboxCount,
+            ))
+          : BOOTSTRAP_RUN_BUDGET.maxCandidatesCreated;
+        const providerGather = input.operation === "candidate_inbox_build" && !skipInboxDiscovery && maxCandidates > 0
           ? await runBootstrapProviderGather({
               userId: input.userId,
               context: input.context,
               supabase: input.supabase,
-              maxCandidates: isSprint
-                ? FOUNDATION_BATCH_BUDGET.maxCandidatesCreated
-                : BOOTSTRAP_RUN_BUDGET.maxCandidatesCreated,
+              maxCandidates,
               maxSources: isSprint ? FOUNDATION_BATCH_BUDGET.maxSourcesCreated : undefined,
               budget: input.runBudget,
+              spendBudget: input.spendBudget,
+              providerStatus: input.providerStatus,
             })
           : { candidates: 0, sources: 0, errors: [], timeBudgetReached: false };
-        result.candidatesDiscovered += inbox.created + inbox.updated;
+        result.candidatesDiscovered += inbox.created;
         result.candidatesDiscovered += providerGather.candidates;
         result.sourcesCreated += providerGather.sources;
         result.timeBudgetReached = Boolean(providerGather.timeBudgetReached);
@@ -649,12 +751,15 @@ async function executeOperation(input: {
         }
         result.summary = result.timeBudgetReached
           ? `${input.operation} saved partial intake before the time budget.`
-          : `${input.operation} ran bounded discovery and synced Candidate Inbox.`;
+          : skipInboxDiscovery
+            ? `${input.operation} skipped discovery because Candidate Inbox is near target; budget is reserved for promotion and conversion.`
+            : `${input.operation} ran bounded discovery and synced Candidate Inbox.`;
         break;
       }
       case "library_build": {
         const isSprint = input.base.mode === "foundation_sprint";
         const scout = isSprint || input.runBudget.shouldStopSoon()
+          || !reserveClaudeTokens(input.spendBudget, AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE, "library_scout")
           ? { candidates_added: 0, sources_added: 0 }
           : await runScout(input.userId);
         const conversion = await convertCandidateInboxToLibrary({
@@ -669,7 +774,7 @@ async function executeOperation(input: {
         const inbox = input.runBudget.shouldStopSoon()
           ? { created: 0, updated: 0 }
           : await syncCandidateInboxFromExistingPipelines({ userId: input.userId, supabase: input.supabase });
-        result.candidatesDiscovered += scout.candidates_added + inbox.created + inbox.updated;
+        result.candidatesDiscovered += scout.candidates_added + inbox.created;
         result.sourcesCreated += scout.sources_added ?? 0;
         result.libraryItemsCreated += processed.researched + conversion.placesCreated + conversion.placesUpdated;
         result.eventsCreated = (result.eventsCreated ?? 0) + conversion.eventsCreated + conversion.eventsUpdated;
@@ -702,6 +807,8 @@ async function executeOperation(input: {
             maxCandidates: FOUNDATION_BATCH_BUDGET.maxCandidatesCreated,
             maxSources: FOUNDATION_BATCH_BUDGET.maxSourcesCreated,
             budget: input.runBudget,
+            spendBudget: input.spendBudget,
+            providerStatus: input.providerStatus,
           });
           result.candidatesDiscovered += providerGather.candidates;
           result.sourcesCreated += providerGather.sources;
@@ -767,14 +874,18 @@ async function executeOperation(input: {
               maxCandidates: FOUNDATION_BATCH_BUDGET.maxCandidatesCreated,
               maxSources: FOUNDATION_BATCH_BUDGET.maxSourcesCreated,
               budget: input.runBudget,
+              spendBudget: input.spendBudget,
+              providerStatus: input.providerStatus,
             });
             result.candidatesDiscovered += providerGather.candidates;
             result.sourcesCreated += providerGather.sources;
             result.timeBudgetReached = providerGather.timeBudgetReached;
             if (providerGather.errors.length) result.errors = providerGather.errors;
           } else {
-            const scout = await runScout(input.userId);
-            result.candidatesDiscovered += scout.candidates_added;
+            if (reserveClaudeTokens(input.spendBudget, AMBIENT_INTELLIGENCE_CLAUDE_TOKEN_ESTIMATE, "source_building_scout")) {
+              const scout = await runScout(input.userId);
+              result.candidatesDiscovered += scout.candidates_added;
+            }
           }
         }
         result.sourcesChecked = due.length;
@@ -823,6 +934,7 @@ async function executeOperation(input: {
           userId: input.userId,
           supabase: input.supabase,
           slots,
+          runId: input.runId,
         });
         result.candidatesPromoted += promoted.promoted;
         result.candidatesHeld += promoted.reviewed - promoted.promoted;
@@ -870,6 +982,7 @@ async function promoteHoldingWithService(input: {
   userId: string;
   supabase: SupabaseClient;
   slots: number;
+  runId?: string | null;
 }): Promise<{ reviewed: number; promoted: number; reasons: string[] }> {
   if (input.slots <= 0) return { reviewed: 0, promoted: 0, reasons: ["No available Active Radar slots under target."] };
   const { data: activeRows } = await input.supabase
@@ -879,14 +992,14 @@ async function promoteHoldingWithService(input: {
     .eq("destination", "radar")
     .in("status", ["shown", "opened"])
     .limit(RADAR_ACTIVE_ITEM_LIMIT);
-  const { data: holdingRows } = await input.supabase
+  const { data: backlogRows } = await input.supabase
     .from("surfaced_items")
     .select("*")
     .eq("user_id", input.userId)
-    .eq("destination", "holding")
     .in("status", ["discovered", "shown", "opened"])
     .order("score", { ascending: false, nullsFirst: false })
-    .limit(40);
+    .order("updated_at", { ascending: false })
+    .limit(80);
   const activeItems = ((activeRows ?? []) as SurfacedItemRow[])
     .map(rowToIndexedItem)
     .filter((item) => evaluateActiveRadarItem(item).allowed);
@@ -897,11 +1010,21 @@ async function promoteHoldingWithService(input: {
   });
   const promotable: Array<{ id: string; radar: ReturnType<typeof enrichRadarItem>; row: SurfacedItemRow }> = [];
   const reasons: string[] = [];
-  for (const row of (holdingRows ?? []) as SurfacedItemRow[]) {
+  const reviewedRows = ((backlogRows ?? []) as SurfacedItemRow[])
+    .filter((row) => {
+      if (row.destination === "radar" && (row.status === "shown" || row.status === "opened")) return false;
+      if (row.status === "discovered") return true;
+      return row.destination === "holding";
+    })
+    .slice(0, 40);
+  const candidateIds = reviewedRows.map((row) => row.id);
+  const rejectedIds: string[] = [];
+  for (const row of reviewedRows) {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
     if (!isPromotableWhenUnderfilled(radar)) {
       reasons.push(`${item.title}: ${radar.radarDisposition} · score ${radar.score.toFixed(2)} · confidence ${radar.confidence.toFixed(2)}.`);
+      rejectedIds.push(row.id);
       continue;
     }
     promotable.push({ id: row.id, radar, row });
@@ -911,6 +1034,7 @@ async function promoteHoldingWithService(input: {
     input.slots,
   );
   let promoted = 0;
+  const selectedIds: string[] = [];
   for (const item of selected) {
     const source = promotable.find((entry) => entry.id === item.item.id);
     const payload = mergeRadarIntelligencePayload(source?.row.payload ?? item.item.rawPayload, item);
@@ -928,11 +1052,25 @@ async function promoteHoldingWithService(input: {
     if (error) reasons.push(`${item.title}: promotion write failed (${error.message}).`);
     else {
       promoted++;
+      selectedIds.push(item.item.id);
       reasons.push(`${item.title}: moved to Radar as a composed move.`);
     }
   }
+  const unselectedIds = promotable
+    .map((entry) => entry.id)
+    .filter((id) => !selectedIds.includes(id));
+  await logPromotionDecisionRun({
+    userId: input.userId,
+    runId: input.runId,
+    candidateIds,
+    selectedIds,
+    rejectedIds: [...rejectedIds, ...unselectedIds],
+    reasons,
+    slots: input.slots,
+    supabase: input.supabase,
+  });
   return {
-    reviewed: (holdingRows ?? []).length,
+    reviewed: reviewedRows.length,
     promoted,
     reasons,
   };
@@ -945,18 +1083,29 @@ async function runBootstrapProviderGather(input: {
   maxCandidates: number;
   maxSources?: number;
   budget: RunBudget;
+  spendBudget: AutopilotSpendBudget;
+  providerStatus: SourceHealth;
 }): Promise<{ candidates: number; sources: number; errors: string[]; timeBudgetReached: boolean }> {
-  const lat = input.context.location.homeLat;
-  const lng = input.context.location.homeLng;
-  if (typeof lat !== "number" || typeof lng !== "number") {
+  const errors: string[] = [];
+  const providerCallCost = estimatePaidProviderCallCost(input.providerStatus);
+  if (providerCallCost > 0 && !reservePaidProviderCalls(input.spendBudget, providerCallCost, "bootstrap_provider_gather")) {
     return {
       candidates: 0,
       sources: 0,
-      errors: ["Bootstrap provider gather skipped because home latitude/longitude are missing."],
+      errors: [`Bootstrap provider gather skipped because paid provider budget is exhausted (${budgetSnapshot(input.spendBudget).paidProviderCallsRemainingToday} daily calls remaining).`],
       timeBudgetReached: false,
     };
   }
-  const errors: string[] = [];
+  const lat = typeof input.context.location.homeLat === "number"
+    ? input.context.location.homeLat
+    : 41.6986;
+  const lng = typeof input.context.location.homeLng === "number"
+    ? input.context.location.homeLng
+    : -88.0684;
+  if (typeof input.context.location.homeLat !== "number" || typeof input.context.location.homeLng !== "number") {
+    errors.push("Home coordinates missing in context; using Bolingbrook fallback for provider gather.");
+    console.warn("[radar.autopilot] Home coordinates missing in context; using Bolingbrook fallback for provider gather.");
+  }
   let candidates = 0;
   let sources = 0;
   let timeBudgetReached = false;
@@ -994,7 +1143,7 @@ async function runBootstrapProviderGather(input: {
           supabase: input.supabase,
         });
         if (sourceId) sources++;
-        if (status === "created" || status === "updated") candidates++;
+        if (status === "created") candidates++;
         if (input.maxSources && sources >= input.maxSources) break;
         if (candidates >= input.maxCandidates) break;
       }
@@ -1006,6 +1155,117 @@ async function runBootstrapProviderGather(input: {
     errors.push(error instanceof Error ? error.message : String(error));
   }
   return { candidates, sources, errors, timeBudgetReached };
+}
+
+async function logPromotionDecisionRun(input: {
+  userId: string;
+  runId?: string | null;
+  candidateIds: string[];
+  selectedIds: string[];
+  rejectedIds: string[];
+  reasons: string[];
+  slots: number;
+  supabase: SupabaseClient;
+}): Promise<void> {
+  if (input.candidateIds.length === 0) return;
+  const { error } = await input.supabase
+    .from("brain_decision_runs")
+    .insert({
+      user_id: input.userId,
+      run_type: "promotion_review",
+      input_summary: `Promotion Review evaluated ${input.candidateIds.length} surfaced item(s) for ${input.slots} Radar slot(s).`,
+      candidate_ids: input.candidateIds,
+      selected_ids: input.selectedIds,
+      rejected_ids: input.rejectedIds,
+      model: "deterministic-radar-curator",
+      raw_output: {
+        autopilot_run_id: input.runId ?? null,
+        gate: "enrichRadarItem + isPromotableWhenUnderfilled + shortlistRadarMoves",
+        slots: input.slots,
+        promoted: input.selectedIds.length,
+        reasons: input.reasons.slice(0, 40),
+      } satisfies Json,
+    });
+  if (error) {
+    console.warn("[radar.autopilot] promotion decision log failed", error.message);
+  }
+}
+
+async function readAutopilotSpendBudget(input: {
+  userId: string;
+  supabase: SupabaseClient;
+}): Promise<AutopilotSpendBudget> {
+  const since = new Date();
+  since.setHours(0, 0, 0, 0);
+  const budget: AutopilotSpendBudget = {
+    paidProviderCallsPerDay: envNumber(AUTOPILOT_PAID_PROVIDER_CALLS_PER_DAY_ENV, DEFAULT_AUTOPILOT_PAID_PROVIDER_CALLS_PER_DAY),
+    claudeTokensPerDay: envNumber(AUTOPILOT_CLAUDE_TOKENS_PER_DAY_ENV, DEFAULT_AUTOPILOT_CLAUDE_TOKENS_PER_DAY),
+    paidProviderCallsPerRun: envNumber(AUTOPILOT_PAID_PROVIDER_CALLS_PER_RUN_ENV, DEFAULT_AUTOPILOT_PAID_PROVIDER_CALLS_PER_RUN),
+    claudeTokensPerRun: envNumber(AUTOPILOT_CLAUDE_TOKENS_PER_RUN_ENV, DEFAULT_AUTOPILOT_CLAUDE_TOKENS_PER_RUN),
+    paidProviderCallsUsedToday: 0,
+    claudeTokensUsedToday: 0,
+    paidProviderCallsThisRun: 0,
+    claudeTokensThisRun: 0,
+    skipped: [],
+  };
+  const { data, error } = await input.supabase
+    .from("radar_autopilot_activity")
+    .select("metadata")
+    .eq("user_id", input.userId)
+    .gte("created_at", since.toISOString());
+  if (error || !data) return budget;
+  for (const row of data as Array<{ metadata: Json }>) {
+    const metadata = isRecord(row.metadata) ? row.metadata : {};
+    budget.paidProviderCallsUsedToday += readNumber(metadata.paid_provider_calls) ?? 0;
+    budget.claudeTokensUsedToday += readNumber(metadata.claude_tokens_estimate) ?? 0;
+  }
+  return budget;
+}
+
+function reservePaidProviderCalls(budget: AutopilotSpendBudget, calls: number, reason: string): boolean {
+  if (calls <= 0) return true;
+  const snapshot = budgetSnapshot(budget);
+  if (calls > snapshot.paidProviderCallsRemainingToday || calls > snapshot.paidProviderCallsRemainingThisRun) {
+    budget.skipped.push(`${reason}: paid provider budget exhausted`);
+    return false;
+  }
+  budget.paidProviderCallsThisRun += calls;
+  return true;
+}
+
+function reserveClaudeTokens(budget: AutopilotSpendBudget, tokens: number, reason: string): boolean {
+  if (tokens <= 0) return true;
+  const snapshot = budgetSnapshot(budget);
+  if (tokens > snapshot.claudeTokensRemainingToday || tokens > snapshot.claudeTokensRemainingThisRun) {
+    budget.skipped.push(`${reason}: Claude token budget exhausted`);
+    return false;
+  }
+  budget.claudeTokensThisRun += tokens;
+  return true;
+}
+
+function budgetSnapshot(budget: AutopilotSpendBudget) {
+  return {
+    paidProviderCallsPerDay: budget.paidProviderCallsPerDay,
+    claudeTokensPerDay: budget.claudeTokensPerDay,
+    paidProviderCallsPerRun: budget.paidProviderCallsPerRun,
+    claudeTokensPerRun: budget.claudeTokensPerRun,
+    paidProviderCallsUsedToday: budget.paidProviderCallsUsedToday,
+    claudeTokensUsedToday: budget.claudeTokensUsedToday,
+    paidProviderCallsThisRun: budget.paidProviderCallsThisRun,
+    claudeTokensThisRun: budget.claudeTokensThisRun,
+    paidProviderCallsRemainingToday: Math.max(0, budget.paidProviderCallsPerDay - budget.paidProviderCallsUsedToday - budget.paidProviderCallsThisRun),
+    claudeTokensRemainingToday: Math.max(0, budget.claudeTokensPerDay - budget.claudeTokensUsedToday - budget.claudeTokensThisRun),
+    paidProviderCallsRemainingThisRun: Math.max(0, budget.paidProviderCallsPerRun - budget.paidProviderCallsThisRun),
+    claudeTokensRemainingThisRun: Math.max(0, budget.claudeTokensPerRun - budget.claudeTokensThisRun),
+    skipped: budget.skipped,
+  };
+}
+
+function estimatePaidProviderCallCost(status: SourceHealth): number {
+  return (["google-places", "ticketmaster", "tavily"] as const)
+    .filter((provider) => status[provider] === "available")
+    .length;
 }
 
 function baseResult(
@@ -1093,6 +1353,11 @@ function foundationSummary(input: {
   return `${label} ran ${input.stack.length} operation(s): ${input.stack.join(", ")}.${missionText} Discovered ${input.result.candidatesDiscovered}, created ${input.result.libraryItemsCreated} place/library item(s), created ${input.result.eventsCreated ?? 0} event(s), added ${input.result.sourcesCreated} source(s), checked ${input.result.sourcesChecked} source(s), promoted ${input.result.candidatesPromoted}.${partial}${timed}`;
 }
 
+function orderPromotionFirst(stack: RadarAutopilotOperation[]): RadarAutopilotOperation[] {
+  if (!stack.includes("promotion_review")) return stack;
+  return ["promotion_review", ...stack.filter((operation) => operation !== "promotion_review")];
+}
+
 function libraryCountsFromHealth(health: RadarAutopilotHealth): NonNullable<RadarAutopilotResult["libraryCounts"]> {
   return {
     places: health.library.places,
@@ -1108,6 +1373,7 @@ function countsFromHealth(health: RadarAutopilotHealth): Json {
   return {
     active: health.activeCount,
     holding: health.holdingCount,
+    discoveredBacklog: health.discoveredBacklogCount,
     candidateInbox: health.candidateInboxCount,
     library: libraryCountsFromHealth(health),
     tierA: health.library.tierA,
@@ -1122,6 +1388,21 @@ function missingProviders(status: SourceHealth): string[] {
   return Object.entries(status)
     .filter(([, value]) => value !== "available")
     .map(([key]) => key);
+}
+
+function envNumber(name: string, fallback: number): number {
+  const parsed = readNumber(process.env[name]);
+  return parsed == null ? fallback : parsed;
+}
+
+function readNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isWeekendWindow(now: Date): boolean {

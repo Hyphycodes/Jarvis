@@ -11,7 +11,7 @@ import {
   MapPin,
   Phone,
 } from "lucide-react";
-import { ItemActionButton } from "@/app/item/[id]/client-bits";
+import { GeneratePlanButton, ItemActionButton } from "@/app/item/[id]/client-bits";
 import type { BriefData } from "@/lib/items/briefFields";
 
 export type ConsiderationBriefProps = {
@@ -133,6 +133,9 @@ export function ConsiderationBrief({
               variant="primary"
               redirectTo={hasPlan && planSlug ? `/plan/${planSlug}` : `/item/${itemId}`}
             />
+            {hasPlan && planSlug ? null : (
+              <GeneratePlanButton itemId={itemId} label="Plan this" />
+            )}
             <ItemActionButton
               itemId={itemId}
               action="move-holding"

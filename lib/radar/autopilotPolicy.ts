@@ -36,6 +36,7 @@ export type RadarAutopilotMode =
 export type RadarAutopilotHealth = {
   activeCount: number;
   holdingCount: number;
+  discoveredBacklogCount: number;
   candidateInboxCount: number;
   sourceCount: number;
   sourcesDue: number;

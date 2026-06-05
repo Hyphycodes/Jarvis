@@ -6,7 +6,7 @@ A private AI lifestyle operating system for one user. Not a chatbot, not a feed,
 
 **Four rendering tabs:**
 - **Today** — live plan, timeline, grab list, tonight's events, signals, and Drop It In intake
-- **Radar** — curated weekly signal with Save / Plan it / Pass inline actions
+- **Radar** — curated weekly signal with Go / Wait / Pass actions and plan generation when an item is plan-ready
 - **Circle** — inner circle people with updates and context
 - **North** — long-arc pillars, life cadence, and direction
 
@@ -104,7 +104,11 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 | `BRAVE_API_KEY`                   | optional | Secondary web search                                |
 | `SERPAPI_KEY`                     | optional | Google results fallback                              |
 | `TICKETMASTER_API_KEY`            | recommended | Event discovery and Event Pulse                     |
-| `MAPBOX_TOKEN`                    | optional | Mapping and geocoding                                |
+| `MAPBOX_ACCESS_TOKEN`             | optional | Mapping and geocoding                                |
+| `RADAR_AUTOPILOT_MAX_PAID_PROVIDER_CALLS_PER_DAY` | optional | Autopilot daily paid-provider ceiling; default `80` |
+| `RADAR_AUTOPILOT_MAX_PAID_PROVIDER_CALLS_PER_RUN` | optional | Autopilot per-run paid-provider ceiling; default `6` |
+| `RADAR_AUTOPILOT_MAX_CLAUDE_TOKENS_PER_DAY` | optional | Autopilot daily Claude token ceiling; default `200000` |
+| `RADAR_AUTOPILOT_MAX_CLAUDE_TOKENS_PER_RUN` | optional | Autopilot per-run Claude token ceiling; default `25000` |
 | `ELEVENLABS_API_KEY`              | optional | Voice — TTS and transcription                        |
 | `ELEVENLABS_VOICE_ID`             | optional | ElevenLabs voice ID for Jarvis's voice               |
 | `OPENWEATHER_API_KEY`             | optional | Weather context for curation                         |
@@ -115,7 +119,7 @@ Open `http://localhost:3000`. Visit `/health` to confirm env vars load.
 
 1. Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`
 2. Supabase Auth → URL Configuration: set Site URL and add `${SITE_URL}/auth/callback` to Redirect URLs
-3. Apply migrations in `supabase/migrations/` (0001–0014) in the SQL Editor
+3. Apply migrations in `supabase/migrations/` (0001–0018) in the SQL Editor
 4. Visit `/login`, sign in with magic link
 5. Run in Supabase SQL Editor: `select public.seed_founder('your-email@example.com');`
 6. Refresh `/settings` — role should read `owner`
@@ -132,10 +136,13 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 | Every 15 minutes     | `/api/radar/autopilot?mode=foundation_sprint` | Runs the next bounded Foundation Sprint mission when enabled |
 | Daily 8:00 UTC      | `/api/library/scout`             | Runs mission-based Scout discovery              |
 | Daily 9:00 UTC      | `/api/library/process-candidates`| Researches and verdicts pending candidates      |
+| Every 6 hours, :30 UTC | `/api/library/enrich`         | Enriches pending Library rows                   |
+| Sundays 3:00 UTC    | `/api/library/archive-mine`      | Mines trusted source archives                   |
 | Every 2 days 10:00 UTC | `/api/events/scout`           | Discovers upcoming events                       |
 | Every 2 days 11:00 UTC | `/api/events/process`         | Verdicts and surfaces events                    |
 | Wednesdays 12:00 UTC | `/api/tastemakers/sweep`        | Checks tastemaker sources for fresh signal      |
 | Tuesdays 10:00 UTC  | `/api/library/refresh`           | Refreshes stale library entries for changes     |
+| Daily 22:00 UTC     | `/api/push/evening`              | Sends evening push context when configured      |
 
 ## Folder layout
 
@@ -150,7 +157,7 @@ All jobs run via Vercel Cron (`vercel.json`) and require `CRON_SECRET` in the `A
 /lib/library           Living Library and Source Graph helpers
 /lib/radar             Autopilot, campaigns, Candidate Inbox
 /lib/brain/refresher   Library refresher agent
-/supabase/migrations   Schema migrations (0001–0014)
+/supabase/migrations   Schema migrations (0001–0018)
 ```
 
 ## How the brain works

@@ -103,9 +103,9 @@ export async function readRadarPromotionDiagnostics(input: {
       .from("surfaced_items")
       .select("*")
       .eq("user_id", input.userId)
-      .eq("destination", "holding")
       .in("status", ["discovered", "shown", "opened"])
       .order("score", { ascending: false, nullsFirst: false })
+      .order("updated_at", { ascending: false })
       .limit(limit),
     supabase
       .from("radar_candidate_inbox")
@@ -134,7 +134,12 @@ export async function readRadarPromotionDiagnostics(input: {
   ]);
 
   const activeRows = (activeRes.data ?? []) as SurfacedItemRow[];
-  const holdingRows = (holdingRes.data ?? []) as SurfacedItemRow[];
+  const holdingRows = ((holdingRes.data ?? []) as SurfacedItemRow[])
+    .filter((row) => {
+      if (row.destination === "radar" && (row.status === "shown" || row.status === "opened")) return false;
+      if (row.status === "discovered") return true;
+      return row.destination === "holding";
+    });
   const activeItems = activeRows
     .map(rowToIndexedItem)
     .filter((item) => evaluateActiveRadarItem(item).allowed);

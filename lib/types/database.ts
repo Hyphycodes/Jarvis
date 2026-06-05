@@ -74,6 +74,8 @@ export interface Database {
           email: string | null;
           display_name: string | null;
           home_city: string | null;
+          home_latitude: number | null;
+          home_longitude: number | null;
           timezone: string | null;
           app_role: AppRole;
           created_at: string;
@@ -84,6 +86,8 @@ export interface Database {
           email?: string | null;
           display_name?: string | null;
           home_city?: string | null;
+          home_latitude?: number | null;
+          home_longitude?: number | null;
           timezone?: string | null;
           app_role?: AppRole;
           created_at?: string;
@@ -94,6 +98,8 @@ export interface Database {
           email?: string | null;
           display_name?: string | null;
           home_city?: string | null;
+          home_latitude?: number | null;
+          home_longitude?: number | null;
           timezone?: string | null;
           app_role?: AppRole;
           created_at?: string;

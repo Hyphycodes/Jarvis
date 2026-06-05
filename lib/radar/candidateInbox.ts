@@ -83,14 +83,16 @@ export async function upsertCandidateInboxItem(input: {
   // soft dedup — it skips rather than merging, which is correct since the same
   // article from two sources carries the same junk content either way.
   if (!existingId) {
-    const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    const { data: titleMatch } = await supabase
+    const normalizedTitle = normalizeCandidateTitle(title);
+    const { data: titleMatches } = await supabase
       .from("radar_candidate_inbox")
-      .select("id, status")
+      .select("id, title, status")
       .eq("user_id", input.userId)
-      .ilike("title", normalizedTitle.slice(0, 80)) // first 80 chars, case-insensitive
-      .maybeSingle();
-    const titleMatchId = (titleMatch as { id?: string } | null)?.id;
+      .ilike("title", `%${escapeLike(title.slice(0, 48))}%`)
+      .limit(10);
+    const titleMatchId = ((titleMatches ?? []) as Array<{ id?: string; title?: string | null }>)
+      .find((match) => normalizeCandidateTitle(match.title ?? "") === normalizedTitle)
+      ?.id;
     if (titleMatchId) {
       // Don't update — just skip the duplicate.
       return "skipped";
@@ -234,6 +236,14 @@ function count(summary: CandidateInboxSummary, result: "created" | "updated" | "
   if (result === "created") summary.created++;
   else if (result === "updated") summary.updated++;
   else summary.skipped++;
+}
+
+function normalizeCandidateTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
 function entityTypeForCandidate(type: string | undefined): CandidateInboxEntityType {

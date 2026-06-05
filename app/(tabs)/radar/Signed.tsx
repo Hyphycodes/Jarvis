@@ -27,6 +27,7 @@ type Card = {
   imageUrl?: string;
   placeholderKind?: RadarPayloadCard["placeholderKind"];
   planSlug?: string;
+  canGeneratePlan: boolean;
   filter: Filter;
 };
 
@@ -62,6 +63,7 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
     imageUrl: item.imageUrl,
     placeholderKind: item.placeholderKind,
     planSlug: item.planSlug,
+    canGeneratePlan: Boolean(!item.planSlug && item.actions.openPlan),
     filter,
   };
 }
@@ -400,10 +402,35 @@ function RadarCard({
     });
   }
 
+  function generatePlan() {
+    onDismiss();
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/items/${card.id}/generate-plan`, { method: "POST" });
+        const json = (await res.json().catch(() => ({}))) as {
+          plan_slug?: string;
+          error?: string;
+        };
+        if (!res.ok || json.error || !json.plan_slug) {
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        onPersistedAction();
+        router.push(`/plan/${json.plan_slug}`);
+      } catch (err) {
+        onRestore(err instanceof Error ? err.message : "Action failed.");
+        console.error("radar plan generation failed", err);
+      }
+    });
+  }
+
   function handleGo(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     if (pending) return;
+    if (card.canGeneratePlan) {
+      generatePlan();
+      return;
+    }
     persist("save");
   }
 

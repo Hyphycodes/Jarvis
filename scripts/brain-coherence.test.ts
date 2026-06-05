@@ -392,6 +392,7 @@ function autopilotHealth(overrides: Partial<RadarAutopilotHealth> = {}): RadarAu
   return {
     activeCount: 7,
     holdingCount: 24,
+    discoveredBacklogCount: 0,
     candidateInboxCount: BOOTSTRAP_TARGETS.candidateInbox,
     sourceCount: BOOTSTRAP_TARGETS.sources,
     sourcesDue: 0,
@@ -505,6 +506,7 @@ function testFoundationSprintPolicy() {
     cursor: 0,
   });
   assert.ok(missions.length > 0);
+  assert.equal(missions[0]?.type, "holding_promotion_review");
   assert.ok(missions.some((mission) => mission.type === "library_conversion"));
   assert.equal(
     selectFoundationMissions({
@@ -547,7 +549,7 @@ function testFoundationSprintPolicy() {
 function testFoundationSprintTimeoutBudget() {
   assert.ok(DEFAULT_RUN_BUDGET_MS < 60_000);
   assert.ok(FOUNDATION_RUN_BUDGET_MS < 60_000);
-  assert.equal(FOUNDATION_BATCH_BUDGET.maxOperations, 1);
+  assert.ok(FOUNDATION_BATCH_BUDGET.maxOperations <= 3);
   assert.ok(FOUNDATION_BATCH_BUDGET.maxCandidatesCreated <= 50);
   assert.ok(FOUNDATION_BATCH_BUDGET.maxSourcesCreated <= 20);
   assert.ok(FOUNDATION_BATCH_BUDGET.maxLibraryItemsCreated <= 20);

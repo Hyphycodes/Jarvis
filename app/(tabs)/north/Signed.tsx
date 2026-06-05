@@ -5,10 +5,10 @@ import { AppFrame } from "@/components";
 import { Chevron } from "@/components/icons";
 import type { NorthPayload, NorthPillar, NorthSignal } from "@/lib/ai/types";
 
-// TODO: pull from DB when north_star_title / north_star_subtitle fields exist in founder_profile
-const NORTH_STAR_TITLE = "A slower life. Owned.";
-const NORTH_STAR_SUBTITLE_LINES = ["Surrounded by beauty,", "craft, and real connection."];
-
+const NORTH_STAR_FALLBACK = {
+  title: "North",
+  subtitle: "Long-term direction.",
+};
 const REMINDER_FALLBACK = "Discipline today. Freedom tomorrow.";
 
 // Deterministic gradient by pillar title. Falls back to neutral dark.
@@ -43,17 +43,22 @@ function statusForPillar(pillar: NorthPillar): string {
 }
 
 export function NorthSigned({ payload }: { payload?: NorthPayload }) {
+  const northStar = payload?.northStar ?? NORTH_STAR_FALLBACK;
   const pillars = payload?.pillars ?? [];
   const signals = payload?.signals ?? [];
+  const reminder =
+    signals.find((signal) => signal.action)?.action ??
+    payload?.lifeCadence?.[0]?.nextUsefulRep ??
+    REMINDER_FALLBACK;
 
   return (
     <AppFrame>
       <Header />
       <Hero />
-      <NorthStar />
+      <NorthStar title={northStar.title} subtitle={northStar.subtitle} />
       <Pillars pillars={pillars} />
       <NextRightSteps signals={signals} pillars={pillars} />
-      <NorthReminder />
+      <NorthReminder reminder={reminder} />
       <AccountRow />
     </AppFrame>
   );
@@ -115,20 +120,25 @@ function Hero() {
 
 // ── North Star ───────────────────────────────────────────────────────────────
 
-function NorthStar() {
+function NorthStar({ title, subtitle }: { title: string; subtitle: string }) {
+  const subtitleLines = splitNorthSubtitle(subtitle);
+
   return (
     <section className="mt-8">
       <div className="text-[11px] uppercase tracking-[0.22em] text-warm-ivory/45">
         The North Star
       </div>
       <h2 className="mt-4 font-serif text-[40px] leading-[1.04] tracking-[-0.01em] text-warm-ivory">
-        {NORTH_STAR_TITLE}
+        {title}
       </h2>
       <div className="mt-4 h-px w-8 bg-muted-gold/30" />
       <p className="mt-5 max-w-[34ch] text-[15px] leading-[1.55] text-warm-ivory/62">
-        {NORTH_STAR_SUBTITLE_LINES[0]}
-        <br />
-        {NORTH_STAR_SUBTITLE_LINES[1]}
+        {subtitleLines.map((line, index) => (
+          <span key={`${line}-${index}`}>
+            {index > 0 ? <br /> : null}
+            {line}
+          </span>
+        ))}
       </p>
       <button
         type="button"
@@ -138,6 +148,19 @@ function NorthStar() {
       </button>
     </section>
   );
+}
+
+function splitNorthSubtitle(subtitle: string): string[] {
+  const trimmed = subtitle.trim();
+  if (!trimmed) return [NORTH_STAR_FALLBACK.subtitle];
+  if (trimmed.length <= 36) return [trimmed];
+  const midpoint = Math.floor(trimmed.length / 2);
+  const splitAt = trimmed.indexOf(" ", midpoint);
+  if (splitAt < 0) return [trimmed];
+  return [
+    trimmed.slice(0, splitAt).trim(),
+    trimmed.slice(splitAt + 1).trim(),
+  ].filter(Boolean);
 }
 
 // ── Pillars ──────────────────────────────────────────────────────────────────
@@ -240,14 +263,14 @@ function NextRightSteps({
 
 // ── North Reminder ────────────────────────────────────────────────────────────
 
-function NorthReminder() {
+function NorthReminder({ reminder }: { reminder: string }) {
   return (
     <section className="mt-10 pl-4" style={{ borderLeft: "2px solid rgba(184,137,55,0.4)" }}>
       <div className="text-[10px] uppercase tracking-[0.18em] text-warm-ivory/45">
         North Reminder
       </div>
       <p className="mt-2 font-serif text-[18px] italic leading-[1.4] text-warm-ivory">
-        {REMINDER_FALLBACK}
+        {reminder}
       </p>
     </section>
   );

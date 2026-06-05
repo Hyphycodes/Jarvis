@@ -81,7 +81,19 @@ export async function POST(
 }
 
 function shouldAutoRefill(action: ItemAction): boolean {
-  return ["save", "pass", "archive", "plan", "move-holding", "add-upcoming"].includes(action);
+  return [
+    "save",
+    "pass",
+    "archive",
+    "plan",
+    "move-holding",
+    "add-upcoming",
+    "save-taste",
+    "interested-later",
+    "watch",
+    "better-version",
+    "mute",
+  ].includes(action);
 }
 
 async function safeJson(request: Request): Promise<unknown> {

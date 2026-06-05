@@ -1,4 +1,5 @@
 import type { RadarAutopilotHealth, RadarAutopilotOperation } from "@/lib/radar/autopilotPolicy";
+import { RADAR_MIN_ACTIVE_ITEM_TARGET } from "@/lib/brain/constants";
 import type { SourceHealth } from "@/lib/sources/types";
 
 export const FOUNDATION_SPRINT_TARGETS = {
@@ -19,12 +20,14 @@ export const FOUNDATION_BATCH_BUDGET = {
   maxSourcesCreated: 15,
   maxLibraryItemsCreated: 12,
   maxEventsCreated: 15,
-  maxOperations: 1,
+  maxOperations: 3,
 } as const;
 
 export const DEFAULT_RUN_BUDGET_MS = 35_000;
 export const FOUNDATION_RUN_BUDGET_MS = 45_000;
 export const RUN_BUDGET_STOP_BUFFER_MS = 5_000;
+export const FOUNDATION_PROMOTION_RESERVE_MS = 12_000;
+export const FOUNDATION_CANDIDATE_INBOX_NEAR_TARGET_RATIO = 0.9;
 
 export type RunBudget = {
   startedAt: number;
@@ -128,7 +131,9 @@ export function assessFoundationSprint(health: RadarAutopilotHealth): Foundation
     (Object.keys(FOUNDATION_SPRINT_TARGETS) as Array<keyof typeof FOUNDATION_SPRINT_TARGETS>)
       .map((key) => [key, { current: current[key], target: FOUNDATION_SPRINT_TARGETS[key] }]),
   ) as FoundationSprintAssessment["progress"];
-  const incomplete = FOUNDATION_COMPLETION_KEYS.some((key) => progress[key].current < progress[key].target);
+  const incomplete = FOUNDATION_COMPLETION_KEYS.some((key) => progress[key].current < progress[key].target)
+    || health.activeCount < RADAR_MIN_ACTIVE_ITEM_TARGET
+    || health.discoveredBacklogCount > 0;
   return {
     active: incomplete,
     completed: !incomplete,
@@ -149,9 +154,13 @@ export function selectFoundationMissions(input: {
   const start = Math.max(0, input.cursor ?? 0);
   const ordered = [...priority, ...MISSION_PLAN].filter(uniqueMission);
   const rotated = [...ordered.slice(start % ordered.length), ...ordered.slice(0, start % ordered.length)];
-  return rotated
-    .filter((mission) => hasProviderSupport(mission, input.providerStatus) || mission.type === "candidate_evaluation" || mission.type === "library_conversion" || mission.type === "holding_promotion_review")
-    .slice(0, max);
+  const runnable = rotated
+    .filter((mission) => isMissionTargetReady(mission, input.health))
+    .filter((mission) => hasProviderSupport(mission, input.providerStatus) || mission.type === "candidate_evaluation" || mission.type === "library_conversion" || mission.type === "holding_promotion_review");
+  const promotion = mission("holding_promotion_review");
+  const withoutPromotion = runnable.filter((entry) => entry.type !== promotion.type);
+  const selected = [promotion, ...withoutPromotion].filter(uniqueMission);
+  return selected.slice(0, max);
 }
 
 export function missionProviderBlockReason(mission: FoundationMission, status: SourceHealth): string | null {
@@ -179,12 +188,28 @@ export function foundationWorkDone(input: {
 
 function prioritizedMissions(health: RadarAutopilotHealth): FoundationMission[] {
   const missions: FoundationMission[] = [];
+  missions.push(mission("holding_promotion_review"));
   if (health.candidateInboxCount > 0) missions.push(mission("library_conversion"));
-  if (health.library.places < FOUNDATION_SPRINT_TARGETS.places) missions.push(mission("new_restaurant_openings"));
-  if (health.library.events < FOUNDATION_SPRINT_TARGETS.activeEvents) missions.push(mission("events_next_7_days"));
+  if (health.library.places < FOUNDATION_SPRINT_TARGETS.places && !isCandidateInboxNearTarget(health)) missions.push(mission("new_restaurant_openings"));
+  if (health.library.events < FOUNDATION_SPRINT_TARGETS.activeEvents && !isCandidateInboxNearTarget(health)) missions.push(mission("events_next_7_days"));
   if (health.sourceCount < FOUNDATION_SPRINT_TARGETS.sources) missions.push(mission("source_building"));
   if (health.sourcesDue > 0) missions.push(mission("source_recheck"));
   return missions;
+}
+
+export function isCandidateInboxNearTarget(health: Pick<RadarAutopilotHealth, "candidateInboxCount">): boolean {
+  return health.candidateInboxCount >= FOUNDATION_SPRINT_TARGETS.candidateInbox * FOUNDATION_CANDIDATE_INBOX_NEAR_TARGET_RATIO;
+}
+
+function isMissionTargetReady(mission: FoundationMission, health: RadarAutopilotHealth): boolean {
+  if (mission.type === "holding_promotion_review") return true;
+  if (mission.operation === "candidate_inbox_build") return !isCandidateInboxNearTarget(health);
+  if (mission.operation === "event_pulse_build") return health.library.events < FOUNDATION_SPRINT_TARGETS.activeEvents && !isCandidateInboxNearTarget(health);
+  if (mission.type === "source_building") return health.sourceCount < FOUNDATION_SPRINT_TARGETS.sources;
+  if (mission.type === "library_conversion") return health.candidateInboxCount > 0;
+  if (mission.type === "source_recheck") return health.sourcesDue > 0;
+  if (health.activeCount < RADAR_MIN_ACTIVE_ITEM_TARGET) return true;
+  return true;
 }
 
 function mission(type: FoundationMissionType): FoundationMission {
