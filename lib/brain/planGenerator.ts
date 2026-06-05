@@ -421,7 +421,7 @@ function deterministicPlan(item: IndexedItem, chatContext?: PlanChatContext): Ge
         ]
       : [],
     grab_list: [],
-    cautions: ["Deterministic draft — refine with Anthropic when available."],
+    cautions: [],
     source_item_id: item.id,
   };
 }

@@ -46,12 +46,27 @@ export async function preBuildPlansForShownItems(
         preserveItemSurface: true,
       });
 
-      await fillPlan({
+      const filled = await fillPlan({
         planId: stub.planId,
         userId,
         itemId: row.id,
         preserveItemSurface: true,
+        persistFallback: false,
       });
+
+      if (filled.fallbackUsed) {
+        const { error } = await supabase
+          .from("plans")
+          .update({ build_status: "building" })
+          .eq("id", stub.planId)
+          .eq("user_id", userId);
+        if (error) {
+          errors.push(
+            `Plan pre-build fallback reset failed for item ${row.id}: ${error.message}`,
+          );
+        }
+        continue;
+      }
 
       built++;
     } catch (err) {

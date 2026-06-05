@@ -184,12 +184,16 @@ export async function createStubPlan(input: {
     if (existing?.planId) {
       const { data: existingRow } = await supabase
         .from("plans")
-        .select("id,key_stats")
+        .select("id,key_stats,build_status")
         .eq("id", existing.planId)
         .eq("user_id", owner.id)
         .maybeSingle();
       if (existingRow) {
-        const planRow = existingRow as { id: string; key_stats: Json };
+        const planRow = existingRow as {
+          id: string;
+          key_stats: Json;
+          build_status?: string | null;
+        };
         const slug =
           existing.planSlug ??
           readSlugFromKeyStats(planRow.key_stats) ??
@@ -208,6 +212,14 @@ export async function createStubPlan(input: {
             })
             .eq("id", item.id)
             .eq("user_id", owner.id);
+        }
+        if (planRow.build_status === "building") {
+          return {
+            planId: planRow.id,
+            planSlug: slug,
+            userId: owner.id,
+            reused: false,
+          };
         }
         return {
           planId: planRow.id,
@@ -293,7 +305,14 @@ export async function fillPlan(input: {
   itemId: string;
   chatContext?: PlanChatContext;
   preserveItemSurface?: boolean;
-}): Promise<{ ok: true; fallbackUsed: boolean; cancelled?: boolean; planTitle?: string }> {
+  persistFallback?: boolean;
+}): Promise<{
+  ok: true;
+  fallbackUsed: boolean;
+  fallbackReason?: string;
+  cancelled?: boolean;
+  planTitle?: string;
+}> {
   const supabase = getSupabaseServiceClient();
 
   const before = await readPlanBuildState(supabase, input.planId, input.userId);
@@ -310,15 +329,44 @@ export async function fillPlan(input: {
   if (!itemRow) throw new Error("Item not found.");
   const item = rowToIndexedItem(itemRow as SurfacedItemRow);
 
-  const { plan, fallbackUsed } = await generatePlanFromItem({
+  const result = await generatePlanFromItem({
     item,
     chatContext: input.chatContext,
     userId: input.userId,
   });
+  if (result.fallbackUsed) {
+    console.error("[fillPlan] deterministic fallback used", {
+      planId: input.planId,
+      itemId: input.itemId,
+      reason: result.reason ?? "unknown",
+    });
+  }
+  const { plan, fallbackUsed } = result;
 
   const afterGeneration = await readPlanBuildState(supabase, input.planId, input.userId);
   if (isPlanBuildCancelled(afterGeneration)) {
-    return { ok: true, fallbackUsed, cancelled: true, planTitle: plan.title };
+    return {
+      ok: true,
+      fallbackUsed,
+      fallbackReason: result.reason,
+      cancelled: true,
+      planTitle: plan.title,
+    };
+  }
+
+  if (fallbackUsed && input.persistFallback === false) {
+    const { error } = await supabase
+      .from("plans")
+      .update({ build_status: "building" })
+      .eq("id", input.planId)
+      .eq("user_id", input.userId);
+    if (error) console.error("[fillPlan] fallback build reset", error);
+    return {
+      ok: true,
+      fallbackUsed: true,
+      fallbackReason: result.reason,
+      planTitle: plan.title,
+    };
   }
 
   // Preserve the slug chosen at stub time.
@@ -380,6 +428,8 @@ export async function fillPlan(input: {
     .eq("user_id", input.userId);
   if (updateError) console.error("[fillPlan] plan update", updateError);
 
+  await clearGeneratedPlanContent(supabase, input.planId, input.userId);
+
   // Sections
   const sections = plan.sections.map((s, idx) => ({
     user_id: input.userId,
@@ -427,7 +477,12 @@ export async function fillPlan(input: {
     .eq("id", input.itemId)
     .eq("user_id", input.userId);
 
-  return { ok: true, fallbackUsed, planTitle: plan.title };
+  return {
+    ok: true,
+    fallbackUsed,
+    fallbackReason: result.reason,
+    planTitle: plan.title,
+  };
 }
 
 /**
@@ -814,6 +869,27 @@ type PlanBuildState = {
   build_status?: string | null;
   cancelled_at?: string | null;
 } | null;
+
+async function clearGeneratedPlanContent(
+  supabase: SupabaseClient,
+  planId: string,
+  userId: string,
+) {
+  const [{ error: sectionError }, { error: timelineError }] = await Promise.all([
+    supabase
+      .from("plan_sections")
+      .delete()
+      .eq("plan_id", planId)
+      .eq("user_id", userId),
+    supabase
+      .from("today_timeline_items")
+      .delete()
+      .eq("plan_id", planId)
+      .eq("user_id", userId),
+  ]);
+  if (sectionError) console.error("[fillPlan] sections clear", sectionError);
+  if (timelineError) console.error("[fillPlan] timeline clear", timelineError);
+}
 
 async function readPlanBuildState(
   supabase: ReturnType<typeof getSupabaseServiceClient>,
