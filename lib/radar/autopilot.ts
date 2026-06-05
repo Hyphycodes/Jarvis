@@ -1189,6 +1189,26 @@ async function logPromotionDecisionRun(input: {
   if (error) {
     console.warn("[radar.autopilot] promotion decision log failed", error.message);
   }
+  const { error: legacyError } = await input.supabase
+    .from("decision_runs")
+    .insert({
+      user_id: input.userId,
+      ask_text: "Radar Promotion Review",
+      intent: "promotion_review",
+      plan_horizon: "autopilot",
+      context: {
+        autopilot_run_id: input.runId ?? null,
+        slots: input.slots,
+        gate: "enrichRadarItem + isPromotableWhenUnderfilled + shortlistRadarMoves",
+      },
+      candidates: input.candidateIds,
+      filtered_out: input.rejectedIds,
+      recommendation: input.selectedIds,
+      reasoning: input.reasons.slice(0, 12).join("\n"),
+    });
+  if (legacyError) {
+    console.warn("[radar.autopilot] legacy decision run log failed", legacyError.message);
+  }
 }
 
 async function readAutopilotSpendBudget(input: {
