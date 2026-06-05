@@ -184,7 +184,7 @@ async function runCategoryAgent(
       ].join("\n"),
       schemaName: `category_agent_${category}`,
       temperature: 0.4,
-      maxTokens: 2048,
+      maxTokens: 4000,
     });
     return normalizeAgentOutput(raw, category);
   } catch (error) {
@@ -225,7 +225,7 @@ async function runSynthesis(input: {
         .join("\n"),
       schemaName: "radar_week_synthesis",
       temperature: 0.3,
-      maxTokens: 2048,
+      maxTokens: 4000,
     });
   } catch (error) {
     console.warn("[categoryAgents] synthesis failed", error instanceof Error ? error.message : error);

@@ -171,7 +171,7 @@ export async function generatePlanFromItem(
       prompt: promptBody,
       schemaName: "GeneratedPlan",
       temperature: 0.4,
-      maxTokens: 2600,
+      maxTokens: 8000,
     });
 
     const parsed = generatedPlanSchema.safeParse(raw);

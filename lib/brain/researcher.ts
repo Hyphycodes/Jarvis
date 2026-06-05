@@ -185,7 +185,7 @@ export async function researchPlace(
       prompt,
       schemaName: "ResearcherOutput",
       temperature: 0.2,
-      maxTokens: 2048,
+      maxTokens: 4000,
     });
     // Ensure slug is set
     const slug = raw.slug?.trim() || makeSlug(raw.canonical_name ?? name);

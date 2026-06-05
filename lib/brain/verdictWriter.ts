@@ -95,7 +95,7 @@ export async function writeVerdict(
       prompt,
       schemaName: "VerdictOutput",
       temperature: 0.3,
-      maxTokens: 1024,
+      maxTokens: 2048,
     });
     return {
       verdict: raw.verdict ?? "No verdict generated.",
