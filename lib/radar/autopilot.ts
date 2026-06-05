@@ -21,7 +21,13 @@ import {
   mergeRadarIntelligencePayload,
 } from "@/lib/intelligence/radarCurator";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
-import { shortlistRadarMoves } from "@/lib/radar/moveShortlist";
+import { normalizeRadarCategory } from "@/lib/radar/category";
+import { planLivingFive, type LivingFiveMember } from "@/lib/radar/livingFive";
+import {
+  blendRadarComposite,
+  deriveCompositeDimensions,
+  haversineMiles,
+} from "@/lib/scoring/radarComposite";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import { readLibraryHealth, type LibraryHealth } from "@/lib/library";
 import {
@@ -81,6 +87,8 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   RADAR_ACTIVE_ITEM_LIMIT,
   RADAR_MIN_ACTIVE_ITEM_TARGET,
+  RADAR_LIVING_FIVE_PER_CATEGORY,
+  RADAR_PROMOTIONS_PER_RUN,
 } from "@/lib/brain/constants";
 import type { FounderContextPacket } from "@/lib/context/types";
 import type { Json, SurfacedItemRow } from "@/lib/types/database";
@@ -675,7 +683,7 @@ async function executeOperation(input: {
         const promoted = await promoteHoldingWithService({
           userId: input.userId,
           supabase: input.supabase,
-          slots: Math.max(0, RADAR_MIN_ACTIVE_ITEM_TARGET - input.base.activeCount),
+          slots: RADAR_PROMOTIONS_PER_RUN,
           runId: input.runId,
         });
         result.candidatesPromoted += promoted.promoted;
@@ -905,9 +913,10 @@ async function executeOperation(input: {
           limit: 16,
         });
         const eligibleDiagnostics = diagnostics.items.filter((item) => item.radarEligible);
-        const slots = input.base.activeCount < RADAR_MIN_ACTIVE_ITEM_TARGET
-          ? Math.min(3, RADAR_MIN_ACTIVE_ITEM_TARGET - input.base.activeCount)
-          : 0;
+        // Living-5: promotion runs per-category, so the change budget is a bounded
+        // per-run cap — not suppressed by the global active count. Empty categories
+        // fill even when other categories are already at five.
+        const slots = RADAR_PROMOTIONS_PER_RUN;
         await logAutopilotActivity({
           userId: input.userId,
           runId: input.runId,
@@ -978,13 +987,22 @@ async function executeOperation(input: {
   return result;
 }
 
+/**
+ * The living-5 promotion service. Maintains exactly the top-5 strongest fits per
+ * category on Radar, by composite score (lib/scoring/radarComposite), with
+ * displacement of the weakest sitting member when a stronger candidate appears.
+ * The Decision Council gate (isPromotableWhenUnderfilled) remains the sole
+ * arbiter of eligibility — living-5 only chooses *which* eligible items occupy
+ * each category's five slots. Never empty (if real fits exist), never padded.
+ */
 async function promoteHoldingWithService(input: {
   userId: string;
   supabase: SupabaseClient;
   slots: number;
   runId?: string | null;
 }): Promise<{ reviewed: number; promoted: number; reasons: string[] }> {
-  if (input.slots <= 0) return { reviewed: 0, promoted: 0, reasons: ["No available Active Radar slots under target."] };
+  const changeBudget = input.slots;
+  if (changeBudget <= 0) return { reviewed: 0, promoted: 0, reasons: ["No promotion budget this run."] };
   const { data: activeRows } = await input.supabase
     .from("surfaced_items")
     .select("*")
@@ -1000,16 +1018,37 @@ async function promoteHoldingWithService(input: {
     .order("score", { ascending: false, nullsFirst: false })
     .order("updated_at", { ascending: false })
     .limit(80);
-  const activeItems = ((activeRows ?? []) as SurfacedItemRow[])
-    .map(rowToIndexedItem)
-    .filter((item) => evaluateActiveRadarItem(item).allowed);
+  const activeRowList = ((activeRows ?? []) as SurfacedItemRow[]).filter(
+    (row) => evaluateActiveRadarItem(rowToIndexedItem(row)).allowed,
+  );
   const context = await buildJarvisContext({
     userId: input.userId,
     supabase: input.supabase,
-    currentRadarItems: activeItems,
+    currentRadarItems: activeRowList.map(rowToIndexedItem),
   });
-  const promotable: Array<{ id: string; radar: ReturnType<typeof enrichRadarItem>; row: SurfacedItemRow }> = [];
+  const userLat = typeof context.homeLat === "number" ? context.homeLat : null;
+  const userLng = typeof context.homeLng === "number" ? context.homeLng : null;
+
   const reasons: string[] = [];
+
+  // ── Sitting members: the current per-category board ──────────────────────────
+  const activeMembers: LivingFiveMember[] = [];
+  const activeMeta = new Map<string, { row: SurfacedItemRow; status: string }>();
+  for (const row of activeRowList) {
+    const item = rowToIndexedItem(row);
+    const radar = enrichRadarItem({ item, context });
+    const category = normalizeRadarCategory(item.category ?? radar.category);
+    if (!category) continue; // uncategorized legacy item — not in any category's five
+    activeMembers.push({
+      id: row.id,
+      category,
+      composite: compositeFor(radar, item, userLat, userLng),
+      eligible: true,
+    });
+    activeMeta.set(row.id, { row, status: row.status });
+  }
+
+  // ── Challengers: eligible Holding / discovered candidates ────────────────────
   const reviewedRows = ((backlogRows ?? []) as SurfacedItemRow[])
     .filter((row) => {
       if (row.destination === "radar" && (row.status === "shown" || row.status === "opened")) return false;
@@ -1018,55 +1057,101 @@ async function promoteHoldingWithService(input: {
     })
     .slice(0, 40);
   const candidateIds = reviewedRows.map((row) => row.id);
-  const rejectedIds: string[] = [];
+  const candidateMembers: LivingFiveMember[] = [];
+  const candidateMeta = new Map<string, { row: SurfacedItemRow; radar: ReturnType<typeof enrichRadarItem>; composite: number }>();
+  const gateRejectedIds: string[] = [];
   for (const row of reviewedRows) {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
-    if (!isPromotableWhenUnderfilled(radar)) {
+    const category = normalizeRadarCategory(item.category ?? radar.category);
+    if (!category || !isPromotableWhenUnderfilled(radar)) {
       reasons.push(`${item.title}: ${radar.radarDisposition} · score ${radar.score.toFixed(2)} · confidence ${radar.confidence.toFixed(2)}.`);
-      rejectedIds.push(row.id);
+      gateRejectedIds.push(row.id);
       continue;
     }
-    promotable.push({ id: row.id, radar, row });
+    const composite = compositeFor(radar, item, userLat, userLng);
+    candidateMembers.push({ id: row.id, category, composite, eligible: true, timelyValid: !isStaleForRadar(item) });
+    candidateMeta.set(row.id, { row, radar, composite });
   }
-  const selected = shortlistRadarMoves(
-    promotable.map((entry) => entry.radar),
-    input.slots,
-  );
+
+  // ── Plan the living-5: fill open slots, displace weaker sitters ───────────────
+  const plan = planLivingFive({
+    active: activeMembers,
+    candidates: candidateMembers,
+    perCategory: RADAR_LIVING_FIVE_PER_CATEGORY,
+    maxChanges: changeBudget,
+  });
+
   let promoted = 0;
   const selectedIds: string[] = [];
-  for (const item of selected) {
-    const source = promotable.find((entry) => entry.id === item.item.id);
-    const payload = mergeRadarIntelligencePayload(source?.row.payload ?? item.item.rawPayload, item);
+  const promote = async (id: string, viaDisplacement: boolean): Promise<boolean> => {
+    const meta = candidateMeta.get(id);
+    if (!meta) return false;
+    const payload = mergeRadarIntelligencePayload(meta.row.payload ?? meta.radar.item.rawPayload, meta.radar);
     const { error } = await input.supabase
       .from("surfaced_items")
       .update({
         destination: "radar",
         status: "shown",
-        score: item.score,
+        score: meta.composite,
         payload,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", item.item.id)
+      .eq("id", id)
       .eq("user_id", input.userId);
-    if (error) reasons.push(`${item.title}: promotion write failed (${error.message}).`);
-    else {
-      promoted++;
-      selectedIds.push(item.item.id);
-      reasons.push(`${item.title}: moved to Radar as a composed move.`);
+    if (error) {
+      reasons.push(`${meta.row.title}: promotion write failed (${error.message}).`);
+      return false;
     }
+    promoted++;
+    selectedIds.push(id);
+    reasons.push(`${meta.row.title}: promoted to ${meta.radar.category} (${meta.composite.toFixed(2)})${viaDisplacement ? " via displacement" : ""}.`);
+    return true;
+  };
+
+  for (const p of plan.promotions) {
+    await promote(p.id, false);
   }
-  const unselectedIds = promotable
-    .map((entry) => entry.id)
-    .filter((id) => !selectedIds.includes(id));
+
+  for (const d of plan.displacements) {
+    const demoteMeta = activeMeta.get(d.demote);
+    // Protect items the owner has engaged with — never displace an opened item.
+    if (demoteMeta?.status === "opened") {
+      reasons.push(`Kept ${demoteMeta.row.title ?? d.demote}: engaged by owner, not displaced.`);
+      continue;
+    }
+    const { error: demoteError } = await input.supabase
+      .from("surfaced_items")
+      .update({ destination: "holding", status: "discovered", updated_at: new Date().toISOString() })
+      .eq("id", d.demote)
+      .eq("user_id", input.userId);
+    if (demoteError) {
+      reasons.push(`Displacement demote failed (${demoteError.message}); leaving sitter in place.`);
+      continue;
+    }
+    await promote(d.promote, true);
+  }
+
+  if (plan.gaps.length > 0) {
+    reasons.push(
+      `Category gaps (Scout priority next run): ${plan.gaps.map((g) => `${g.category} ${g.have}/${g.need}`).join(", ")}.`,
+    );
+  }
+
+  const rejectedIds = [
+    ...gateRejectedIds,
+    ...candidateMembers.map((m) => m.id).filter((id) => !selectedIds.includes(id)),
+  ];
   await logPromotionDecisionRun({
     userId: input.userId,
     runId: input.runId,
     candidateIds,
     selectedIds,
-    rejectedIds: [...rejectedIds, ...unselectedIds],
+    rejectedIds,
     reasons,
-    slots: input.slots,
+    slots: changeBudget,
+    gaps: plan.gaps,
+    occupancy: plan.occupancy,
     supabase: input.supabase,
   });
   return {
@@ -1074,6 +1159,47 @@ async function promoteHoldingWithService(input: {
     promoted,
     reasons,
   };
+}
+
+/** Blends an enriched Radar item's sub-scores + live-location proximity into the
+ *  taste-dominant composite score (Prompt 2, Task 3a). */
+function compositeFor(
+  radar: ReturnType<typeof enrichRadarItem>,
+  item: ReturnType<typeof rowToIndexedItem>,
+  userLat: number | null,
+  userLng: number | null,
+): number {
+  const s = radar.scoreBreakdown;
+  const miles =
+    item.lat != null && item.lng != null && userLat != null && userLng != null
+      ? haversineMiles(userLat, userLng, item.lat, item.lng)
+      : null;
+  return blendRadarComposite(
+    deriveCompositeDimensions({
+      tasteFit: s.tasteFit,
+      timingFit: s.timingFit,
+      energyCost: s.energyCost,
+      moneyCost: s.moneyCost,
+      northAlignment: s.northAlignment.score,
+      longTermValue: s.longTermValue,
+      milesFromUser: miles,
+    }),
+  );
+}
+
+/** A candidate is not "timely/valid" for displacement if it has already expired
+ *  or its event start is in the past. */
+function isStaleForRadar(item: ReturnType<typeof rowToIndexedItem>): boolean {
+  const now = Date.now();
+  if (item.expiresAt) {
+    const expires = new Date(item.expiresAt).getTime();
+    if (Number.isFinite(expires) && expires <= now) return true;
+  }
+  if (item.startsAt) {
+    const starts = new Date(item.startsAt).getTime();
+    if (Number.isFinite(starts) && starts < now - 2 * 60 * 60 * 1000) return true;
+  }
+  return false;
 }
 
 async function runBootstrapProviderGather(input: {
@@ -1165,6 +1291,8 @@ async function logPromotionDecisionRun(input: {
   rejectedIds: string[];
   reasons: string[];
   slots: number;
+  gaps?: Array<{ category: string; have: number; need: number }>;
+  occupancy?: Record<string, number>;
   supabase: SupabaseClient;
 }): Promise<void> {
   if (input.candidateIds.length === 0) return;
@@ -1173,16 +1301,18 @@ async function logPromotionDecisionRun(input: {
     .insert({
       user_id: input.userId,
       run_type: "promotion_review",
-      input_summary: `Promotion Review evaluated ${input.candidateIds.length} surfaced item(s) for ${input.slots} Radar slot(s).`,
+      input_summary: `Promotion Review evaluated ${input.candidateIds.length} surfaced item(s) within a ${input.slots}-change living-5 budget.`,
       candidate_ids: input.candidateIds,
       selected_ids: input.selectedIds,
       rejected_ids: input.rejectedIds,
-      model: "deterministic-radar-curator",
+      model: "deterministic-radar-living-five",
       raw_output: {
         autopilot_run_id: input.runId ?? null,
-        gate: "enrichRadarItem + isPromotableWhenUnderfilled + shortlistRadarMoves",
-        slots: input.slots,
+        gate: "enrichRadarItem + isPromotableWhenUnderfilled + livingFive(composite)",
+        change_budget: input.slots,
         promoted: input.selectedIds.length,
+        occupancy: input.occupancy ?? null,
+        gaps: input.gaps ?? [],
         reasons: input.reasons.slice(0, 40),
       } satisfies Json,
     });
@@ -1199,7 +1329,7 @@ async function logPromotionDecisionRun(input: {
       context: {
         autopilot_run_id: input.runId ?? null,
         slots: input.slots,
-        gate: "enrichRadarItem + isPromotableWhenUnderfilled + shortlistRadarMoves",
+        gate: "enrichRadarItem + isPromotableWhenUnderfilled + livingFive(composite)",
       },
       candidates: input.candidateIds,
       filtered_out: input.rejectedIds,

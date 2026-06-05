@@ -56,6 +56,16 @@ export const MAX_PRODUCTS_PER_REFRESH = 2;
 /** Max North / direction-oriented items per refresh. */
 export const MAX_NORTH_IDEAS_PER_REFRESH = 2;
 
+// ── Living-5 engine (per-category top-5) ─────────────────────────────────────
+
+/** Each Radar category holds exactly its 5 strongest current fits. */
+export const RADAR_LIVING_FIVE_PER_CATEGORY = 5;
+
+/** Max board changes (promotions + displacements) per autopilot run. Bounds the
+ *  time / Claude budget per run; the board fills across runs. Not suppressed by
+ *  the global active count — empty categories fill even when others are full. */
+export const RADAR_PROMOTIONS_PER_RUN = 6;
+
 // ── Weekday energy limits ─────────────────────────────────────────────────────
 
 /** On Mon–Fri: max items tagged "paid" or requiring paid commitment. */

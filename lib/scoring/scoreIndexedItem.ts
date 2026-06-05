@@ -94,9 +94,9 @@ export function scoreIndexedItem(
     }
   }
 
-  // Category fit (favors atmospheric / dining / culture lanes).
+  // Category fit (favors Jerry's atmospheric lanes — see lib/radar/category.ts).
   if (item.category) {
-    if (["dining", "culture", "music", "places"].includes(item.category)) {
+    if (["dining", "culture", "places"].includes(item.category)) {
       modifier += 0.04;
       reasons.push(`Matches ${item.category} taste`);
     }
