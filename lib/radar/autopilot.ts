@@ -12,6 +12,7 @@ import { runCategoryScout } from "@/lib/brain/categoryAgents";
 import { runEventScout } from "@/lib/brain/eventScout";
 import { processCandidates } from "@/lib/intelligence/libraryWorker";
 import { processEventCandidates } from "@/lib/intelligence/eventWorker";
+import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
 import { processRefresh } from "@/lib/brain/refresher";
 import { runAmbientIntelligence } from "@/lib/intelligence/ambientRuns";
 import { buildJarvisContext } from "@/lib/intelligence/context";
@@ -1006,7 +1007,18 @@ async function executeOperation(input: {
         }
         break;
       }
-      case "stale_cleanup":
+      case "stale_cleanup": {
+        const cleanup = await cleanupRadar(input.userId, { supabase: input.supabase });
+        result.summary = [
+          cleanup.archived > 0 ? `Archived ${cleanup.archived}` : "",
+          cleanup.moved_to_discovered > 0 ? `Demoted ${cleanup.moved_to_discovered} stale` : "",
+          cleanup.deduped > 0 ? `Deduped ${cleanup.deduped}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ") || "Stale cleanup ran — board is clean.";
+        result.candidatesRejected += cleanup.archived;
+        break;
+      }
       case "no_op":
       default:
         result.skipped = true;
@@ -1121,7 +1133,12 @@ async function promoteHoldingWithService(input: {
   const promote = async (id: string, viaDisplacement: boolean): Promise<boolean> => {
     const meta = candidateMeta.get(id);
     if (!meta) return false;
-    const payload = mergeRadarIntelligencePayload(meta.row.payload ?? meta.radar.item.rawPayload, meta.radar);
+    const now = new Date().toISOString();
+    const basePayload = mergeRadarIntelligencePayload(
+      meta.row.payload ?? meta.radar.item.rawPayload,
+      meta.radar,
+    );
+    const payload = { ...(basePayload as Record<string, unknown>), shown_at: now };
     const { error } = await input.supabase
       .from("surfaced_items")
       .update({
@@ -1129,7 +1146,7 @@ async function promoteHoldingWithService(input: {
         status: "shown",
         score: meta.composite,
         payload,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       })
       .eq("id", id)
       .eq("user_id", input.userId);

@@ -1,11 +1,12 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { rowToIndexedItem } from "@/lib/index/repo";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import type { SurfacedItemRow } from "@/lib/types/database";
 
-const PROTECTED = new Set(["saved", "planned", "completed", "archived"]);
+const PROTECTED = new Set(["saved", "planned", "completed", "archived", "opened"]);
 
 export type RadarCleanupResult = {
   ok: boolean;
@@ -21,8 +22,11 @@ export type RadarCleanupResult = {
   reasons: string[];
 };
 
-export async function cleanupRadar(userId: string): Promise<RadarCleanupResult> {
-  const supabase = await getServerSupabase();
+export async function cleanupRadar(
+  userId: string,
+  opts: { supabase?: SupabaseClient } = {},
+): Promise<RadarCleanupResult> {
+  const supabase = opts.supabase ?? (await getServerSupabase());
   const { data, error } = await supabase
     .from("surfaced_items")
     .select("*")
@@ -49,6 +53,36 @@ export async function cleanupRadar(userId: string): Promise<RadarCleanupResult> 
       preserved++;
       continue;
     }
+
+    // Age-based eviction: items shown with no engagement beyond the threshold
+    // are demoted back to discovered so the board rotates.
+    if (row.status === "shown") {
+      const payload = row.payload as Record<string, unknown> | null;
+      const shownAt = typeof payload?.shown_at === "string" ? payload.shown_at : null;
+      if (shownAt) {
+        const ageMs = Date.now() - new Date(shownAt).getTime();
+        const isEvent =
+          row.type === "event" ||
+          (typeof row.starts_at === "string" && row.starts_at.length > 0);
+        // Events: 4 days. Places and everything else: 7 days.
+        const thresholdMs = (isEvent ? 4 : 7) * 24 * 60 * 60 * 1000;
+        if (ageMs > thresholdMs) {
+          const { error: staleError } = await supabase
+            .from("surfaced_items")
+            .update({ status: "discovered", updated_at: new Date().toISOString() })
+            .eq("id", row.id)
+            .eq("user_id", userId);
+          if (!staleError) {
+            movedDiscovered++;
+            reasons.push(
+              `${row.title ?? row.id}: stale — shown ${Math.floor(ageMs / 86_400_000)}d with no engagement`,
+            );
+          }
+          continue;
+        }
+      }
+    }
+
     const key = duplicateKey(row);
     const isDuplicate = seen.has(key);
     seen.add(key);
