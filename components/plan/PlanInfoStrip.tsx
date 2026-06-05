@@ -25,49 +25,69 @@ export function PlanInfoStrip({ blocks }: { blocks: PlanInfoBlock[] }) {
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {visibleBlocks.map((b, i) => (
-        <div
-          key={`${b.label}-${i}`}
-          className="flex flex-col items-center px-2 py-4 text-center"
-          style={
-            i < visibleBlocks.length - 1
-              ? { borderRight: "1px solid var(--border)" }
-              : undefined
-          }
-        >
-          {b.icon ? (
-            <PlanIcon
-              name={b.icon}
-              size={18}
-              stroke={b.missing ? "var(--text-faint)" : "var(--gold)"}
-            />
-          ) : null}
-          <div
-            className="mt-2 font-mono text-[9px] uppercase tracking-[0.18em]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {b.label}
-          </div>
-          <div
-            className="mt-1 font-serif"
-            style={{
-              color: b.missing ? "var(--text-muted)" : "var(--text-primary)",
-              fontSize: "18px",
-              lineHeight: 1.1,
-            }}
-          >
-            {b.value}
-          </div>
-          {b.sub ? (
+      {visibleBlocks.map((b, i) => {
+        const content = (
+          <>
+            {b.icon ? (
+              <PlanIcon
+                name={b.icon}
+                size={18}
+                stroke={b.missing ? "var(--text-faint)" : "var(--gold)"}
+              />
+            ) : null}
             <div
-              className="mt-1 text-[10px]"
-              style={{ color: "var(--text-faint)" }}
+              className="mt-2 font-mono text-[9px] uppercase tracking-[0.18em]"
+              style={{ color: "var(--text-muted)" }}
             >
-              {b.sub}
+              {b.label}
             </div>
-          ) : null}
-        </div>
-      ))}
+            <div
+              className="mt-1 font-serif"
+              style={{
+                color: b.missing ? "var(--text-muted)" : "var(--text-primary)",
+                fontSize: "18px",
+                lineHeight: 1.1,
+              }}
+            >
+              {b.value}
+            </div>
+            {b.sub ? (
+              <div
+                className="mt-1 text-[10px]"
+                style={{ color: "var(--text-faint)" }}
+              >
+                {b.sub}
+              </div>
+            ) : null}
+          </>
+        );
+        const className =
+          "flex flex-col items-center px-2 py-4 text-center transition-colors hover:bg-white/[0.03]";
+        const style =
+          i < visibleBlocks.length - 1
+            ? { borderRight: "1px solid var(--border)" }
+            : undefined;
+        return b.href ? (
+          <a
+            key={`${b.label}-${i}`}
+            href={b.href}
+            target={b.external ? "_blank" : undefined}
+            rel={b.external ? "noopener" : undefined}
+            className={className}
+            style={style}
+          >
+            {content}
+          </a>
+        ) : (
+          <div
+            key={`${b.label}-${i}`}
+            className={className}
+            style={style}
+          >
+            {content}
+          </div>
+        );
+      })}
     </section>
   );
 }

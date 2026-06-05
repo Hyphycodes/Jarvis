@@ -49,6 +49,9 @@ export type PlanInfoBlock = {
   sub?: string;
   /** Icon key resolved by components/plan/icons.tsx. */
   icon?: "clock" | "weather" | "parking" | "person";
+  /** Optional action URL; external links are opened in a new tab. */
+  href?: string;
+  external?: boolean;
   /** Set when this block fell back from missing data — used for muted styling. */
   missing?: boolean;
 };

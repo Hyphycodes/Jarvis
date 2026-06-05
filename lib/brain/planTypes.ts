@@ -139,6 +139,12 @@ export type PlanGenerationResult = {
   fallbackUsed: boolean;
   reason?: string;
   selectedPhotoUrl?: string | null;
+  reservation?: {
+    reservable: boolean;
+    bookingUrl: string | null;
+    website: string | null;
+    hoursSummary: string | null;
+  } | null;
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

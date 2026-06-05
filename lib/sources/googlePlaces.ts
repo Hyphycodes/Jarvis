@@ -30,6 +30,7 @@ export type GooglePlace = {
     | "PRICE_LEVEL_VERY_EXPENSIVE";
   websiteUri?: string;
   googleMapsUri?: string;
+  reservable?: boolean;
   editorialSummary?: { text: string };
   currentOpeningHours?: { openNow?: boolean };
   regularOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
@@ -202,6 +203,9 @@ const ENRICHMENT_FIELDS = [
   "places.formattedAddress",
   "places.location",
   "places.priceLevel",
+  "places.websiteUri",
+  "places.googleMapsUri",
+  "places.reservable",
   "places.primaryType",
   "places.types",
   "places.regularOpeningHours.weekdayDescriptions",

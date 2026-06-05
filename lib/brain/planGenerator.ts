@@ -23,6 +23,7 @@ import { summarizeInterestGraph } from "@/lib/brain/interests";
 import { buildConsiderationBrief } from "@/lib/items/considerationBrief";
 import type { IndexedItem } from "@/lib/index/types";
 import { getDailyForecast } from "@/lib/sources/openMeteo";
+import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import {
   hasGooglePlaces,
   nearbyPlaces,
@@ -59,7 +60,11 @@ SECTION GUIDANCE (use only what's relevant — not every plan needs all of these
 - "why": Why this belongs in the founder's world. Concrete, not generic.
 - "timing": When to go. Does it fit after work / a weekend / a route home? If
   the date/time is unknown, say what needs confirming.
-- "before": Prep — reservation, ticket, dress check. Only what saves wasted effort.
+- "before": Prep — reservation and timing. If reservation context is provided,
+  state a SPECIFIC suggested time to book (reason from the hours + the day/occasion;
+  e.g. "Book 7:30 PM Saturday — first seating after the room settles"). If a
+  booking link is provided, tell the user to tap Reserve. Never claim a booking is
+  already made.
 - "move": The actual main plan. What to do.
 - "route": Use known location/distance if available. Otherwise clean placeholder
   language — do not invent directions.
@@ -139,6 +144,7 @@ export async function generatePlanFromItem(
       fallbackUsed: true,
       reason: "no_anthropic_key",
       selectedPhotoUrl: supplemental.selectedPhotoUrl,
+      reservation: supplemental.reservation,
     };
   }
 
@@ -169,6 +175,7 @@ export async function generatePlanFromItem(
         fallbackUsed: true,
         reason: "schema_invalid",
         selectedPhotoUrl: supplemental.selectedPhotoUrl,
+        reservation: supplemental.reservation,
       };
     }
 
@@ -177,6 +184,7 @@ export async function generatePlanFromItem(
       plan: { ...parsed.data, status: "draft" },
       fallbackUsed: false,
       selectedPhotoUrl: supplemental.selectedPhotoUrl,
+      reservation: supplemental.reservation,
     };
   } catch (error) {
     console.error("[plan.generator] claude failed", error);
@@ -185,6 +193,7 @@ export async function generatePlanFromItem(
       fallbackUsed: true,
       reason: "claude_error",
       selectedPhotoUrl: supplemental.selectedPhotoUrl,
+      reservation: supplemental.reservation,
     };
   }
 }
@@ -275,6 +284,14 @@ function renderPrompt(
       chat_context: chatContext ?? null,
       supplemental_context: {
         ...supplemental,
+        reservation: supplemental.reservation
+          ? {
+              reservable: supplemental.reservation.reservable,
+              has_booking_url: Boolean(supplemental.reservation.bookingUrl),
+              has_website: Boolean(supplemental.reservation.website),
+              hours_summary: supplemental.reservation.hoursSummary,
+            }
+          : null,
         wardrobe: supplemental.wardrobeContext
           ? {
               summary: supplemental.wardrobeContext.summary,
@@ -303,6 +320,7 @@ function renderPrompt(
         "Include 'route' only if location data is available; otherwise omit or use placeholder language.",
         "Use supplemental weather for outfit/wear guidance when present.",
         "Use supplemental place details for verification only; do not claim a reservation or booking exists.",
+        "Use supplemental reservation context to suggest a specific booking time when present; if a booking URL exists, refer to the Reserve action instead of writing the URL.",
         "Use cost_estimate and party size to write a practical cost section when relevant.",
         "For products, style, articles, ideas, land, and creative inspiration, prefer research/compare/verify steps over fake execution logistics.",
         "For 'detours' and 'after' sections: structure as satellites — specific named places with what they are, why they fit, distance/timing, and rough cost. Format: one paragraph intro, then each satellite as a bullet: '**Name** — [what it is, why it fits, ~X min away, ~$Y]'. Max 2 before, 2 instead, 2 after. If nothing genuinely fits, omit the section entirely.",
@@ -453,8 +471,15 @@ type PlanSupplementalContext = {
     hoursSummary?: string;
     summary?: string;
     photoNames?: string[];
+    reservable?: boolean;
   } | null;
   selectedPhotoUrl: string | null;
+  reservation: {
+    reservable: boolean;
+    bookingUrl: string | null;
+    website: string | null;
+    hoursSummary: string | null;
+  } | null;
   nearbyAlternatives: Array<{
     name: string;
     address?: string;
@@ -505,6 +530,7 @@ async function buildSupplementalContext(
         category: item.category ?? "places",
       }).catch(() => null)
     : null;
+  const reservation = await resolveReservation(item, placeDetails).catch(() => null);
 
   // Wardrobe context — only for plans with a clear formality signal AND a
   // known owner id (background plan fill has no session, so userId is threaded
@@ -533,6 +559,7 @@ async function buildSupplementalContext(
     weather: weatherResult.status === "fulfilled" ? weatherResult.value : null,
     placeDetails,
     selectedPhotoUrl,
+    reservation,
     nearbyAlternatives:
       alternativesResult.status === "fulfilled" ? alternativesResult.value : [],
     costEstimate: costEstimateForItem(item, chatContext?.partySize),
@@ -594,7 +621,7 @@ async function fetchWeatherForTiming(
 async function enrichPlaceFromGooglePlaces(
   item: IndexedItem,
 ): Promise<PlanSupplementalContext["placeDetails"]> {
-  if (!hasGooglePlaces() || !needsPlaceEnrichment(item)) return null;
+  if (!hasGooglePlaces() || (!needsPlaceEnrichment(item) && !isDiningReservationCandidate(item))) return null;
   const query = [item.title, item.locationName, item.address].filter(Boolean).join(" ");
   if (!query.trim()) return null;
   const place = await searchPlaceForEnrichment({
@@ -614,6 +641,50 @@ async function enrichPlaceFromGooglePlaces(
     hoursSummary: place.regularOpeningHours?.weekdayDescriptions?.join(" | "),
     summary: place.editorialSummary?.text,
     photoNames: place.photos?.map((photo) => photo.name).filter(Boolean) ?? [],
+    reservable: place.reservable,
+  };
+}
+
+function isDiningReservationCandidate(item: IndexedItem): boolean {
+  return (
+    item.type === "restaurant" ||
+    item.category === "dining" ||
+    item.tags.some((tag) =>
+      ["dining", "restaurant", "bar"].includes(tag.toLowerCase()),
+    )
+  );
+}
+
+async function resolveReservation(
+  item: IndexedItem,
+  placeDetails: PlanSupplementalContext["placeDetails"],
+): Promise<PlanSupplementalContext["reservation"]> {
+  if (!isDiningReservationCandidate(item)) return null;
+
+  const reservable = Boolean(placeDetails?.reservable);
+  const website = placeDetails?.website ?? null;
+
+  let bookingUrl: string | null = null;
+  if (hasTavily()) {
+    const res = await searchWeb({
+      query: `${item.title} reservation booking`,
+      maxResults: 3,
+      includeDomains: [
+        "opentable.com",
+        "resy.com",
+        "exploretock.com",
+        "sevenrooms.com",
+      ],
+    }).catch(() => null);
+    bookingUrl = res?.results?.[0]?.url ?? null;
+  }
+  if (!bookingUrl) bookingUrl = website;
+
+  return {
+    reservable,
+    bookingUrl,
+    website,
+    hoursSummary: placeDetails?.hoursSummary ?? null,
   };
 }
 

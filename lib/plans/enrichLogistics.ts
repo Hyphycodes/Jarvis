@@ -28,15 +28,17 @@ export async function enrichInfoStrip(
 ): Promise<PlanInfoBlock[]> {
   const blocks = brief.infoStrip.map((b) => ({ ...b }));
 
-  const [weather, parking, inArea] = await Promise.all([
+  const [weather, parking, inArea, reservation] = await Promise.all([
     resolveWeather(brief, loaded).catch(() => null),
     resolveParking(brief, loaded).catch(() => null),
     resolveInArea(brief, loaded).catch(() => null),
+    resolveReservationBlock(loaded).catch(() => null),
   ]);
 
   if (weather) blocks[1] = weather;
   if (parking) blocks[2] = parking;
   if (inArea) blocks[3] = inArea;
+  if (reservation) blocks.unshift(reservation);
 
   return blocks;
 }
@@ -144,6 +146,35 @@ async function resolveInArea(
     value: match.name,
     sub: match.neighborhood ?? undefined,
     icon: "person",
+  };
+}
+
+async function resolveReservationBlock(
+  loaded: LoadedPlan,
+): Promise<PlanInfoBlock | null> {
+  const keyStats = isRecord(loaded.keyStats) ? loaded.keyStats : {};
+  const reservation = isRecord(keyStats.reservation)
+    ? keyStats.reservation
+    : null;
+  const bookingUrl =
+    typeof reservation?.bookingUrl === "string" &&
+    reservation.bookingUrl.startsWith("http")
+      ? reservation.bookingUrl
+      : null;
+  if (!bookingUrl) return null;
+  const suggestedTime =
+    typeof reservation?.suggestedTime === "string" &&
+    reservation.suggestedTime.trim()
+      ? reservation.suggestedTime.trim()
+      : "Book ahead";
+  const reservable = reservation?.reservable === true;
+  return {
+    label: "RESERVE",
+    value: suggestedTime,
+    sub: reservable ? "Reservation path found" : "Open booking page",
+    icon: "clock",
+    href: bookingUrl,
+    external: true,
   };
 }
 

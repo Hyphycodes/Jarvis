@@ -391,6 +391,12 @@ export async function fillPlan(input: {
     best_window: plan.best_window,
     primary_move: plan.primary_move,
     hero_image_url: result.selectedPhotoUrl ?? null,
+    reservation: result.reservation
+      ? {
+          ...result.reservation,
+          suggestedTime: fallbackUsed ? null : extractReservationSuggestedTime(plan),
+        }
+      : null,
     location_name: plan.location_name,
     address: plan.address,
     plan_type: plan.plan_type,
@@ -913,6 +919,23 @@ function isPlanBuildCancelled(state: PlanBuildState): boolean {
         state.build_status === "cancelled" ||
         state.cancelled_at),
   );
+}
+
+function extractReservationSuggestedTime(plan: GeneratedPlan): string | null {
+  const text = [
+    plan.best_window,
+    plan.sections.find((section) => section.section_type === "before")?.body,
+    plan.sections.find((section) => section.section_type === "timing")?.body,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+  const match = text.match(
+    /\b(?:book|reserve|reservation)?\s*((?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s?(?:AM|PM))(?:\s+(?:on\s+)?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))?/i,
+  );
+  if (!match) return null;
+  const time = match[1].replace(/\s+/g, " ").toUpperCase();
+  const day = match[2] ? ` ${match[2]}` : "";
+  return `${time}${day}`;
 }
 
 async function ensureUniqueSlug(
