@@ -201,7 +201,7 @@ async function convertPlace(
       user_id: userId,
       name: row.title,
       slug: placeSlug,
-      place_type: "restaurant",
+      place_type: inferPlaceType(row),
       neighborhood: readNeighborhood(row),
       address: stringValue(readRaw(row, ["formattedAddress"])) ?? stringValue(readRaw(row, ["address"])) ?? null,
       cuisine_or_focus: readCuisine(row),
@@ -427,6 +427,24 @@ function readCuisine(row: RadarCandidateInboxRow): string | null {
   if (/japanese/.test(tagList)) return "Japanese";
   if (/mediterranean|middle eastern|greek/.test(tagList)) return "Mediterranean";
   if (/steak|restaurant|dining|food/.test(tagList)) return "Dining";
+  return null;
+}
+
+function inferPlaceType(row: RadarCandidateInboxRow): string | null {
+  const signal = [
+    readCuisine(row) ?? "",
+    ...(tags(row) ?? []),
+    row.title ?? "",
+    typeof row.description === "string" ? row.description : "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  // Map to a coarse place_type the category normalizer understands. Default to
+  // null instead of "restaurant" so unknown places are not silently mislabeled.
+  if (/\b(bar|lounge|cocktail|listening|speakeasy)\b/.test(signal)) return "bar";
+  if (/\b(museum|gallery|theater|theatre|building|exhibit|cultural|arts?)\b/.test(signal)) return "culture";
+  if (/\b(park|trail|garden|court|range|gym|studio|outdoor)\b/.test(signal)) return "activity";
+  if (/\b(restaurant|dining|kitchen|eatery|bistro|cuisine|omakase|steakhouse|cafe)\b/.test(signal)) return "restaurant";
   return null;
 }
 

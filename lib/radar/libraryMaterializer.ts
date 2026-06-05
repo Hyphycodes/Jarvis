@@ -18,6 +18,7 @@ type MaterializerResult = {
 
 const MATERIALIZER_SOURCE = "library_materializer";
 const MAX_INSERTIONS_PER_CALL = 16;
+const STUB_VERDICT_MARKER = "Converted from Candidate Inbox";
 
 export async function materializeEligibleLibraryItems(
   userId: string,
@@ -38,6 +39,7 @@ export async function materializeEligibleLibraryItems(
       .from("places_library")
       .select("id, name, slug, place_type, neighborhood, address, lat, lng, cuisine_or_focus, price_level, hours_summary, vibe_keywords, best_for, verdict, verdict_strength, quality_tier, quality_score, seasonal_notes, last_surfaced_at, times_surfaced, image_url")
       .eq("user_id", userId)
+      .eq("enrichment_status", "enriched")
       .in("quality_tier", ["A", "B"])
       .gte("quality_score", RADAR_UNDERFILLED_PROMOTION_FLOOR)
       .order("quality_score", { ascending: false })
@@ -73,7 +75,10 @@ export async function materializeEligibleLibraryItems(
   );
 
   const rows: SurfacedItemInsert[] = [];
-  const places = (placesRes.data ?? []) as PlacesLibraryRow[];
+  const places = ((placesRes.data ?? []) as PlacesLibraryRow[]).filter((place) => {
+    const verdict = typeof place.verdict === "string" ? place.verdict : "";
+    return !verdict.includes(STUB_VERDICT_MARKER);
+  });
   const events = (eventsRes.data ?? []) as CurrentEventRow[];
 
   const maybeQueue = (sourceId: string, row: SurfacedItemInsert) => {
@@ -124,7 +129,7 @@ function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): Surfaced
     source: MATERIALIZER_SOURCE,
     source_id: place.id,
     type: "place",
-    category: normalizeRadarCategory(place.place_type ?? place.cuisine_or_focus ?? "places"),
+    category: deriveCategory(place),
     title: place.name,
     subtitle: place.neighborhood ?? null,
     description: place.verdict ?? null,
@@ -150,6 +155,27 @@ function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): Surfaced
       times_surfaced: place.times_surfaced,
     } satisfies Json,
   };
+}
+
+function deriveCategory(place: {
+  place_type?: string | null;
+  cuisine_or_focus?: string | null;
+  vibe_keywords?: string[] | null;
+  name: string;
+}): string | null {
+  // place_type is unreliable because bulk conversion historically defaulted it
+  // to "restaurant", so only trust explicit non-default values.
+  if (place.place_type && place.place_type !== "restaurant") {
+    return normalizeRadarCategory(place.place_type);
+  }
+  const signal = [
+    place.cuisine_or_focus ?? "",
+    ...(place.vibe_keywords ?? []),
+    place.name,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return normalizeRadarCategory(signal);
 }
 
 function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedItemInsert {
