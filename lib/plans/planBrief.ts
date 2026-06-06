@@ -142,6 +142,9 @@ export type PlanBrief = {
   scheduledDate?: string;
   /** Scheduled time in HH:MM 24h, when set. */
   scheduledTime?: string;
+  /** True when the date is an official, locked event time — offer Add-to-Calendar
+   *  directly (no reschedule), only surrounding details are adjustable. */
+  scheduleFixed?: boolean;
   /** "building" while the background generator is still filling sections. */
   buildStatus?: string;
   heroImage?: string;

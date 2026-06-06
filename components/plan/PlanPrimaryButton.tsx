@@ -24,6 +24,7 @@ export function PlanPrimaryButton({
   labelOverride,
   suggestedStart,
   scheduled,
+  scheduleFixed,
   dayOf,
 }: {
   state: PlanState;
@@ -34,6 +35,9 @@ export function PlanPrimaryButton({
   suggestedStart?: string;
   /** True when the plan already has a committed schedule. */
   scheduled?: boolean;
+  /** True when the date is an official, locked event time — Add-to-Calendar uses
+   *  it directly; no rescheduling (only surrounding details are adjustable). */
+  scheduleFixed?: boolean;
   /** True only when the plan's target date is today — the only time we "begin". */
   dayOf?: boolean;
 }) {
@@ -43,13 +47,38 @@ export function PlanPrimaryButton({
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const config = configFor(state);
-  // On a future/undated plan the move is to put it on the calendar, not start it
-  // tonight. "Begin Evening" only appears on the actual day.
-  const isSchedulable = (state === "ready" || state === "holding") && !dayOf;
+  // Fixed (event) plans before the day: the date is locked, so the move is to
+  // drop the official time onto the calendar — not pick a new one.
+  const isFixedFuture =
+    Boolean(scheduleFixed) && !dayOf && (state === "ready" || state === "holding");
+  // Flexible plans before the day: the move is to choose a time + put it on the
+  // calendar, not start it tonight. "Begin Evening" only appears on the day.
+  const isSchedulable =
+    (state === "ready" || state === "holding") && !dayOf && !scheduleFixed;
   const label =
     labelOverride ??
-    (isSchedulable ? (scheduled ? "Reschedule" : "Add to Calendar") : config.label);
+    (isFixedFuture
+      ? "Add to Calendar"
+      : isSchedulable
+        ? scheduled
+          ? "Reschedule"
+          : "Add to Calendar"
+        : config.label);
   const disabled = config.disabled || (!planId && state !== "ready");
+
+  // A fixed-date plan downloads its .ics directly (the date can't change).
+  if (isFixedFuture && planId) {
+    return (
+      <a
+        href={`/api/plans/${planId}/ics`}
+        className="flex w-full items-center justify-center gap-3 rounded-md py-4 text-[11px] uppercase tracking-[0.22em] transition-opacity duration-300 ease-atmospheric active:translate-y-px"
+        style={{ background: config.background, color: config.color, border: config.border }}
+      >
+        {label}
+        <ArrowRightIcon size={14} stroke="currentColor" />
+      </a>
+    );
+  }
 
   async function post(path: string): Promise<void> {
     const res = await fetch(`/api/plans/${planId}/${path}`, { method: "POST" });
