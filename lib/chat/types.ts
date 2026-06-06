@@ -48,7 +48,9 @@ export type ChatActionType =
   | "compare"
   | "dismiss"
   | "not_my_vibe"
-  | "add_to_schedule";
+  | "add_to_schedule"
+  | "open_closet"
+  | "undo_import";
 
 export type ChatChip = {
   label: string;

@@ -54,12 +54,23 @@ GarmentExtraction = {
 }
 
 RULES — be disciplined:
-- Extract ONLY garments/accessories the owner is wearing or clearly showing. ONE entry per distinct item.
-- Set ignore=true (or omit) for: background clutter, furniture, store racks, shadows, walls, plants, other people's clothing, items on the floor, and anything not clearly the owner's piece.
-- Do NOT invent a brand. Only set brand from a visible logo/label or the provided context.
-- material/pattern/fit are best-effort; use null when genuinely unsure and lower confidence.
-- If the photo is a single product/screenshot, return that one item.
-- Honor the user context note exactly (e.g. "most are Zara", "ignore the clothes on the floor", "that jacket isn't mine", "these are old photos"). If the note says to ignore something or that an item isn't theirs, set ignore=true for it.
+- Extract ONLY garments/accessories the owner is actively WEARING. ONE entry per distinct item.
+- Set ignore=true for anything not clearly worn by the owner: background clutter, furniture, store racks, shelves, shopping bags, counter items, fragrance bottles, products on hangers/floor, mirrors, plants, walls, other people's clothing. In dressing-room or store photos, assume only the worn outfit is owned — do NOT log surrounding stock.
+- Accessories (sunglasses, glasses, watches, bags, jewelry, belts): only include if clearly being worn AND central to the look; otherwise ignore. Never log a fragrance/bottle/box as a garment.
+
+MATERIAL & CONFIDENCE — do not overstate:
+- Never assert a fabric you can't see. Only set "material" when a label is visible or the texture is unmistakable (e.g. obvious denim, leather, ribbed knit). Otherwise use null and put a hedge in style_notes ("likely cotton") — do NOT claim wool/linen/silk/cashmere from a photo.
+- Lower "confidence" whenever color, material, or identity is a guess. Uncertain item → confidence below 0.55 so it gets held for review rather than asserted.
+
+COLOR — use precise wardrobe language, not vague terms:
+- Prefer nuanced names: oatmeal, cream, off-white, charcoal, sage-gray, blue-gray, washed black, faded black, light-wash blue, pale blue.
+- DENIM: always name the wash, not just "blue/black": black denim, washed black denim, faded black, dark indigo, medium-wash blue, light-wash blue, pale blue denim.
+- Do NOT mislabel clearly-blue denim as "gray" or "light gray". If lighting makes the true color ambiguous, pick the most likely color, lower confidence, and note the uncertainty in style_notes.
+
+BRAND & CONTEXT — apply the note narrowly:
+- Do NOT invent a brand. Only set brand from a visible logo/label OR a SPECIFIC context attribution.
+- Map a context note ONLY to the item it describes. "Most stuff is Zara, blue hoodie is Ralph Lauren" → set brand=Ralph Lauren on the blue hoodie ONLY; you MAY set Zara on other clearly-worn garments if plausible, but NEVER assign any brand to background/ignored objects.
+- Honor ignore/ownership instructions exactly ("ignore the clothes on the floor", "that jacket isn't mine", "these are old") → set ignore=true for those.
 - Prefer fewer, accurate items over many speculative ones.`;
 
 export async function analyzeGarments(input: {

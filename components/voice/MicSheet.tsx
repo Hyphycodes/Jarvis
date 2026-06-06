@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Mic } from "@/components/icons";
 import type { IntentResult } from "@/lib/brain/intentClassifier";
 import type { ChatAttachment, ChatChip } from "@/lib/chat/types";
+import { buildClosetChips } from "@/lib/wardrobe/closetChips";
 import { useRealtimeVoice } from "@/lib/voice/useRealtimeVoice";
 import { buildSheetContext } from "@/lib/voice/buildSheetContext";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
@@ -334,6 +335,47 @@ export function MicSheet({
 
   // ── Send message ────────────────────────────────────────────────────────────
 
+  // Poll a queued closet-import job and post the simple completion line +
+  // closet chips when it finishes. The push notification covers the case where
+  // the user has closed the sheet; this covers the case where it's still open.
+  const pollWardrobeImport = useCallback(async (jobId: string) => {
+    const deadline = Date.now() + 3 * 60 * 1000; // 3 min cap
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 4000));
+      let data: { status?: string; summary_text?: string | null; result?: { clarifications?: number } | null } | null = null;
+      try {
+        const res = await fetch(`/api/wardrobe/import?job_id=${encodeURIComponent(jobId)}`);
+        if (res.ok) data = await res.json();
+      } catch { /* keep polling */ }
+      if (!data) continue;
+
+      if (data.status === "done") {
+        const needsConfirmation = (data.result?.clarifications ?? 0) > 0;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "jarvis",
+            content: data!.summary_text || "Closet import complete.",
+            timestamp: Date.now(),
+            chips: buildClosetChips(jobId, { needsConfirmation }),
+          },
+        ]);
+        return;
+      }
+      if (data.status === "failed") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "jarvis",
+            content: "I hit a snag importing those — try sending them again.",
+            timestamp: Date.now(),
+          },
+        ]);
+        return;
+      }
+    }
+  }, []);
+
   const handleSendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || state === "thinking" || state === "responding") return;
@@ -394,6 +436,7 @@ export function MicSheet({
       let accumulated = "";
       let buffer = "";
       let intentChips: ChatChip[] = [];
+      let wardrobeJobId: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -416,6 +459,7 @@ export function MicSheet({
               chips?: Array<string | ChatChip>;
               plan_context?: IntentResult["plan_context"];
               message?: string;
+              wardrobe_job_id?: string | null;
             };
 
             if (event.type === "token" && event.text) {
@@ -423,6 +467,7 @@ export function MicSheet({
               setCurrentResponse(accumulated);
             } else if (event.type === "intent") {
               intentChips = normalizeChips(event.chips);
+              if (event.wardrobe_job_id) wardrobeJobId = event.wardrobe_job_id;
               if (event.ask_about_plan && event.plan_context?.place_name) {
                 setPlanCard({
                   place_name: event.plan_context.place_name,
@@ -452,6 +497,7 @@ export function MicSheet({
               }
               setState("idle");
               setAnalyzingImage(false);
+              if (wardrobeJobId) void pollWardrobeImport(wardrobeJobId);
             } else if (event.type === "error") {
               setError(event.message ?? "Something went wrong.");
               setState("idle");
@@ -489,7 +535,7 @@ export function MicSheet({
       setAnalyzingImage(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachments, maybeAddPushPromptChip]);
+  }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachments, maybeAddPushPromptChip, pollWardrobeImport]);
 
   const busy = state === "thinking" || state === "responding";
 
@@ -543,6 +589,44 @@ export function MicSheet({
     if (busy) return;
     if (chip.action_type === "send_message" || chip.action_type === "find_similar" || chip.action_type === "compare") {
       void handleSendMessage(chip.message);
+      return;
+    }
+
+    if (chip.action_type === "open_closet") {
+      haptic(8);
+      const filter = stringPayload(chip.payload, "filter");
+      onClose();
+      router.push(filter ? `/wardrobe?filter=${encodeURIComponent(filter)}` : "/wardrobe");
+      return;
+    }
+
+    if (chip.action_type === "undo_import") {
+      const jobId = stringPayload(chip.payload, "job_id");
+      if (!jobId) return;
+      haptic(8);
+      try {
+        const res = await fetch("/api/wardrobe/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "undo_import", job_id: jobId }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { removed?: number };
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "jarvis",
+            content: data.removed
+              ? `Removed those ${data.removed} ${data.removed === 1 ? "piece" : "pieces"} from your closet.`
+              : "Nothing left to undo from that import.",
+            timestamp: Date.now(),
+          },
+        ]);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { role: "jarvis", content: "Couldn't undo that — try again from your closet.", timestamp: Date.now() },
+        ]);
+      }
       return;
     }
 

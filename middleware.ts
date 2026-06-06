@@ -13,6 +13,7 @@ export const CRON_API_PATHS = [
   "/api/library/archive-mine",
   "/api/events/scout",
   "/api/events/process",
+  "/api/wardrobe/process-imports",
   "/api/finds/scout",
   "/api/tastemakers/sweep",
   "/api/push/evening",

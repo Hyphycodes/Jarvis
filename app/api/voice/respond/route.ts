@@ -10,6 +10,8 @@ import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPromp
 import { buildChatMessages } from "@/lib/chat/buildChatMessages";
 import { buildCommandActionChips, routeChatIntent } from "@/lib/chat/routeChatIntent";
 import { handleImageDrop } from "@/lib/chat/handlers/handleImageDrop";
+import { enqueueWardrobeImport, processWardrobeImportJob } from "@/lib/wardrobe/importJobs";
+import { buildClosetChips } from "@/lib/wardrobe/closetChips";
 import { handleLinkDrop, type LinkChatAttachment } from "@/lib/chat/handlers/handleLinkDrop";
 import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
 import { saveItem, passItem } from "@/lib/actions/items";
@@ -224,7 +226,52 @@ export async function POST(req: Request) {
     const linkAttachment = attachments.find((a): a is LinkChatAttachment => a.type === "link");
     let intakeResult: ChatIntakeResult | null = null;
 
-    if (imageAttachment) {
+    // ── Wardrobe (closet) intent ──────────────────────────────────────────────
+    // Photos that are clearly about the owner's clothes go to a durable
+    // background closet-import job instead of blocking the chat. We acknowledge
+    // instantly; the worker extracts/dedupes/saves and notifies on completion.
+    const WARDROBE_RE = /\b(closet|wardrobe|outfit|fit|fits|wore|wearing|pieces?|garments?|clothes?|clothing|jacket|hoodie|jeans|sneakers?|shirt|tee)\b/i;
+    const isWardrobeIntent =
+      imageAttachment != null && (imageAttachments.length >= 2 || WARDROBE_RE.test(messageRaw));
+
+    let wardrobeJobId: string | null = null;
+    let wardrobeContextBlock: string | null = null;
+    let wardrobeChips: ChatChip[] = [];
+
+    if (isWardrobeIntent) {
+      try {
+        const { jobId, photoCount } = await enqueueWardrobeImport({
+          userId: owner.id,
+          photos: imageAttachments.map((a) => ({
+            base64: a.image_base64,
+            mediaType: a.image_media_type,
+          })),
+          contextNote: messageRaw || undefined,
+        });
+        wardrobeJobId = jobId;
+        after(() =>
+          processWardrobeImportJob(jobId).catch((err) =>
+            console.error("[voice.respond] wardrobe import process failed", err),
+          ),
+        );
+        wardrobeChips = buildClosetChips(jobId);
+        wardrobeContextBlock = [
+          `[CLOSET IMPORT QUEUED]`,
+          `You just started a background closet import of ${photoCount} photo(s).`,
+          messageRaw ? `The owner's note: "${messageRaw}".` : null,
+          `Acknowledge in ONE short, specific line — reference their note if useful (e.g. a named brand like the Ralph Lauren hoodie). Tell them they can close this while you process. Do NOT list, count, or invent pieces — the analysis runs in the background and you don't know the results yet.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      } catch (err) {
+        console.error("[voice.respond] wardrobe enqueue failed", err);
+        // Fall through to normal image handling below.
+      }
+    }
+
+    if (wardrobeJobId) {
+      // Closet import owns this turn — skip the radar/observation intake path.
+    } else if (imageAttachment) {
       intakeResult = await handleImageDrop({
         userId: owner.id,
         message,
@@ -310,6 +357,7 @@ export async function POST(req: Request) {
     }
 
     const actionChips = mergeChips(
+      wardrobeChips,
       capturedIntentChips,
       committedActionType
         ? commandChips.filter((chip) => chip.action_type !== committedActionType)
@@ -335,7 +383,7 @@ export async function POST(req: Request) {
       ? capturedIntentKind === "finds"
         ? `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner wants to acquire "${capturedIntentTitle}". You're researching the best option and will put it in Finds. Acknowledge in one short, natural line.`
         : `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner asked for "${capturedIntentTitle}". You've saved it to Radar and are researching it + building its plan now. Acknowledge in one short, natural line.`
-      : intakeResult?.contextBlock;
+      : wardrobeContextBlock ?? intakeResult?.contextBlock;
 
     const systemPrompt = renderChatSystemPrompt(context, {
       intent: routed.intent,
@@ -377,6 +425,7 @@ export async function POST(req: Request) {
           observation_id: intakeResult?.observationId,
           radar_item_id: intakeResult?.radarItemId,
           planning_state: intakeResult?.state,
+          wardrobe_job_id: wardrobeJobId,
         });
 
         // Prepend auto-commit confirmation before the LLM stream

@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       clarification_id?: string;
       answer?: string;
       patch?: Record<string, unknown>;
+      job_id?: string;
     };
     const now = new Date().toISOString();
 
@@ -89,6 +90,28 @@ export async function POST(req: Request) {
           .eq("id", body.clarification_id)
           .eq("user_id", owner.id);
         return NextResponse.json({ ok: true });
+      }
+
+      case "undo_import": {
+        if (!body.job_id) return bad("job_id required");
+        const { data: jData } = await supabase
+          .from("wardrobe_import_jobs")
+          .select("id,result")
+          .eq("id", body.job_id)
+          .eq("user_id", owner.id)
+          .maybeSingle();
+        const job = jData as { result?: { created_item_ids?: string[] } | null } | null;
+        const ids = Array.isArray(job?.result?.created_item_ids) ? job!.result!.created_item_ids! : [];
+        if (ids.length > 0) {
+          await supabase.from("wardrobe_items").delete().in("id", ids).eq("user_id", owner.id);
+        }
+        const nextResult = { ...(job?.result ?? {}), undone: true, created_item_ids: [] };
+        await supabase
+          .from("wardrobe_import_jobs")
+          .update({ result: nextResult, updated_at: now })
+          .eq("id", body.job_id)
+          .eq("user_id", owner.id);
+        return NextResponse.json({ ok: true, removed: ids.length });
       }
 
       default:
