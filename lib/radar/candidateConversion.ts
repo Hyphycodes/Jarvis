@@ -13,11 +13,15 @@ import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import { type RadarCategory } from "@/lib/radar/category";
 import {
   selectFairly,
+  rowCategory,
+  rowSource,
   tags,
   readRaw,
   stringValue,
   arrayValue,
+  type QueueEntry,
 } from "@/lib/radar/candidateSelection";
+import { enrichPlace } from "@/lib/library/enrichPlace";
 import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
 import type { RunBudget } from "@/lib/radar/foundationSprint";
 import type { FounderProfileRow, Json, RadarCandidateInboxRow } from "@/lib/types/database";
@@ -103,89 +107,155 @@ export async function convertCandidateInboxToLibrary(input: {
   const rows = (data ?? []) as RadarCandidateInboxRow[];
   const queue = selectFairly(rows, researchBudget);
 
-  for (const { row, category, userIntent } of queue) {
+  for (const entry of queue) {
     if (input.budget?.shouldStopSoon()) {
       result.timeBudgetReached = true;
       result.errors.push("Time budget reached during Candidate Inbox conversion. Partial progress saved.");
       break;
     }
-    result.reviewed++;
-    try {
-      // ── Cheap negative + junk filters before spending any research $ ──────────
-      const penalty = negativeFilter(row, avoid);
-      if (penalty) {
-        await markCandidate(input.supabase, input.userId, row.id, {
-          status: "rejected",
-          rejection_reason: penalty,
-          reason: { summary: penalty, source: "candidate_conversion" },
-        });
-        result.rejected++;
-        continue;
-      }
-      const quality = assessResultQuality({
-        title: row.title,
-        snippet: row.description,
-        url: row.url,
-        category: row.entity_type,
-        type: row.entity_type,
-      });
-      if (quality.hardReject) {
-        const reason = `Rejected by discovery quality filter: ${quality.reasons.join(" ") || quality.flags.join(", ")}.`;
-        await markCandidate(input.supabase, input.userId, row.id, {
-          status: "rejected",
-          rejection_reason: reason,
-          reason: { summary: reason, quality_flags: quality.flags, source: "candidate_conversion_quality_filter" },
-        });
-        result.rejected++;
-        continue;
-      }
-
-      // ── Route by category into the real research/verdict pipelines ────────────
-      if (category && PLACE_LIKE.has(category)) {
-        await researchAndStorePlace(input.supabase, input.userId, row, category, context, result, userIntent);
-        continue;
-      }
-      if (category === "events") {
-        await tryQueueEvent(input.supabase, input.userId, row, result);
-        continue;
-      }
-      if (category === "style") {
-        await researchAndSurfaceStyle(input.supabase, input.userId, row, context, result, userIntent);
-        continue;
-      }
-      if (classifyCandidate(row) === "source") {
-        const sourceId = await upsertSourceFromLibraryEntity({
-          userId: input.userId,
-          title: row.title,
-          url: row.url,
-          entityType: "source",
-          qualityScore: normalizedScore(row),
-          topics: tags(row),
-          supabase: input.supabase,
-        });
-        await markCandidate(input.supabase, input.userId, row.id, {
-          status: sourceId ? "library" : "evaluated",
-          reason: {
-            summary: sourceId ? "Converted into Source Graph." : "Source candidate needs enrichment.",
-            source_id: sourceId,
-          },
-        });
-        if (sourceId) result.sourcesCreated++;
-        else result.needsEnrichment++;
-        continue;
-      }
-
-      // Uncategorizable — keep it for context, don't surface a stub.
-      await markCandidate(input.supabase, input.userId, row.id, {
-        status: "evaluated",
-        reason: { summary: "Candidate reviewed; no confident category, kept for context." },
-      });
-      result.needsEnrichment++;
-    } catch (err) {
-      result.errors.push(`${row.title}: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    await processEntry(input.supabase, input.userId, entry, context, avoid, result);
   }
   return result;
+}
+
+/**
+ * Research + route a single inbox candidate immediately. Shared with the
+ * chat/voice user-intent path (lib/radar/userIntent.ts) so an explicit "I want
+ * to try X" runs through the exact same researcher → verdict → surface pipeline
+ * as the category agents — just prioritized.
+ */
+export async function convertSingleCandidate(input: {
+  userId: string;
+  candidateId: string;
+  supabase: SupabaseClient;
+}): Promise<CandidateConversionResult> {
+  const result: CandidateConversionResult = {
+    reviewed: 0,
+    placesCreated: 0,
+    placesUpdated: 0,
+    eventsCreated: 0,
+    eventsUpdated: 0,
+    styleSurfaced: 0,
+    sourcesCreated: 0,
+    rejected: 0,
+    duplicates: 0,
+    needsEnrichment: 0,
+    errors: [],
+    timeBudgetReached: false,
+  };
+  const { data: founderRow } = await input.supabase
+    .from("founder_profile")
+    .select("avoid_keywords,dealbreakers,vibe_keywords,pinned_principles")
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  const founder = founderRow as Partial<FounderProfileRow> | null;
+  const avoid = [...arrayValue(founder?.avoid_keywords), ...arrayValue(founder?.dealbreakers)];
+  const context = buildMinimalContext(founder);
+
+  const { data: rowData, error } = await input.supabase
+    .from("radar_candidate_inbox")
+    .select("*")
+    .eq("id", input.candidateId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (error || !rowData) {
+    result.errors.push(`candidate ${input.candidateId} not found: ${error?.message ?? "missing"}`);
+    return result;
+  }
+  const row = rowData as RadarCandidateInboxRow;
+  const entry: QueueEntry = {
+    row,
+    category: rowCategory(row),
+    userIntent: rowSource(row) === "user_intent",
+  };
+  await processEntry(input.supabase, input.userId, entry, context, avoid, result);
+  return result;
+}
+
+async function processEntry(
+  supabase: SupabaseClient,
+  userId: string,
+  entry: QueueEntry,
+  context: BrainContextPacket,
+  avoid: string[],
+  result: CandidateConversionResult,
+): Promise<void> {
+  const { row, category, userIntent } = entry;
+  result.reviewed++;
+  try {
+    // ── Cheap negative + junk filters before spending any research $ ──────────
+    const penalty = negativeFilter(row, avoid);
+    if (penalty) {
+      await markCandidate(supabase, userId, row.id, {
+        status: "rejected",
+        rejection_reason: penalty,
+        reason: { summary: penalty, source: "candidate_conversion" },
+      });
+      result.rejected++;
+      return;
+    }
+    const quality = assessResultQuality({
+      title: row.title,
+      snippet: row.description,
+      url: row.url,
+      category: row.entity_type,
+      type: row.entity_type,
+    });
+    if (quality.hardReject) {
+      const reason = `Rejected by discovery quality filter: ${quality.reasons.join(" ") || quality.flags.join(", ")}.`;
+      await markCandidate(supabase, userId, row.id, {
+        status: "rejected",
+        rejection_reason: reason,
+        reason: { summary: reason, quality_flags: quality.flags, source: "candidate_conversion_quality_filter" },
+      });
+      result.rejected++;
+      return;
+    }
+
+    // ── Route by category into the real research/verdict pipelines ────────────
+    if (category && PLACE_LIKE.has(category)) {
+      await researchAndStorePlace(supabase, userId, row, category, context, result, userIntent);
+      return;
+    }
+    if (category === "events") {
+      await tryQueueEvent(supabase, userId, row, result, userIntent);
+      return;
+    }
+    if (category === "style") {
+      await researchAndSurfaceStyle(supabase, userId, row, context, result, userIntent);
+      return;
+    }
+    if (classifyCandidate(row) === "source") {
+      const sourceId = await upsertSourceFromLibraryEntity({
+        userId,
+        title: row.title,
+        url: row.url,
+        entityType: "source",
+        qualityScore: normalizedScore(row),
+        topics: tags(row),
+        supabase,
+      });
+      await markCandidate(supabase, userId, row.id, {
+        status: sourceId ? "library" : "evaluated",
+        reason: {
+          summary: sourceId ? "Converted into Source Graph." : "Source candidate needs enrichment.",
+          source_id: sourceId,
+        },
+      });
+      if (sourceId) result.sourcesCreated++;
+      else result.needsEnrichment++;
+      return;
+    }
+
+    // Uncategorizable — keep it for context, don't surface a stub.
+    await markCandidate(supabase, userId, row.id, {
+      status: "evaluated",
+      reason: { summary: "Candidate reviewed; no confident category, kept for context." },
+    });
+    result.needsEnrichment++;
+  } catch (err) {
+    result.errors.push(`${row.title}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── Place-like research → real, non-stub places_library row ─────────────────────
@@ -273,11 +343,12 @@ async function researchAndStorePlace(
     .single();
   if (error) throw new Error(`places_library upsert failed: ${error.message}`);
 
+  const libraryId = (upserted as { id?: string } | null)?.id ?? null;
   await markCandidate(supabase, userId, row.id, {
     status: "library",
     reason: {
       summary: `Researched into ${category} Library with a real verdict (${score.toFixed(2)}). Awaiting enrichment + materialization.`,
-      library_id: (upserted as { id?: string } | null)?.id ?? null,
+      library_id: libraryId,
       category,
       quality_score: score,
       surface_priority: verdict.surface_priority,
@@ -288,6 +359,84 @@ async function researchAndStorePlace(
   if ((existing as { id?: string } | null)?.id) result.placesUpdated++;
   else result.placesCreated++;
   if (sourceId) result.sourcesCreated++;
+
+  // Owner explicitly asked for this → surface it now as a shown Radar card
+  // instead of leaving it in the discovered → promotion queue, but only once it
+  // carries a real verdict above the surfacing floor (never an unresearched stub).
+  if (userIntent && libraryId && score >= RADAR_UNDERFILLED_PROMOTION_FLOOR) {
+    await surfaceUserIntentPlace(supabase, userId, libraryId, category, score);
+  }
+}
+
+/** Enrich + surface a researched Library place as a shown Radar card for an
+ *  owner-requested (user_intent) item. */
+async function surfaceUserIntentPlace(
+  supabase: SupabaseClient,
+  userId: string,
+  libraryId: string,
+  category: RadarCategory,
+  score: number,
+): Promise<void> {
+  try {
+    await enrichPlace(libraryId);
+  } catch {
+    // best-effort — surface with whatever location data we have
+  }
+  const { data: lib } = await supabase
+    .from("places_library")
+    .select("name, neighborhood, address, lat, lng, verdict, quality_score, image_url, best_for, vibe_keywords, price_level, cuisine_or_focus")
+    .eq("id", libraryId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!lib) return;
+  const place = lib as Record<string, unknown>;
+  const now = new Date().toISOString();
+  const { data: existing } = await supabase
+    .from("surfaced_items")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("source_id", libraryId)
+    .not("status", "in", "(archived,passed)")
+    .limit(1);
+  const existingId = ((existing ?? []) as Array<{ id: string }>)[0]?.id;
+  const surfaceScore = typeof place.quality_score === "number" ? place.quality_score : score;
+  if (existingId) {
+    await supabase
+      .from("surfaced_items")
+      .update({ destination: "radar", status: "shown", score: surfaceScore, planning_state: "saved_to_radar", updated_at: now })
+      .eq("id", existingId)
+      .eq("user_id", userId);
+    return;
+  }
+  await supabase.from("surfaced_items").insert({
+    user_id: userId,
+    destination: "radar",
+    status: "shown",
+    source: "user_intent",
+    source_id: libraryId,
+    type: "place",
+    category,
+    title: stringValue(place.name) ?? "Saved place",
+    subtitle: stringValue(place.neighborhood),
+    description: stringValue(place.verdict),
+    location_name: stringValue(place.name),
+    address: stringValue(place.address),
+    lat: typeof place.lat === "number" ? place.lat : null,
+    lng: typeof place.lng === "number" ? place.lng : null,
+    url: null,
+    image_url: httpOrNull(place.image_url),
+    score: surfaceScore,
+    planning_state: "saved_to_radar",
+    reasons: arrayValue(place.best_for).slice(0, 3),
+    tags: arrayValue(place.vibe_keywords),
+    payload: {
+      source_layer: "places_library",
+      library_place_id: libraryId,
+      cuisine_or_focus: stringValue(place.cuisine_or_focus),
+      price_level: stringValue(place.price_level),
+      user_intent: true,
+    } as unknown as Json,
+  });
 }
 
 // ── Events → current_events(pending), only with a real future date ──────────────
@@ -296,6 +445,7 @@ async function tryQueueEvent(
   userId: string,
   row: RadarCandidateInboxRow,
   result: CandidateConversionResult,
+  userIntent = false,
 ): Promise<void> {
   const resolved = readStartsAt(row)
     ? { startsAt: readStartsAt(row) as string, venue: readVenue(row) }
@@ -364,6 +514,39 @@ async function tryQueueEvent(
     },
   });
   result.eventsCreated++;
+
+  // Owner explicitly asked → surface the dated event now as a shown Radar card.
+  if (userIntent) {
+    const { data: existingCard } = await supabase
+      .from("surfaced_items")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("category", "events")
+      .ilike("title", row.title)
+      .not("status", "in", "(archived,passed)")
+      .limit(1);
+    if (!((existingCard ?? []) as Array<{ id: string }>)[0]?.id) {
+      await supabase.from("surfaced_items").insert({
+        user_id: userId,
+        destination: "radar",
+        status: "shown",
+        source: "user_intent",
+        source_id: row.id,
+        type: "event",
+        category: "events",
+        title: row.title,
+        subtitle: venue,
+        description: typeof row.description === "string" ? row.description : null,
+        location_name: venue,
+        starts_at: resolved.startsAt,
+        url: row.url,
+        score: 0.9,
+        planning_state: "saved_to_radar",
+        tags: tags(row),
+        payload: { source_layer: "current_events", venue_name: venue, user_intent: true } as unknown as Json,
+      });
+    }
+  }
 }
 
 type ResolvedEventDate = { startsAt: string; venue: string | null };
@@ -449,7 +632,9 @@ async function researchAndSurfaceStyle(
     .insert({
       user_id: userId,
       destination: "radar",
-      status: "discovered",
+      // Owner-requested style surfaces as shown; agent-discovered style enters
+      // the discovered → promotion queue like everything else.
+      status: userIntent ? "shown" : "discovered",
       source: userIntent ? "user_intent" : "category_agent",
       source_id: row.id,
       type: "style",
@@ -460,6 +645,7 @@ async function researchAndSurfaceStyle(
       url,
       image_url: httpOrNull(row.image_url),
       score: dossier.strength,
+      planning_state: userIntent ? "saved_to_radar" : "observed",
       reasons: [dossier.why].filter(Boolean),
       tags: tags(row),
       payload: {
