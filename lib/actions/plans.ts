@@ -207,7 +207,8 @@ export async function createStubPlan(input: {
                 ...currentPayload,
                 plan_id: planRow.id,
                 plan_slug: slug,
-                plan_status: "draft",
+                plan_status:
+                  planRow.build_status === "building" ? "building" : "ready",
               } as Json,
             })
             .eq("id", item.id)
@@ -273,7 +274,7 @@ export async function createStubPlan(input: {
     ...currentPayload,
     plan_id: planId,
     plan_slug: slug,
-    plan_status: "draft",
+    plan_status: "building",
     planning_state: "planning_in_progress",
     source_observation_id: input.sourceObservationId ?? currentPayload.source_observation_id ?? null,
   } as Json;
@@ -476,6 +477,14 @@ export async function fillPlan(input: {
   const sourcePatch: Record<string, unknown> = {
     planning_state: "planned",
   };
+  const currentPayload = isRecord(itemRow.payload) ? { ...itemRow.payload } : {};
+  delete currentPayload.plan_build_attempts;
+  delete currentPayload.plan_build_exhausted;
+  sourcePatch.payload = {
+    ...currentPayload,
+    plan_id: input.planId,
+    plan_status: "ready",
+  } as Json;
   if (!input.preserveItemSurface) {
     sourcePatch.destination = inferItemDestination(plan.starts_at);
   }

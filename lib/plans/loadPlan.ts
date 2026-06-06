@@ -5,6 +5,7 @@
 
 import "server-only";
 
+import { fillPlan } from "@/lib/actions/plans";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getViewableProfileId } from "@/lib/auth";
 import type {
@@ -151,6 +152,30 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
   if (timelineRes.error)
     console.error("[plan.loader] timeline", timelineRes.error);
 
+  const keyStats = isRecord(planRow.key_stats) ? planRow.key_stats : {};
+  const sourceItemId =
+    typeof keyStats.source_item_id === "string"
+      ? keyStats.source_item_id
+      : undefined;
+  if (
+    planRow.build_status === "building" &&
+    (sectionsRes.data ?? []).length === 0 &&
+    sourceItemId &&
+    shouldAttemptOnTapFill(planRow.updated_at)
+  ) {
+    const locked = await markOnTapFillAttempt(supabase, planRow);
+    if (locked) {
+      await fillPlan({
+        planId: planRow.id,
+        userId: planRow.user_id,
+        itemId: sourceItemId,
+        preserveItemSurface: true,
+        persistFallback: false,
+      });
+      return loadPlanByIdV2(planRow.id);
+    }
+  }
+
   const sections: LoadedPlanSection[] = (
     (sectionsRes.data ?? []) as PlanSectionRow[]
   ).map((row) => {
@@ -184,7 +209,6 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
     sortOrder: row.sort_order,
   }));
 
-  const keyStats = isRecord(planRow.key_stats) ? planRow.key_stats : {};
   const slug = readSlug(planRow.key_stats) ?? planRow.id;
 
   // shape / is_sequential were added in migration 0018; the generated DB
@@ -249,10 +273,7 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
         : undefined,
     confidence:
       typeof keyStats.confidence === "number" ? keyStats.confidence : undefined,
-    sourceItemId:
-      typeof keyStats.source_item_id === "string"
-        ? keyStats.source_item_id
-        : undefined,
+    sourceItemId,
     fallbackUsed:
       typeof keyStats.fallback_used === "boolean"
         ? keyStats.fallback_used
@@ -266,6 +287,32 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+async function markOnTapFillAttempt(
+  supabase: Awaited<ReturnType<typeof getServerSupabase>>,
+  planRow: PlanRow,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("plans")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", planRow.id)
+    .eq("user_id", planRow.user_id)
+    .eq("updated_at", planRow.updated_at)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("[plan.loader] on-tap fill lock", error);
+    return false;
+  }
+  return Boolean(data);
+}
+
+function shouldAttemptOnTapFill(updatedAt: string | null | undefined): boolean {
+  if (!updatedAt) return true;
+  const updated = new Date(updatedAt).getTime();
+  if (Number.isNaN(updated)) return true;
+  return Date.now() - updated > 30_000;
+}
 
 function readSlug(keyStats: Json): string | undefined {
   if (!isRecord(keyStats)) return undefined;

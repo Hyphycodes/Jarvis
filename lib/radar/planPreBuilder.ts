@@ -34,7 +34,9 @@ export async function preBuildPlansForShownItems(
   const needsPlan = ((rows ?? []) as PreBuildRow[])
     .filter((row) => {
       const payload = isRecord(row.payload) ? row.payload : null;
-      return !payload?.plan_slug;
+      if (payload?.plan_build_exhausted) return false;
+      if (!payload?.plan_slug) return true;
+      return payload.plan_status === "building";
     })
     .slice(0, max);
 
@@ -55,14 +57,43 @@ export async function preBuildPlansForShownItems(
       });
 
       if (filled.fallbackUsed) {
-        const { error } = await supabase
+        const { error: planError } = await supabase
           .from("plans")
           .update({ build_status: "building" })
           .eq("id", stub.planId)
           .eq("user_id", userId);
-        if (error) {
+        if (planError) {
           errors.push(
-            `Plan pre-build fallback reset failed for item ${row.id}: ${error.message}`,
+            `Plan pre-build fallback reset failed for item ${row.id}: ${planError.message}`,
+          );
+        }
+
+        const { data: itemRow } = await supabase
+          .from("surfaced_items")
+          .select("payload")
+          .eq("id", row.id)
+          .eq("user_id", userId)
+          .single();
+        const payload = isRecord(itemRow?.payload) ? { ...itemRow.payload } : {};
+        const attempts =
+          typeof payload.plan_build_attempts === "number"
+            ? payload.plan_build_attempts
+            : 0;
+        delete payload.plan_slug;
+        delete payload.plan_id;
+        delete payload.plan_status;
+        payload.plan_build_attempts = attempts + 1;
+        if (attempts + 1 >= 4) {
+          payload.plan_build_exhausted = true;
+        }
+        const { error: itemError } = await supabase
+          .from("surfaced_items")
+          .update({ payload })
+          .eq("id", row.id)
+          .eq("user_id", userId);
+        if (itemError) {
+          errors.push(
+            `Plan pre-build fallback item reset failed for item ${row.id}: ${itemError.message}`,
           );
         }
         continue;
