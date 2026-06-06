@@ -1,5 +1,8 @@
+import { after } from "next/server";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { looksActionable, extractActionableIntent } from "@/lib/chat/intentCapture";
+import { captureUserIntent, researchUserIntent } from "@/lib/radar/userIntent";
 import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import { buildChatContext } from "@/lib/chat/context/buildChatContext";
 import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPrompt";
@@ -238,6 +241,41 @@ export async function POST(req: Request) {
       });
     }
 
+    // ── Actionable intent capture ────────────────────────────────────────────
+    // "I want to try Pizz'Amici next week" → capture as a prioritized user_intent
+    // candidate and research/surface it through the unified pipeline in the
+    // background. Gated by a cheap regex so we don't spend an LLM call per turn.
+    let capturedIntentTitle: string | null = null;
+    if (
+      !imageAttachment &&
+      !linkAttachment &&
+      !committedActionType &&
+      looksActionable(message)
+    ) {
+      try {
+        const intent = await extractActionableIntent(message, history);
+        if (intent) {
+          const candidateId = await captureUserIntent({
+            userId: owner.id,
+            title: intent.title,
+            note: intent.note,
+            dateHint: intent.dateHint,
+            category: intent.category,
+            kind: intent.kind,
+            origin: "voice",
+          });
+          capturedIntentTitle = intent.title;
+          after(() =>
+            researchUserIntent(owner.id, candidateId).catch((err) =>
+              console.error("[voice.respond] user-intent research failed", err),
+            ),
+          );
+        }
+      } catch (err) {
+        console.error("[voice.respond] intent capture failed", err);
+      }
+    }
+
     const actionChips = mergeChips(
       committedActionType
         ? commandChips.filter((chip) => chip.action_type !== committedActionType)
@@ -259,15 +297,19 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join("\n");
 
+    const intakeSummary = capturedIntentTitle
+      ? `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner asked for "${capturedIntentTitle}". You've saved it to Radar and are researching it + building its plan now. Acknowledge in one short, natural line.`
+      : intakeResult?.contextBlock;
+
     const systemPrompt = renderChatSystemPrompt(context, {
       intent: routed.intent,
       sheetContext: liveContext || undefined,
-      intakeSummary: intakeResult?.contextBlock,
+      intakeSummary,
     });
     const messages = buildChatMessages({
       message,
       history,
-      intakeContext: intakeResult?.contextBlock,
+      intakeContext: intakeSummary,
     });
 
     // ── Streaming SSE response ────────────────────────────────────────────────
