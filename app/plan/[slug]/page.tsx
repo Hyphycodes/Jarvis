@@ -16,6 +16,7 @@ import {
 import { PlanDispositionBar } from "@/components/plan/PlanDispositionBar";
 import { categoryLabel } from "@/lib/plans/planCopyBanks";
 import { dateKey } from "@/components/calendar/MonthGrid";
+import { PlanBuildOnTap } from "./client-bits";
 
 export const metadata = { title: "Plan · Jarvis" };
 export const dynamic = "force-dynamic";
@@ -50,6 +51,12 @@ export default async function DynamicPlanPage({
 
   const backHref = brief.sourceId ? `/item/${brief.sourceId}` : "/";
   const isBuilding = brief.buildStatus === "building";
+  const isFailed = brief.buildStatus === "failed";
+  const shouldBuildOnTap = Boolean(
+    brief.planId &&
+      brief.sectionCount === 0 &&
+      (isBuilding || isFailed),
+  );
   const isDayOf = Boolean(
     brief.scheduledDate && brief.scheduledDate === dateKey(new Date()),
   );
@@ -74,22 +81,25 @@ export default async function DynamicPlanPage({
         }
       />
 
-      {isBuilding ? (
-        <div className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-2.5 text-[11px] uppercase tracking-[0.18em] text-warm-ivory/55">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D4AF53]" />
-          Plan building…
-        </div>
+      {shouldBuildOnTap && brief.planId ? (
+        <PlanBuildOnTap
+          planId={brief.planId}
+          initialBuildStatus={brief.buildStatus ?? "building"}
+          sectionCount={brief.sectionCount}
+        />
       ) : null}
 
-      <PlanInfoStrip blocks={infoStrip} />
+      {!shouldBuildOnTap ? <PlanInfoStrip blocks={infoStrip} /> : null}
 
-      <WhatToOrder highlights={menuHighlights} />
+      {!shouldBuildOnTap ? <WhatToOrder highlights={menuHighlights} /> : null}
 
-      <nav aria-label="Plan chapters" className="mt-2">
-        {brief.chapters.map((chapter) => (
-          <PlanChapterRow key={chapter.key} chapter={chapter} />
-        ))}
-      </nav>
+      {!shouldBuildOnTap ? (
+        <nav aria-label="Plan chapters" className="mt-2">
+          {brief.chapters.map((chapter) => (
+            <PlanChapterRow key={chapter.key} chapter={chapter} />
+          ))}
+        </nav>
+      ) : null}
 
       {brief.scheduledDate ? (
         <div className="mt-4 flex justify-center">

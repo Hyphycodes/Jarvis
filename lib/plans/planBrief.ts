@@ -139,6 +139,8 @@ export type PlanBrief = {
   confidence?: number;
   /** "fallback" stamp when the generator used its deterministic fallback. */
   fallbackUsed: boolean;
+  /** Number of persisted plan_sections rows. */
+  sectionCount: number;
   infoStrip: PlanInfoBlock[];
   chapters: PlanChapter[];
   before: PlanBeforeSection;

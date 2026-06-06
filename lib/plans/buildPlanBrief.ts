@@ -122,6 +122,7 @@ export function buildPlanBrief(input: BuildPlanBriefInput): PlanBrief {
     state,
     confidence: loaded.confidence,
     fallbackUsed: loaded.fallbackUsed,
+    sectionCount: loaded.sectionCount,
     infoStrip,
     chapters,
     before,

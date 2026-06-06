@@ -22,6 +22,7 @@ export function samplePlanBrief(): PlanBrief {
     state: "ready",
     fallbackUsed: false,
     confidence: 0.82,
+    sectionCount: 6,
     infoStrip: [
       {
         label: "LEAVE BY",

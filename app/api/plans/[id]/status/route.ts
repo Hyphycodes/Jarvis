@@ -27,18 +27,29 @@ export async function GET(
     const supabase = await getServerSupabase();
     const { data } = await supabase
       .from("plans")
-      .select("build_status,status")
+      .select("build_status,status,key_stats")
       .eq("id", id)
       .eq("user_id", userId)
       .maybeSingle();
     if (!data) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const row = data as { build_status: string; status: string };
+    const row = data as {
+      build_status: string;
+      status: string;
+      key_stats?: unknown;
+    };
+    const { count: sectionCount } = await supabase
+      .from("plan_sections")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_id", id)
+      .eq("user_id", userId);
     return NextResponse.json({
       ok: true,
       build_status: row.build_status,
       status: row.status,
+      section_count: sectionCount ?? 0,
+      plan_generation_error: readPlanGenerationError(row.key_stats),
     });
   } catch (error) {
     if (error instanceof Error) {
@@ -46,4 +57,15 @@ export async function GET(
     }
     return NextResponse.json({ error: "Unknown error" }, { status: 500 });
   }
+}
+
+function readPlanGenerationError(keyStats: unknown): unknown {
+  if (!isRecord(keyStats)) return null;
+  return isRecord(keyStats.plan_generation_error)
+    ? keyStats.plan_generation_error
+    : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

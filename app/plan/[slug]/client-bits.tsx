@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 export function PlanActionButton({
@@ -57,6 +57,157 @@ export function PlanActionButton({
       ) : null}
     </div>
   );
+}
+
+export function PlanBuildOnTap({
+  planId,
+  initialBuildStatus,
+  sectionCount,
+}: {
+  planId: string;
+  initialBuildStatus: string;
+  sectionCount: number;
+}) {
+  const router = useRouter();
+  const startedRef = useRef(false);
+  const [state, setState] = useState<"building" | "failed">("building");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sectionCount > 0 || !isBuildableStatus(initialBuildStatus)) return;
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    async function pollStatus() {
+      try {
+        const res = await fetch(`/api/plans/${planId}/status`, {
+          cache: "no-store",
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          build_status?: string;
+          section_count?: number;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || json.error) {
+          setState("failed");
+          setError(json.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        if (json.build_status === "ready" && (json.section_count ?? 0) > 0) {
+          router.refresh();
+          return;
+        }
+        if (json.build_status === "failed") {
+          setState("failed");
+          setError("The plan build failed. The generator error is logged.");
+          return;
+        }
+        timer = setTimeout(pollStatus, 2500);
+      } catch (err) {
+        if (cancelled) return;
+        setState("failed");
+        setError((err as Error).message);
+      }
+    }
+
+    async function startBuild() {
+      setState("building");
+      setError(null);
+      try {
+        const res = await fetch(`/api/plans/${planId}/build-now`, {
+          method: "POST",
+          cache: "no-store",
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          build_status?: string;
+          section_count?: number;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || json.error) {
+          setState("failed");
+          setError(json.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        if (json.build_status === "ready" && (json.section_count ?? 0) > 0) {
+          router.refresh();
+          return;
+        }
+        if (json.build_status === "failed") {
+          setState("failed");
+          setError("The plan build failed. The generator error is logged.");
+          return;
+        }
+        timer = setTimeout(pollStatus, 1500);
+      } catch (err) {
+        if (cancelled) return;
+        setState("failed");
+        setError((err as Error).message);
+      }
+    }
+
+    void startBuild();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [initialBuildStatus, planId, router, sectionCount]);
+
+  function retry() {
+    startedRef.current = false;
+    setState("building");
+    setError(null);
+    router.refresh();
+  }
+
+  const failed = state === "failed";
+
+  return (
+    <section
+      className="mx-5 mt-4 rounded-md border px-4 py-5"
+      style={{
+        borderColor: failed ? "rgba(224,122,110,0.35)" : "rgba(255,255,255,0.10)",
+        background: failed ? "rgba(224,122,110,0.04)" : "rgba(255,255,255,0.025)",
+      }}
+    >
+      <div className="flex items-center gap-3">
+        {!failed ? (
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#D4AF53]" />
+        ) : null}
+        <div>
+          <p
+            className="text-[11px] uppercase tracking-[0.2em]"
+            style={{ color: failed ? "#E07A6E" : "var(--gold-soft)" }}
+          >
+            {failed ? "Plan build failed" : "Building plan"}
+          </p>
+          <p className="mt-2 text-[13px] leading-[1.5] text-warm-ivory/55">
+            {failed
+              ? (error ?? "The generator error was logged.")
+              : "Jarvis is filling the dossier now."}
+          </p>
+        </div>
+      </div>
+      {failed ? (
+        <button
+          type="button"
+          onClick={retry}
+          className="mt-4 rounded-full border border-[#E07A6E]/35 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[#E07A6E] transition-colors hover:bg-[#E07A6E]/10"
+        >
+          Retry build
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function isBuildableStatus(status: string): boolean {
+  return status === "building" || status === "failed";
 }
 
 function buttonClass(
