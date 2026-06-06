@@ -1,7 +1,7 @@
 import "server-only";
 
 import { analyzeImage } from "@/lib/chat/analyzeImage";
-import { ingestWardrobePhoto } from "@/lib/wardrobe/intake";
+import { ingestWardrobePhotos, type WardrobeIntakeSummary } from "@/lib/wardrobe/intake";
 import {
   entitiesFromImageAnalysis,
   upsertObservationEntities,
@@ -24,6 +24,8 @@ export async function handleImageDrop(input: {
   userId: string;
   message: string;
   attachment: Extract<ChatAttachment, { type: "image" }>;
+  /** Additional images sent in the same turn (multi-photo upload). */
+  siblingImages?: Array<Extract<ChatAttachment, { type: "image" }>>;
   context: ChatContextPacket;
   commitmentMode?: boolean;
 }): Promise<ChatIntakeResult> {
@@ -46,16 +48,29 @@ export async function handleImageDrop(input: {
     mediaType: input.attachment.image_media_type,
     userText: input.message,
   });
-  // Side-effect: if this looks like clothing, classify and store it in the
-  // wardrobe in the background. Fire-and-forget — never blocks the chat
-  // response. Direct in-process call (handleImageDrop is server-side and has
-  // userId), not an internal HTTP fetch which has no resolvable base URL here.
+  // Side-effect: if this looks like clothing, classify every garment across ALL
+  // photos in this turn and store them in the wardrobe (deduped). Awaited — so
+  // the chat reply can confirm exactly what landed in the closet. The user's
+  // text rides along as a context note ("Mostly Zara, blue hoodie is Ralph
+  // Lauren") to label brands. Direct in-process call (server-side, has userId).
+  let wardrobeSummary: WardrobeIntakeSummary | null = null;
   if (analysis.type === "outfit") {
-    void ingestWardrobePhoto({
-      userId: input.userId,
-      imageBase64: input.attachment.image_base64,
-      mediaType: input.attachment.image_media_type,
-    }).catch(() => {});
+    const photos = [
+      { base64: input.attachment.image_base64, mediaType: input.attachment.image_media_type },
+      ...(input.siblingImages ?? []).map((img) => ({
+        base64: img.image_base64,
+        mediaType: img.image_media_type,
+      })),
+    ];
+    try {
+      wardrobeSummary = await ingestWardrobePhotos({
+        userId: input.userId,
+        photos,
+        contextNote: input.message || undefined,
+      });
+    } catch {
+      wardrobeSummary = null;
+    }
   }
 
   const entities = entitiesFromImageAnalysis(analysis);
@@ -151,6 +166,7 @@ export async function handleImageDrop(input: {
       research,
       taste,
       state,
+      wardrobeSummary,
     }),
     chips: chipsForImage({
       observationId: observation.id,
@@ -233,9 +249,10 @@ function buildImageContextBlock(input: {
   research?: { summary: string; sourceUrl?: string | null } | null;
   taste?: { summary: string; fit: string; score: number; role: string } | null;
   state: PlanningState;
+  wardrobeSummary?: WardrobeIntakeSummary | null;
 }) {
   const ex = input.analysis.extracted;
-  return [
+  const lines = [
     `Observation: ${input.observationId}`,
     `Type: ${input.analysis.type}`,
     `Found: ${ex.venue_name ?? ex.event_name ?? ex.account_display_name ?? ex.account_name ?? ex.product_or_brand ?? "image intake"}`,
@@ -250,7 +267,24 @@ function buildImageContextBlock(input: {
     `Taste fit: ${input.taste ? `${input.taste.fit} (${Math.round(input.taste.score * 100)}%) - ${input.taste.summary}` : "Not judged."}`,
     `Action taken: ${input.radarItemId ? "radar candidate created" : "observation saved"}`,
     `Planning state: ${input.state}`,
-  ].join("\n");
+  ];
+
+  const w = input.wardrobeSummary;
+  if (w) {
+    const added = w.items.filter((it) => !it.merged);
+    const merged = w.items.filter((it) => it.merged);
+    const describe = (it: { name: string; category: string }) => `${it.name} (${it.category})`;
+    lines.push(
+      `Wardrobe intake: scanned ${w.photos} photo(s) — ${w.created} new piece(s) added to the closet, ${w.merged} already on file, ${w.clarifications} need a quick confirm.`,
+    );
+    if (added.length > 0) lines.push(`Added: ${added.map(describe).join(", ")}.`);
+    if (merged.length > 0) lines.push(`Already had: ${merged.map(describe).join(", ")}.`);
+    lines.push(
+      "Confirm to the owner what you logged to their closet in one natural line — name the pieces you added. If any need a confirm, mention it briefly.",
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function extractedText(analysis: ImageAnalysisResult) {

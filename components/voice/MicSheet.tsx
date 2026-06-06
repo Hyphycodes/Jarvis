@@ -18,7 +18,7 @@ type Message = {
   content: string;
   timestamp: number;
   chips?: ChatChip[];
-  attachment?: AttachmentContext;
+  attachments?: AttachmentContext[];
 };
 
 type PlanCard = {
@@ -128,6 +128,41 @@ function extractInlineChips(text: string): ChatChip[] {
   }
 }
 
+/**
+ * Downscale + re-encode a photo before upload. Phone photos are 3–8 MB each;
+ * three of them as base64 blow past Vercel's 4.5 MB request-body limit and the
+ * send is rejected at the edge (413) before the function runs. Cap the long
+ * edge at 1280px and re-encode as JPEG ~0.82 so each photo lands ~150–350 KB.
+ */
+async function compressImageFile(
+  file: File,
+): Promise<{ dataUrl: string; base64: string; mediaType: string }> {
+  const MAX_EDGE = 1280;
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = objectUrl;
+    });
+    const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context");
+    ctx.drawImage(img, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    const base64 = dataUrl.split(",")[1] ?? "";
+    return { dataUrl, base64, mediaType: "image/jpeg" };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function attachmentForApi(attachment: AttachmentContext): ChatAttachment {
   if (attachment.type === "image" && attachment.imageBase64) {
     return {
@@ -189,7 +224,7 @@ export function MicSheet({
   } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const didRestoreRef = useRef(false);
   const startListeningFiredRef = useRef(false);
@@ -305,15 +340,15 @@ export function MicSheet({
 
     haptic([10, 50, 10]);
     const outgoingAttachments = attachments;
-    const firstAttachment = outgoingAttachments[0] ?? null;
     const userMessage: Message = {
       role: "user",
       content: trimmed,
       timestamp: Date.now(),
-      attachment: firstAttachment ?? undefined,
+      attachments: outgoingAttachments.length > 0 ? outgoingAttachments : undefined,
     };
     setMessages((prev) => [...prev, userMessage]);
     setTextInput("");
+    if (textInputRef.current) textInputRef.current.style.height = "auto";
     setDetectedLinkUrl(null);
     setState("thinking");
     setCurrentResponse("");
@@ -485,10 +520,18 @@ export function MicSheet({
     });
   }, []);
 
+  const autoSizeTextarea = useCallback(() => {
+    const el = textInputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
   const handleTextInputChange = useCallback((value: string) => {
     setTextInput(value);
     detectLinkAttachment(value);
-  }, [detectLinkAttachment]);
+    requestAnimationFrame(autoSizeTextarea);
+  }, [detectLinkAttachment, autoSizeTextarea]);
 
   const handleTextSubmit = useCallback(() => {
     const txt = textInput.trim();
@@ -678,19 +721,13 @@ export function MicSheet({
     try {
       const newAttachments = await Promise.all(
         files.map(async (file) => {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          const base64 = dataUrl.split(",")[1] ?? "";
+          const { dataUrl, base64, mediaType } = await compressImageFile(file);
           return {
             type: "image" as const,
             label: file.name || "Photo",
             imageDataUrl: dataUrl,
             imageBase64: base64,
-            imageMediaType: file.type || "image/jpeg",
+            imageMediaType: mediaType,
           };
         }),
       );
@@ -804,8 +841,16 @@ export function MicSheet({
                 </div>
               ) : (
                 <div className="inline-flex max-w-[85%] flex-col items-end gap-2">
-                  {msg.attachment ? <AttachmentPreview attachment={msg.attachment} compact /> : null}
-                  <span className="text-[15px] leading-[1.6] text-warm-ivory/45">{msg.content}</span>
+                  {msg.attachments && msg.attachments.length > 0 ? (
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {msg.attachments.map((att, ai) => (
+                        <AttachmentPreview key={ai} attachment={att} compact />
+                      ))}
+                    </div>
+                  ) : null}
+                  {msg.content ? (
+                    <span className="text-[15px] leading-[1.6] text-warm-ivory/45">{msg.content}</span>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -938,7 +983,7 @@ export function MicSheet({
           className="flex shrink-0 flex-col"
           style={{ borderTop: "1px solid rgba(246,239,221,0.07)" }}
         >
-          <div className="flex items-center gap-3 px-4 py-3">
+          <div className="flex items-end gap-3 px-4 py-3">
             <input
               ref={photoInputRef}
               type="file"
@@ -961,9 +1006,9 @@ export function MicSheet({
               {photoLoading ? "…" : "📷"}
             </button>
 
-            <input
+            <textarea
               ref={textInputRef}
-              type="text"
+              rows={1}
               value={textInput}
               onChange={(e) => handleTextInputChange(e.target.value)}
               onDrop={(e) => {
@@ -979,7 +1024,8 @@ export function MicSheet({
               }}
               placeholder={isListening ? "Listening…" : "Type or tap mic…"}
               disabled={busy}
-              className="flex-1 bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none disabled:opacity-40"
+              className="flex-1 resize-none bg-transparent py-1.5 text-[14px] leading-[1.45] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none disabled:opacity-40"
+              style={{ maxHeight: "7.5rem", overflowY: "auto" }}
             />
 
             {(textInput.trim().length > 0 || attachments.length > 0) && (
@@ -1083,7 +1129,7 @@ function AttachmentPreview({
         <img
           src={attachment.imageDataUrl}
           alt=""
-          className={compact ? "h-28 w-28 rounded-md object-cover" : "h-10 w-10 rounded-md object-cover"}
+          className={compact ? "h-20 w-20 rounded-md object-cover" : "h-10 w-10 rounded-md object-cover"}
         />
         {!compact ? (
           <span className="truncate text-[12px] text-warm-ivory/60">{attachment.label}</span>

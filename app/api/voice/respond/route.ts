@@ -217,7 +217,10 @@ export async function POST(req: Request) {
       includeWeather: false,
       contextQuery: message,
     });
-    const imageAttachment = attachments.find((a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image");
+    const imageAttachments = attachments.filter(
+      (a): a is Extract<ChatAttachment, { type: "image" }> => a.type === "image",
+    );
+    const imageAttachment = imageAttachments[0];
     const linkAttachment = attachments.find((a): a is LinkChatAttachment => a.type === "link");
     let intakeResult: ChatIntakeResult | null = null;
 
@@ -226,6 +229,7 @@ export async function POST(req: Request) {
         userId: owner.id,
         message,
         attachment: imageAttachment,
+        siblingImages: imageAttachments.slice(1),
         context,
         commitmentMode: routed.commitmentMode,
       });
