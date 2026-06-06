@@ -24,6 +24,13 @@ export type EnrichPlaceResult = {
   filled: string[];
 };
 
+/**
+ * A row this strong is worth surfacing on its verdict alone when Google is
+ * unreachable. Matches enrichPending's MIN_STRENGTH so the same rows that are
+ * eligible for enrichment are eligible for verdict-only surfacing.
+ */
+const MIN_SURFACE_STRENGTH = 0.6;
+
 // Vibe adjectives we'll accept *only when they appear verbatim* in real web
 // coverage — keeps derived keywords factual rather than invented.
 const VIBE_LEXICON = [
@@ -158,6 +165,10 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
     isEmpty(row.image_url);
 
   let googleMatched = false;
+  // Distinguish "Google returned no confident match" (place may be unverifiable)
+  // from "Google was unreachable" (API disabled / network / quota). The latter
+  // must NOT permanently dead-end a well-researched row.
+  let googleUnavailable = false;
   if (needsLocation) {
     // Name + neighborhood + city is the most reliable disambiguating query
     // (text search; no coordinate bias that could pull to the wrong suburb).
@@ -166,7 +177,21 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
     try {
       match = await searchPlaceForEnrichment({ query: queryParts.join(", ") });
     } catch (err) {
-      console.warn("[enrichPlace] Google Places failed", { placeId, name: row.name, err });
+      googleUnavailable = true;
+      const message = err instanceof Error ? err.message : String(err);
+      // Surface the actionable cause loudly. The most common one in this app is
+      // the Places API (New) being disabled in the Google Cloud project, which
+      // returns 403 SERVICE_DISABLED — a one-time console toggle, not a code bug.
+      const apiDisabled = /SERVICE_DISABLED|has not been used in project|disabled/i.test(message);
+      console.error("[enrichPlace] Google Places unavailable", {
+        placeId,
+        name: row.name,
+        apiDisabled,
+        hint: apiDisabled
+          ? "Enable 'Places API (New)' in Google Cloud Console, then re-run enrichment."
+          : undefined,
+        message: message.slice(0, 300),
+      });
     }
 
     if (match && nameMatches(row.name, match.displayName?.text)) {
@@ -241,10 +266,20 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
   }
 
   // ── Write back ───────────────────────────────────────────────────────────────
-  // If we needed location but Google gave no confident match, record that rather
-  // than guessing — location fields stay null.
+  // Status priority:
+  //  1. We filled at least one field → enriched.
+  //  2. Google was UNREACHABLE (not "no match") and the row is strong enough to
+  //     stand on its verdict alone → enriched, so the materializer can surface it
+  //     now with what we have. The row keeps null coords/photo and still matches
+  //     enrichPending's null-location selector, so it backfills automatically the
+  //     moment Places API (New) is reachable again. This keeps Radar alive even
+  //     when one external provider is down/disabled instead of starving every lane.
+  //  3. Google was reachable but gave no confident match → no_place_match.
+  //  4. Otherwise nothing to do.
+  const strongEnough = (row.verdict_strength ?? 0) >= MIN_SURFACE_STRENGTH;
   const status: EnrichmentStatus =
     filled.length > 0 ? "enriched"
+    : needsLocation && googleUnavailable && strongEnough ? "enriched"
     : needsLocation && !googleMatched ? "no_place_match"
     : "nothing_to_fill";
 

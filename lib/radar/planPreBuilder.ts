@@ -3,6 +3,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createStubPlan, fillPlan } from "@/lib/actions/plans";
 
+/** Give up pre-building a plan after this many failed/fallback attempts. */
+const MAX_PLAN_BUILD_ATTEMPTS = 4;
+
 type PreBuildRow = {
   id: string;
   payload: unknown;
@@ -36,7 +39,9 @@ export async function preBuildPlansForShownItems(
       const payload = isRecord(row.payload) ? row.payload : null;
       if (payload?.plan_build_exhausted) return false;
       if (!payload?.plan_slug) return true;
-      return payload.plan_status === "building";
+      // Retry plans that are still building OR previously failed (schema/transient).
+      // Failed plans used to stick forever; they now get fresh attempts (capped).
+      return payload.plan_status === "building" || payload.plan_status === "failed";
     })
     .slice(0, max);
 
@@ -57,17 +62,10 @@ export async function preBuildPlansForShownItems(
       });
 
       if (filled.fallbackUsed) {
-        const { error: planError } = await supabase
-          .from("plans")
-          .update({ build_status: "building" })
-          .eq("id", stub.planId)
-          .eq("user_id", userId);
-        if (planError) {
-          errors.push(
-            `Plan pre-build fallback reset failed for item ${row.id}: ${planError.message}`,
-          );
-        }
-
+        // Keep the SAME stub plan and retry it next run. Previously this deleted
+        // plan_slug/plan_id, which orphaned the plan and made createStubPlan spawn
+        // a brand-new stub every cycle (the source of the pile of half-built
+        // "building" plans). Now we reuse it and only give up after MAX_ATTEMPTS.
         const { data: itemRow } = await supabase
           .from("surfaced_items")
           .select("payload")
@@ -76,16 +74,26 @@ export async function preBuildPlansForShownItems(
           .single();
         const payload = isRecord(itemRow?.payload) ? { ...itemRow.payload } : {};
         const attempts =
-          typeof payload.plan_build_attempts === "number"
+          (typeof payload.plan_build_attempts === "number"
             ? payload.plan_build_attempts
-            : 0;
-        delete payload.plan_slug;
-        delete payload.plan_id;
-        delete payload.plan_status;
-        payload.plan_build_attempts = attempts + 1;
-        if (attempts + 1 >= 4) {
-          payload.plan_build_exhausted = true;
+            : 0) + 1;
+        const exhausted = attempts >= MAX_PLAN_BUILD_ATTEMPTS;
+
+        const { error: planError } = await supabase
+          .from("plans")
+          // Leave it claimable next run (building) until we give up (failed).
+          .update({ build_status: exhausted ? "failed" : "building" })
+          .eq("id", stub.planId)
+          .eq("user_id", userId);
+        if (planError) {
+          errors.push(
+            `Plan pre-build fallback reset failed for item ${row.id}: ${planError.message}`,
+          );
         }
+
+        payload.plan_build_attempts = attempts;
+        payload.plan_status = exhausted ? "failed" : "building";
+        if (exhausted) payload.plan_build_exhausted = true;
         const { error: itemError } = await supabase
           .from("surfaced_items")
           .update({ payload })
