@@ -32,7 +32,7 @@ export type GooglePlace = {
   googleMapsUri?: string;
   reservable?: boolean;
   editorialSummary?: { text: string };
-  currentOpeningHours?: { openNow?: boolean };
+  currentOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
   regularOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
   photos?: { name: string }[];
   reviews?: {
@@ -205,10 +205,9 @@ const ENRICHMENT_FIELDS = [
   "places.priceLevel",
   "places.websiteUri",
   "places.googleMapsUri",
-  "places.reservable",
   "places.primaryType",
   "places.types",
-  "places.regularOpeningHours.weekdayDescriptions",
+  "places.currentOpeningHours.weekdayDescriptions",
   "places.photos.name",
 ].join(",");
 

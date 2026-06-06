@@ -161,7 +161,7 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
         filled.push("lng");
       }
       if (isEmpty(row.hours_summary)) {
-        const hours = condenseHours(match.regularOpeningHours?.weekdayDescriptions);
+        const hours = condenseHours(match.currentOpeningHours?.weekdayDescriptions);
         if (hours) {
           updates.hours_summary = hours;
           filled.push("hours_summary");
