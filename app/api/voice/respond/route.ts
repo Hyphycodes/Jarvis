@@ -3,6 +3,7 @@ import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { looksActionable, extractActionableIntent } from "@/lib/chat/intentCapture";
 import { captureUserIntent, researchUserIntent } from "@/lib/radar/userIntent";
+import { createFind } from "@/lib/finds/finds";
 import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import { buildChatContext } from "@/lib/chat/context/buildChatContext";
 import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPrompt";
@@ -246,6 +247,7 @@ export async function POST(req: Request) {
     // candidate and research/surface it through the unified pipeline in the
     // background. Gated by a cheap regex so we don't spend an LLM call per turn.
     let capturedIntentTitle: string | null = null;
+    let capturedIntentKind: string | null = null;
     const capturedIntentChips: ChatChip[] = [];
     if (
       !imageAttachment &&
@@ -255,14 +257,26 @@ export async function POST(req: Request) {
     ) {
       try {
         const intent = await extractActionableIntent(message, history);
-        if (intent) {
+        if (intent && intent.kind === "finds") {
+          // A thing to buy/source → research it and put the best pick in Finds.
+          capturedIntentTitle = intent.title;
+          capturedIntentKind = "finds";
+          after(() =>
+            createFind({
+              userId: owner.id,
+              mission: intent.title,
+              context: intent.note,
+              source: "user_intent",
+            }).catch((err) => console.error("[voice.respond] find research failed", err)),
+          );
+        } else if (intent) {
           const candidateId = await captureUserIntent({
             userId: owner.id,
             title: intent.title,
             note: intent.note,
             dateHint: intent.dateHint,
             category: intent.category,
-            kind: intent.kind,
+            kind: intent.kind === "finds" ? null : intent.kind,
             origin: "voice",
           });
           capturedIntentTitle = intent.title;
@@ -312,7 +326,9 @@ export async function POST(req: Request) {
       .join("\n");
 
     const intakeSummary = capturedIntentTitle
-      ? `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner asked for "${capturedIntentTitle}". You've saved it to Radar and are researching it + building its plan now. Acknowledge in one short, natural line.`
+      ? capturedIntentKind === "finds"
+        ? `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner wants to acquire "${capturedIntentTitle}". You're researching the best option and will put it in Finds. Acknowledge in one short, natural line.`
+        : `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner asked for "${capturedIntentTitle}". You've saved it to Radar and are researching it + building its plan now. Acknowledge in one short, natural line.`
       : intakeResult?.contextBlock;
 
     const systemPrompt = renderChatSystemPrompt(context, {
