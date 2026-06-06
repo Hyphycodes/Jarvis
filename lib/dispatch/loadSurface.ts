@@ -372,9 +372,13 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
       withRadarPlanRefs(visibleItems),
       resolveLibraryImages(visibleItems),
     ]);
-    return withPlanRefs.map(({ item, planRef }) =>
-      toRadarCard(item, planRef, libraryImages.get(item.id)),
-    );
+    // Only surface a card once its plan is fully built and viewable — tapping a
+    // Radar card should always land on a complete plan page, never a stub.
+    return withPlanRefs
+      .filter(({ planRef }) => planRef.isReady)
+      .map(({ item, planRef }) =>
+        toRadarCard(item, planRef, libraryImages.get(item.id)),
+      );
   } catch (error) {
     logSurfaceError("radar", error);
     return [];
@@ -651,7 +655,11 @@ export async function loadPlanBySlug(
 type RadarPlanRef = {
   slug?: string;
   hasStoredRef: boolean;
+  /** True only when the plan is fully built (build_status='ready' + has sections). */
+  isReady: boolean;
 };
+
+type PlanRefRow = { id: string; key_stats: unknown; build_status: string | null };
 
 async function withRadarPlanRefs(
   items: IndexedItem[],
@@ -665,55 +673,99 @@ async function withRadarPlanRefs(
   if (!hasAnyRef) {
     return refs.map(({ item }) => ({
       item,
-      planRef: { hasStoredRef: false },
+      planRef: { hasStoredRef: false, isReady: false },
     }));
   }
 
   const { id } = await getViewableProfileId();
   if (!id) {
-    return refs.map(({ item, planId, planSlug }) => ({
+    return refs.map(({ item }) => ({
       item,
-      planRef: { hasStoredRef: Boolean(planId || planSlug) },
+      planRef: { hasStoredRef: false, isReady: false },
     }));
   }
   const supabase = await getServerSupabase();
   const { data, error } = await supabase
     .from("plans")
-    .select("id,key_stats")
+    .select("id,key_stats,build_status")
     .eq("user_id", id)
     .order("updated_at", { ascending: false })
     .limit(300);
   if (error) {
     logQueryError("radar.planRefs", error);
+    // Fail open: trust the stored ref so a transient error doesn't blank Radar.
     return refs.map(({ item, planId, planSlug }) => ({
       item,
-      planRef: { hasStoredRef: Boolean(planId || planSlug) },
+      planRef: {
+        hasStoredRef: Boolean(planId || planSlug),
+        isReady: Boolean(planId || planSlug),
+      },
     }));
   }
 
-  const plans = (data ?? []) as Array<{ id: string; key_stats: unknown }>;
+  const plans = (data ?? []) as PlanRefRow[];
   const byId = new Map(plans.map((plan) => [plan.id, plan]));
   const bySlug = new Map(
     plans
       .map((plan) => [readSlugFromKeyStats(plan.key_stats), plan] as const)
-      .filter((entry): entry is readonly [string, { id: string; key_stats: unknown }] =>
+      .filter((entry): entry is readonly [string, PlanRefRow] =>
         typeof entry[0] === "string",
       ),
   );
 
-  return refs.map(({ item, planId, planSlug }) => {
+  const resolved = refs.map(({ item, planId, planSlug }) => {
     const plan =
       (planId ? byId.get(planId) : undefined) ??
       (planSlug ? bySlug.get(planSlug) : undefined);
+    return { item, planId, planSlug, plan };
+  });
+
+  // A plan is only "ready to view" when it has finished building AND has
+  // sections — that's the gate for surfacing a Radar card.
+  const readyIds = [
+    ...new Set(
+      resolved
+        .map((r) => r.plan)
+        .filter((p): p is PlanRefRow => Boolean(p) && p!.build_status === "ready")
+        .map((p) => p.id),
+    ),
+  ];
+  const withSections = await plansWithSections(supabase, readyIds);
+
+  return resolved.map(({ item, planId, planSlug, plan }) => {
     const actualSlug = plan ? readSlugFromKeyStats(plan.key_stats) ?? plan.id : undefined;
+    const isReady = Boolean(
+      plan && plan.build_status === "ready" && withSections.has(plan.id),
+    );
     return {
       item,
       planRef: {
         slug: actualSlug,
         hasStoredRef: Boolean(planId || planSlug),
+        isReady,
       },
     };
   });
+}
+
+/** Returns the subset of plan ids that have at least one persisted section. */
+async function plansWithSections(
+  supabase: Awaited<ReturnType<typeof getServerSupabase>>,
+  planIds: string[],
+): Promise<Set<string>> {
+  if (planIds.length === 0) return new Set();
+  const { data, error } = await supabase
+    .from("plan_sections")
+    .select("plan_id")
+    .in("plan_id", planIds);
+  if (error) {
+    logQueryError("radar.planSections", error);
+    // Fail open for these (they're already build_status='ready').
+    return new Set(planIds);
+  }
+  return new Set(
+    ((data ?? []) as Array<{ plan_id: string }>).map((row) => row.plan_id),
+  );
 }
 
 function toRadarCard(

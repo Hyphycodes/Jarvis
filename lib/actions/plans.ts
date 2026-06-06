@@ -462,14 +462,16 @@ export async function fillPlan(input: {
     primary_move: plan.primary_move,
     hero_image_url: result.selectedPhotoUrl ?? null,
     menu_highlights: plan.menu_highlights ?? [],
-    reservation: result.reservation
-      ? {
-          ...result.reservation,
-          suggestedTime: fallbackUsed ? null : extractReservationSuggestedTime(plan),
-        }
-      : null,
-    location_name: plan.location_name,
-    address: plan.address,
+    reservation: buildReservation(plan, result.reservation, fallbackUsed),
+    location_name: plan.location_name ?? null,
+    address: plan.address ?? null,
+    // Venue facts the brain knows — power the plan page tiles + clickable links.
+    neighborhood: plan.venue?.neighborhood ?? null,
+    official_url: plan.venue?.official_url ?? null,
+    maps_query: plan.venue?.maps_query ?? null,
+    phone: plan.venue?.phone ?? null,
+    parking_note: plan.venue?.parking_note ?? null,
+    suggested_start: plan.venue?.suggested_start ?? null,
     plan_type: plan.plan_type,
     plan_shape: detectPlanShape(item),
     source_item_id: plan.source_item_id ?? item.id,
@@ -559,6 +561,15 @@ export async function fillPlan(input: {
   // pre-built item stops showing a blank image box. Only when it has none yet.
   if (result.selectedPhotoUrl && !(itemRow as SurfacedItemRow).image_url) {
     sourcePatch.image_url = result.selectedPhotoUrl;
+  }
+  // Backfill venue location facts onto the source item so other surfaces
+  // (Radar card neighborhood, future weather/maps) can reuse them.
+  if (plan.address && !(itemRow as SurfacedItemRow).address) {
+    sourcePatch.address = plan.address;
+  }
+  if (plan.venue?.neighborhood) {
+    (sourcePatch.payload as Record<string, unknown>).neighborhood =
+      plan.venue.neighborhood;
   }
   if (!input.preserveItemSurface) {
     sourcePatch.destination = inferItemDestination(plan.starts_at);
@@ -1004,6 +1015,33 @@ function isPlanBuildCancelled(state: PlanBuildState): boolean {
         state.build_status === "cancelled" ||
         state.cancelled_at),
   );
+}
+
+/**
+ * Merge the brain's known reservation facts (venue object) with anything the
+ * Places/Tavily supplemental resolved. Returns null when there is nothing real
+ * to show, so the plan page's RESERVE block simply doesn't render.
+ */
+function buildReservation(
+  plan: GeneratedPlan,
+  resolved: PlanGenerationResult["reservation"],
+  fallbackUsed: boolean,
+): Record<string, unknown> | null {
+  const venue = plan.venue;
+  const reservable = venue?.takes_reservations ?? resolved?.reservable ?? false;
+  const bookingUrl = venue?.reservation_url ?? resolved?.bookingUrl ?? null;
+  const platform = venue?.reservation_platform ?? null;
+  const website = venue?.official_url ?? resolved?.website ?? null;
+  const hoursSummary = resolved?.hoursSummary ?? null;
+  if (!reservable && !bookingUrl && platform == null && !website) return null;
+  return {
+    reservable,
+    bookingUrl,
+    platform,
+    website,
+    hoursSummary,
+    suggestedTime: fallbackUsed ? null : extractReservationSuggestedTime(plan),
+  };
 }
 
 function extractReservationSuggestedTime(plan: GeneratedPlan): string | null {

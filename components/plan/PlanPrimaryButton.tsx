@@ -21,11 +21,17 @@ export function PlanPrimaryButton({
   state,
   planId,
   labelOverride,
+  suggestedStart,
+  scheduled,
 }: {
   state: PlanState;
   planId?: string;
   /** Optional label override (used on the Move page). */
   labelOverride?: string;
+  /** Brain-suggested ISO start — committed before activating when not scheduled. */
+  suggestedStart?: string;
+  /** True when the plan already has a committed schedule. */
+  scheduled?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -35,22 +41,33 @@ export function PlanPrimaryButton({
   const label = labelOverride ?? config.label;
   const disabled = config.disabled || (!planId && state !== "ready");
 
+  async function post(path: string, body?: unknown): Promise<void> {
+    const res = await fetch(`/api/plans/${planId}/${path}`, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+  }
+
   function run(action: "activate" | "complete" | "cancel") {
     if (!planId) return;
     setError(null);
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/plans/${planId}/${action}`, {
-          method: "POST",
-        });
-        const json = (await res.json().catch(() => ({}))) as {
-          ok?: true;
-          error?: string;
-        };
-        if (!res.ok || json.error) {
-          setError(json.error ?? `HTTP ${res.status}`);
-          return;
+        // "Suggest a time, then begin": commit the brain's suggested slot before
+        // activating, so the plan lands on the calendar with a real date/time.
+        if (action === "activate" && !scheduled) {
+          const slot = scheduleSlotFromIso(suggestedStart);
+          if (slot) {
+            await post("schedule", {
+              scheduled_date: slot.date,
+              scheduled_time: slot.time,
+            }).catch(() => undefined);
+          }
         }
+        await post(action);
         router.refresh();
       } catch (err) {
         setError((err as Error).message);
@@ -97,6 +114,20 @@ export function PlanPrimaryButton({
       ) : null}
     </div>
   );
+}
+
+/** Parse an ISO datetime into a local { date: YYYY-MM-DD, time: HH:MM } slot. */
+function scheduleSlotFromIso(
+  iso?: string,
+): { date: string; time: string } | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
 }
 
 function configFor(state: PlanState): {

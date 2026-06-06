@@ -125,6 +125,19 @@ export type PlanBrief = {
   timeLabel?: string;
   areaLabel?: string;
   locationLabel?: string;
+  neighborhood?: string;
+  /** Effective target start (ISO) — committed schedule, else the brain's suggested_start. */
+  targetStart?: string;
+  /** Clickable venue facts for the Details page (maps / reserve / call / site). */
+  venueLinks?: {
+    address?: string;
+    mapsUrl?: string;
+    officialUrl?: string;
+    phone?: string;
+    reservationUrl?: string;
+    reservationLabel?: string;
+    parkingNote?: string;
+  };
   /** Scheduled date in YYYY-MM-DD (from the date picker), when set. */
   scheduledDate?: string;
   /** Scheduled time in HH:MM 24h, when set. */

@@ -57,6 +57,7 @@ const GENERATED_PLAN_KEYS = [
   "ends_at",
   "location_name",
   "address",
+  "venue",
   "hero_angle",
   "why_this_fits",
   "best_window",
@@ -134,10 +135,30 @@ ITEM-TYPE ADAPTATION
 - Article/idea/land/real estate/creative: why it matters, research path, next
   questions, leverage angle, what to watch, first small move, hold/act/archive.
 
+VENUE FACTS (the "venue" object — fill ONLY what you genuinely know about THIS real place)
+- This powers the plan page's hero photo, weather, parking, reservation, and clickable maps.
+- Disambiguate by the founder's city/metro (use the location/founder context) — e.g. "The
+  Promontory" is the Hyde Park, Chicago music venue + restaurant, NOT a golf club elsewhere.
+- neighborhood: the venue's neighborhood (e.g. "Hyde Park", "West Loop").
+- official_url: the venue's real official website (used to fetch an accurate hero photo). Only
+  if you are confident it is the correct site for THIS venue. Omit if unsure.
+- maps_query: a precise text query for maps — "Name, street address, City" when you know the
+  address, otherwise "Name, Neighborhood, City". Always solvable by Google Maps.
+- phone, address: only if actually known. Never invent a phone number or street number.
+- takes_reservations + reservation_platform (opentable/resy/tock/sevenrooms/website/walk_in/none)
+  + reservation_url: how a table is actually booked. If you don't know the exact booking URL,
+  give the platform and omit the URL. Never claim a booking is already made.
+- parking_note: one short, practical line ("Valet Fri–Sat; metered street on Lake Park otherwise").
+  Honest and directional — not a fabricated price.
+- suggested_start: an ISO-8601 datetime for the next sensible time to go, reasoned from the
+  founder's weekly_rhythm and the venue type/hours (dinner → an evening; respect chat timingHint
+  when present). This makes the plan read as already-scheduled. Omit only if truly unknowable.
+
 OUTPUT
 Strict JSON matching the GeneratedPlan schema:
 - slug: lowercase-kebab, derived from title.
 - status: ALWAYS "draft" (activation is a user action).
+- venue: fill the venue object with real known facts (see VENUE FACTS above).
 - sections: 3–6 concise sections, sorted, each with a section_type from the enum.
 - Generate core sections first: why, before, move, notes/details, next step.
 - timeline: 0–8 entries. Only include if you have real timing data.

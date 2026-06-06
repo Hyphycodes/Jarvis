@@ -62,6 +62,16 @@ export const SECTION_TYPES = [
 export const EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export const SPENDING_POSTURES = ["free", "low", "paid", "high", "unknown"] as const;
 
+export const RESERVATION_PLATFORMS = [
+  "opentable",
+  "resy",
+  "tock",
+  "sevenrooms",
+  "website",
+  "walk_in",
+  "none",
+] as const;
+
 const optionalString = (max: number) =>
   z
     .string()
@@ -116,6 +126,35 @@ export const planGrabItemSchema = z.object({
 
 export type PlanGrabItem = z.infer<typeof planGrabItemSchema>;
 
+// ── Venue facts ─────────────────────────────────────────────────────────────
+// Real, known facts about the venue that power the plan page tiles + links
+// (hero photo, weather target, parking, reservation, clickable maps). The
+// brain fills only what it actually knows for the real place — never invents.
+
+export const venueFactsSchema = z.object({
+  neighborhood: optionalString(80),
+  /** Official venue website — used to resolve an accurate hero photo (og:image). */
+  official_url: optionalString(240),
+  /** A precise maps query, e.g. "The Promontory, 5311 S Lake Park Ave, Chicago". */
+  maps_query: optionalString(160),
+  phone: optionalString(40),
+  takes_reservations: z
+    .boolean()
+    .nullish()
+    .transform((value) => value ?? undefined),
+  reservation_platform: z
+    .enum(RESERVATION_PLATFORMS)
+    .nullish()
+    .transform((value) => value ?? undefined),
+  reservation_url: optionalString(240),
+  /** Short, practical parking note, e.g. "Valet Fri–Sat; street on Lake Park otherwise". */
+  parking_note: optionalString(160),
+  /** ISO 8601 datetime of the next sensible occurrence the brain recommends. */
+  suggested_start: optionalString(60),
+});
+
+export type VenueFacts = z.infer<typeof venueFactsSchema>;
+
 // ── Full generated plan ─────────────────────────────────────────────────────
 
 export const generatedPlanSchema = z.object({
@@ -133,6 +172,9 @@ export const generatedPlanSchema = z.object({
   ends_at: optionalDatetime,
   location_name: optionalString(160),
   address: optionalString(240),
+  venue: venueFactsSchema
+    .nullish()
+    .transform((value) => value ?? undefined),
   hero_angle: z.string().min(1).max(220),
   why_this_fits: z.string().min(1).max(360),
   best_window: optionalString(180),

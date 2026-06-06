@@ -5,7 +5,11 @@ import { loadPlanBySlugV2 } from "@/lib/plans/loadPlan";
 import type { LoadedPlan, LoadedPlanMenuHighlight } from "@/lib/plans/loadPlan";
 import type { PlanBrief } from "@/lib/plans/planBrief";
 import { samplePlanBrief } from "@/lib/plans/samplePlanBrief";
-import { enrichInfoStrip, resolveHeroImage } from "@/lib/plans/enrichLogistics";
+import {
+  enrichInfoStrip,
+  resolveHeroImage,
+  resolveHeroNote,
+} from "@/lib/plans/enrichLogistics";
 import {
   PlanChapterRow,
   PlanHero,
@@ -17,7 +21,6 @@ import {
 } from "@/components/plan";
 import { PlanDispositionBar } from "@/components/plan/PlanDispositionBar";
 import { categoryLabel } from "@/lib/plans/planCopyBanks";
-import { dateKey } from "@/components/calendar/MonthGrid";
 import { PlanBuildOnTap } from "./client-bits";
 
 export const metadata = { title: "Plan · Jarvis" };
@@ -47,13 +50,15 @@ export default async function DynamicPlanPage({
   // Sample plans (no planId) skip enrichment — keep their designed fallbacks.
   let infoStrip = brief.infoStrip;
   let heroImage: string | null | undefined = brief.heroImage;
+  let heroNote: string | undefined;
   let menuHighlights: LoadedPlanMenuHighlight[] = [];
   if (brief.planId) {
     loaded = loaded ?? (await loadPlanBySlugV2(slug));
     if (loaded) {
-      [infoStrip, heroImage] = await Promise.all([
+      [infoStrip, heroImage, heroNote] = await Promise.all([
         enrichInfoStrip(brief, loaded),
         resolveHeroImage(loaded),
+        resolveHeroNote(brief, loaded),
       ]);
       menuHighlights = loaded.menuHighlights;
     }
@@ -67,9 +72,9 @@ export default async function DynamicPlanPage({
       brief.sectionCount === 0 &&
       (isBuilding || isFailed),
   );
-  const isDayOf = Boolean(
-    brief.scheduledDate && brief.scheduledDate === dateKey(new Date()),
-  );
+  // The hero CTA shows on every ready/live plan now (not only day-of). For an
+  // unscheduled plan it "confirms" the brain's suggested time, then begins.
+  const showPrimary = Boolean(brief.planId) && !shouldBuildOnTap;
 
   return (
     <PlanShell>
@@ -83,10 +88,15 @@ export default async function DynamicPlanPage({
         categoryLabel={categoryLabel(brief.category)}
         title={brief.title}
         meta={[brief.areaLabel ?? brief.locationLabel, brief.timeLabel]}
-        summary={brief.summary}
+        summary={heroNote ?? brief.summary}
         primary={
-          isDayOf ? (
-            <PlanPrimaryButton state={brief.state} planId={brief.planId} />
+          showPrimary ? (
+            <PlanPrimaryButton
+              state={brief.state}
+              planId={brief.planId}
+              suggestedStart={brief.targetStart}
+              scheduled={Boolean(brief.scheduledDate)}
+            />
           ) : undefined
         }
       />

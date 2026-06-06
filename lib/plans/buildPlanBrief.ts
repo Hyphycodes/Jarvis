@@ -37,6 +37,7 @@ import type {
   PlanMoveItem,
   PlanState,
 } from "@/lib/plans/planBrief";
+import { mapsSearchUrl, reservationLink } from "@/lib/plans/venueLinks";
 
 // ── Public entry ─────────────────────────────────────────────────────────────
 
@@ -54,10 +55,15 @@ export function buildPlanBrief(input: BuildPlanBriefInput): PlanBrief {
   const category = inferCategory(loaded);
   const state = inferState(loaded);
   const summary = shapeSummary(loaded, category);
-  const dateLabel = cleanText(loaded.dateLabel);
-  const timeLabel = shapeTimeLabel(loaded, assumed);
-  const areaLabel = shapeArea(loaded);
+  // Effective target start: a committed schedule, else the brain's suggested_start.
+  // Drives the date/time labels, Leave By, and the Weather target.
+  const targetStart = computeTargetStart(loaded);
+  const dateLabel = cleanText(loaded.dateLabel) ?? targetDateLabel(targetStart);
+  const timeLabel = targetTimeLabel(targetStart) ?? shapeTimeLabel(loaded, assumed);
+  const neighborhood = cleanText(loaded.neighborhood);
+  const areaLabel = neighborhood ?? shapeArea(loaded);
   const locationLabel = cleanText(loaded.locationLine ?? loaded.locationName);
+  const venueLinks = buildVenueLinks(loaded);
 
   const sectionsByType = indexSections(loaded.sections);
 
@@ -114,6 +120,9 @@ export function buildPlanBrief(input: BuildPlanBriefInput): PlanBrief {
     timeLabel: timeLabel ?? scheduledTimeLabel(loaded),
     areaLabel,
     locationLabel,
+    neighborhood,
+    targetStart,
+    venueLinks,
     scheduledDate: loaded.scheduledDate,
     scheduledTime: loaded.scheduledTime,
     buildStatus: loaded.buildStatus,
@@ -235,6 +244,72 @@ function shapeArea(loaded: LoadedPlan): string | undefined {
   return parts.slice(-2).join(", ");
 }
 
+// ── Target time + venue links ────────────────────────────────────────────────
+
+/** Effective target start: committed schedule → key_stats.starts_at → brain suggested_start. */
+function computeTargetStart(loaded: LoadedPlan): string | undefined {
+  if (loaded.scheduledDate) {
+    const time = loaded.scheduledTime ?? "19:30";
+    const d = new Date(`${loaded.scheduledDate}T${time}:00`);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  const keyStats = isRecord(loaded.keyStats) ? loaded.keyStats : {};
+  if (typeof keyStats.starts_at === "string") {
+    const d = new Date(keyStats.starts_at);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  if (loaded.suggestedStart) {
+    const d = new Date(loaded.suggestedStart);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return undefined;
+}
+
+function targetDateLabel(iso?: string): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function targetTimeLabel(iso?: string): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function buildVenueLinks(loaded: LoadedPlan): PlanBrief["venueLinks"] {
+  const venueName = cleanText(loaded.locationName ?? loaded.title) ?? "";
+  const venueQuery = [venueName, cleanText(loaded.neighborhood)].filter(Boolean).join(" ");
+  const mapsQuery =
+    cleanText(loaded.mapsQuery) ??
+    [venueName, cleanText(loaded.address) ?? cleanText(loaded.neighborhood)]
+      .filter(Boolean)
+      .join(", ");
+  const keyStats = isRecord(loaded.keyStats) ? loaded.keyStats : {};
+  const reservation = isRecord(keyStats.reservation) ? keyStats.reservation : {};
+  const reserve = reservationLink({
+    url: typeof reservation.bookingUrl === "string" ? reservation.bookingUrl : undefined,
+    platform: typeof reservation.platform === "string" ? reservation.platform : undefined,
+    venueQuery: venueQuery || venueName,
+  });
+  const links = {
+    address: cleanText(loaded.address),
+    mapsUrl: mapsQuery ? mapsSearchUrl(mapsQuery) : undefined,
+    officialUrl: cleanText(loaded.officialUrl),
+    phone: cleanText(loaded.phone),
+    reservationUrl: reserve?.url,
+    reservationLabel: reserve?.label,
+    parkingNote: cleanText(loaded.parkingNote),
+  };
+  return Object.values(links).some(Boolean) ? links : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 // ── InfoStrip ───────────────────────────────────────────────────────────────
 
 function buildInfoStrip(input: {
@@ -313,7 +388,6 @@ function buildChapters(input: {
 }): PlanChapter[] {
   const { slug, loaded, sectionsByType } = input;
   const shape = loaded.shape ?? "experience";
-  const isSequential = loaded.isSequential ?? false;
 
   const make = (
     key: PlanChapterKey,
@@ -366,17 +440,17 @@ function buildChapters(input: {
     ].filter(hasContentOrAlwaysShow);
   }
 
-  // experience (default)
+  // experience (default) — the six reference sections, always shown. Each
+  // sub-page renders cleanly via copy-bank fallback when a section is thin,
+  // so the plan reads complete like the reference.
   return [
     make("before", "BEFORE YOU GO", "What to wear, bring, and know before you leave.", "jacket", ["before", "wear", "bring", "cost"]),
-    // The Move only renders for sequential plans.
-    ...(isSequential
-      ? [make("move", "THE MOVE", "The flow, step by step.", "wine", ["move", "route", "timing"])]
-      : []),
+    make("move", "THE MOVE", "The flow of the night, step by step.", "wine", ["move", "route", "timing"]),
+    make("atmosphere", "ATMOSPHERE", "Energy, music, lighting, and the mood.", "record", ["atmosphere"]),
     make("details", "THE DETAILS", "Address, reservation, contacts, and intel.", "map-pin", ["notes", "details", "route"]),
-    make("around-it", "AROUND IT", "Before, instead, and after — all ready if you want them.", "signpost", ["detours", "alternatives", "after"]),
-    // Atmosphere is omitted as a chapter — it is folded into the hero summary.
-  ].filter(hasContentOrAlwaysShow);
+    make("detours", "OPTIONAL DETOURS", "Places worth considering along the way.", "signpost", ["detours", "alternatives"]),
+    make("after", "AFTER", "How the night can end well.", "moon", ["after"]),
+  ];
 }
 
 /**

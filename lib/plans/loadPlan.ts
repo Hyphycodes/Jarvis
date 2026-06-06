@@ -65,6 +65,14 @@ export type LoadedPlan = {
   timeWindow?: string;
   locationName?: string;
   address?: string;
+  /** Venue facts the brain resolved (key_stats), powering tiles + links. */
+  neighborhood?: string;
+  officialUrl?: string;
+  mapsQuery?: string;
+  phone?: string;
+  parkingNote?: string;
+  /** ISO datetime the brain recommends as the next sensible time to go. */
+  suggestedStart?: string;
   sourceItemType?: string;
   confidence?: number;
   sourceItemId?: string;
@@ -248,6 +256,19 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
         : undefined,
     address:
       typeof keyStats.address === "string" ? keyStats.address : undefined,
+    neighborhood:
+      typeof keyStats.neighborhood === "string" ? keyStats.neighborhood : undefined,
+    officialUrl:
+      typeof keyStats.official_url === "string" ? keyStats.official_url : undefined,
+    mapsQuery:
+      typeof keyStats.maps_query === "string" ? keyStats.maps_query : undefined,
+    phone: typeof keyStats.phone === "string" ? keyStats.phone : undefined,
+    parkingNote:
+      typeof keyStats.parking_note === "string" ? keyStats.parking_note : undefined,
+    suggestedStart:
+      typeof keyStats.suggested_start === "string"
+        ? keyStats.suggested_start
+        : undefined,
     sourceItemType:
       typeof keyStats.source_item_type === "string"
         ? keyStats.source_item_type
