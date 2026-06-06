@@ -118,6 +118,32 @@ export async function materializeEligibleLibraryItems(
     }
   }
 
+  // Back-fill enrichment data (image, address, coords) into already-surfaced rows
+  // that were created before a library place was fully enriched by Google Places.
+  const newlyInsertedIds = new Set(rows.map((r) => r.source_id).filter(Boolean));
+  for (const place of places) {
+    if (newlyInsertedIds.has(place.id)) continue; // just inserted — skip
+    if (!existingSourceIds.has(place.id)) continue; // not surfaced yet — skip
+
+    const syncUpdates: Record<string, unknown> = {};
+    const hasImage =
+      typeof place.image_url === "string" && place.image_url.startsWith("http");
+    if (hasImage) syncUpdates.image_url = place.image_url;
+    if (place.address) syncUpdates.address = place.address;
+    if (place.lat != null) syncUpdates.lat = place.lat;
+    if (place.lng != null) syncUpdates.lng = place.lng;
+
+    if (Object.keys(syncUpdates).length === 0) continue;
+
+    await supabase
+      .from("surfaced_items")
+      .update(syncUpdates)
+      .eq("user_id", userId)
+      .eq("source_id", place.id)
+      .eq("source", MATERIALIZER_SOURCE)
+      .is("image_url", null); // only update rows that are still missing enrichment data
+  }
+
   return result;
 }
 

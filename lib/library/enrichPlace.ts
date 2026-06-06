@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { ApiError } from "@/lib/http";
 import {
   hasGooglePlaces,
   searchPlaceForEnrichment,
@@ -179,10 +180,11 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
     } catch (err) {
       googleUnavailable = true;
       const message = err instanceof Error ? err.message : String(err);
-      // Surface the actionable cause loudly. The most common one in this app is
-      // the Places API (New) being disabled in the Google Cloud project, which
-      // returns 403 SERVICE_DISABLED — a one-time console toggle, not a code bug.
-      const apiDisabled = /SERVICE_DISABLED|has not been used in project|disabled/i.test(message);
+      // ApiError.cause holds the full raw response body from fetchJson.
+      const rawBody = ApiError.is(err) ? String(err.cause ?? "") : "";
+      const apiDisabled = /SERVICE_DISABLED|has not been used in project|disabled/i.test(
+        message + rawBody,
+      );
       console.error("[enrichPlace] Google Places unavailable", {
         placeId,
         name: row.name,
@@ -190,10 +192,19 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
         hint: apiDisabled
           ? "Enable 'Places API (New)' in Google Cloud Console, then re-run enrichment."
           : undefined,
-        message: message.slice(0, 300),
+        message,
+        rawBody: rawBody || undefined,
       });
     }
 
+    if (match && !nameMatches(row.name, match.displayName?.text)) {
+      console.warn("[enrichPlace] name mismatch — no_place_match", {
+        placeId,
+        stored: row.name,
+        google: match.displayName?.text ?? null,
+        googleId: match.id,
+      });
+    }
     if (match && nameMatches(row.name, match.displayName?.text)) {
       googleMatched = true;
       if (isEmpty(row.address) && match.formattedAddress) {
