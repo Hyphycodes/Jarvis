@@ -62,14 +62,21 @@ function readImageUrlFromPayload(payload: Record<string, unknown>): string | und
   return [
     stringValue(payload.image_url),
     stringValue(payload.hero_image_url),
+    stringValue(payload.hero_photo_url),
+    stringValue(payload.photo_url),
+    stringValue(payload.thumbnail_url),
     stringValue(isRecord(payload.briefing) ? payload.briefing.hero_image_url : undefined),
     firstMediaUrl(payload.media),
     firstImageUrl(payload.images),
+    firstImageUrl(payload.photos),
+    firstMediaUrl(isRecord(payload.raw_payload) ? payload.raw_payload.media : undefined),
     firstImageUrl(isRecord(payload.raw_payload) ? payload.raw_payload.images : undefined),
     firstImageUrl(isRecord(payload.raw_payload) ? payload.raw_payload.photos : undefined),
+    stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.hero_image_url : undefined),
     stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.image_url : undefined),
     stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.photo_url : undefined),
     stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.thumbnail : undefined),
+    stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.thumbnail_url : undefined),
     stringValue(payload.thumbnail),
   ].find(isHttpUrl);
 }

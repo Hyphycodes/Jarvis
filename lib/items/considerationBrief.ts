@@ -506,7 +506,9 @@ function readMedia(
   const briefing = asRecord(payload.briefing);
   const media = Array.isArray(payload.media) ? payload.media : [];
   const rawImages = Array.isArray(payload.images) ? payload.images : [];
+  const rawPhotos = Array.isArray(payload.photos) ? payload.photos : [];
   const rawPayload = asRecord(payload.raw_payload);
+  const nestedMedia = Array.isArray(rawPayload.media) ? rawPayload.media : [];
   const nestedImages = Array.isArray(rawPayload.images) ? rawPayload.images : [];
   const nestedPhotos = Array.isArray(rawPayload.photos) ? rawPayload.photos : [];
   const gallery = [
@@ -514,13 +516,20 @@ function readMedia(
     stringValue(briefing.hero_image_url),
     stringValue(payload.image_url),
     stringValue(payload.hero_image_url),
+    stringValue(payload.hero_photo_url),
+    stringValue(payload.photo_url),
+    stringValue(payload.thumbnail_url),
     firstMediaUrl(media),
     firstImageUrl(rawImages),
+    firstImageUrl(rawPhotos),
+    firstMediaUrl(nestedMedia),
     firstImageUrl(nestedImages),
     firstImageUrl(nestedPhotos),
+    stringValue(rawPayload.hero_image_url),
     stringValue(rawPayload.image_url),
     stringValue(rawPayload.photo_url),
     stringValue(rawPayload.thumbnail),
+    stringValue(rawPayload.thumbnail_url),
     stringValue(payload.thumbnail),
   ]
     .filter((url): url is string => Boolean(url))
@@ -663,7 +672,7 @@ function firstImageUrl(images: unknown[]): string | undefined {
   for (const entry of images) {
     if (typeof entry === "string") return entry;
     const record = asRecord(entry);
-    const url = stringValue(record.url) ?? stringValue(record.src);
+    const url = stringValue(record.url) ?? stringValue(record.image_url) ?? stringValue(record.src);
     if (url) return url;
   }
   return undefined;
