@@ -504,6 +504,7 @@ function readMedia(
   payload: Record<string, unknown>,
 ): ConsiderationBriefView["media"] {
   const briefing = asRecord(payload.briefing);
+  const brief = asRecord(payload.brief);
   const media = Array.isArray(payload.media) ? payload.media : [];
   const rawImages = Array.isArray(payload.images) ? payload.images : [];
   const rawPhotos = Array.isArray(payload.photos) ? payload.photos : [];
@@ -513,6 +514,7 @@ function readMedia(
   const nestedPhotos = Array.isArray(rawPayload.photos) ? rawPayload.photos : [];
   const gallery = [
     item.imageUrl,
+    stringValue(brief.hero_image_url),
     stringValue(briefing.hero_image_url),
     stringValue(payload.image_url),
     stringValue(payload.hero_image_url),

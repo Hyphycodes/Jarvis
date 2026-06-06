@@ -2,11 +2,13 @@ import "server-only";
 
 import { getAnthropicClient, hasAnthropic, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import { buildBrainContext } from "@/lib/brain/context";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   hasGooglePlaces,
   searchPlaces,
   getPlacePhotoUrl,
 } from "@/lib/sources/googlePlaces";
+import { isUsableVenueImageUrl } from "@/lib/items/venueImage";
 import type { IndexedItem } from "@/lib/index/types";
 
 /** LLM-generated decision fields shown on the redesigned brief. */
@@ -31,10 +33,14 @@ export type BriefData = BriefFields & {
  */
 export async function generateBriefFields(
   item: IndexedItem,
+  opts: { userId?: string } = {},
 ): Promise<BriefFields> {
   const fallback = fallbackFields(item);
   if (!hasAnthropic()) return fallback;
-  const brainContext = await buildBrainContext({ includeWeather: false }).catch(() => null);
+  const brainContext = await buildBrainContext({
+    includeWeather: false,
+    userId: opts.userId,
+  }).catch(() => null);
 
   const context = [
     `Name: ${item.title}`,
@@ -81,22 +87,31 @@ Return ONLY a JSON object (no markdown, no prose) with exactly these keys:
 }
 
 /**
- * Resolve a hero image for the brief. Prefer the item's own image; otherwise
- * pull the first Google Places photo for the venue. Returns null on miss so
- * the component can render its fallback panel.
+ * Resolve a hero image for the brief. In priority order:
+ *   1. the item's own image,
+ *   2. the curated image on the source library place (if any),
+ *   3. a Google Places photo — searched by text so it works even when the
+ *      item has no lat/lng (most library-sourced items don't).
+ * Returns null on miss so the component can render its fallback panel.
  */
 export async function getBriefHeroImage(
   item: IndexedItem,
 ): Promise<string | null> {
   if (item.imageUrl) return item.imageUrl;
+
+  const libraryImage = await getLibraryPlaceImage(item).catch(() => null);
+  if (libraryImage) return libraryImage;
+
   if (!hasGooglePlaces()) return null;
-  if (item.lat == null || item.lng == null) return null;
   try {
     const query = `${item.title} ${item.locationName ?? item.address ?? ""}`.trim();
+    if (!query) return null;
+    // lat/lng are optional — searchPlaces only adds a location bias when present,
+    // so a name-only text query still resolves a venue photo.
     const places = await searchPlaces({
       query,
-      lat: item.lat,
-      lng: item.lng,
+      lat: item.lat ?? undefined,
+      lng: item.lng ?? undefined,
       maxResults: 1,
     });
     const photoName = places[0]?.photos?.[0]?.name;
@@ -106,6 +121,32 @@ export async function getBriefHeroImage(
     console.error("[briefFields] heroImage", error);
     return null;
   }
+}
+
+/** Read the curated image_url off the places_library row this item came from. */
+async function getLibraryPlaceImage(item: IndexedItem): Promise<string | null> {
+  const payload = item.rawPayload;
+  const libraryPlaceId =
+    isRecord(payload) && typeof payload.library_place_id === "string"
+      ? payload.library_place_id
+      : null;
+  if (!libraryPlaceId) return null;
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data } = await supabase
+      .from("places_library")
+      .select("image_url")
+      .eq("id", libraryPlaceId)
+      .maybeSingle();
+    const url = (data as { image_url?: string | null } | null)?.image_url;
+    return isUsableVenueImageUrl(url) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

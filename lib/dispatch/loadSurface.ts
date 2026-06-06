@@ -20,6 +20,7 @@ import {
   heroImageForItem,
   sourceDomainForItem,
 } from "@/lib/items/considerationBrief";
+import { isUsableVenueImageUrl } from "@/lib/items/venueImage";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
 import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
 import {
@@ -367,13 +368,64 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
       .filter((item) => evaluateActiveRadarItem(item).allowed)
       .sort(compareRadarItems)
       .slice(0, RADAR_ACTIVE_ITEM_LIMIT);
-    const withPlanRefs = await withRadarPlanRefs(visibleItems);
-    return withPlanRefs.map(({ item, planRef }) => toRadarCard(item, planRef));
+    const [withPlanRefs, libraryImages] = await Promise.all([
+      withRadarPlanRefs(visibleItems),
+      resolveLibraryImages(visibleItems),
+    ]);
+    return withPlanRefs.map(({ item, planRef }) =>
+      toRadarCard(item, planRef, libraryImages.get(item.id)),
+    );
   } catch (error) {
     logSurfaceError("radar", error);
     return [];
   }
 };
+
+/**
+ * Batch-resolve curated library photos for items that have no image of their
+ * own yet. One `in (...)` query keeps the Radar feed cheap while making photos
+ * resilient to materialization timing (an item surfaced before its library row
+ * gained an image still gets the photo here).
+ */
+async function resolveLibraryImages(
+  items: IndexedItem[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const byPlaceId = new Map<string, string[]>();
+  for (const item of items) {
+    if (item.imageUrl) continue;
+    const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+    const placeId =
+      typeof payload.library_place_id === "string" ? payload.library_place_id : null;
+    if (!placeId) continue;
+    const list = byPlaceId.get(placeId) ?? [];
+    list.push(item.id);
+    byPlaceId.set(placeId, list);
+  }
+  if (byPlaceId.size === 0) return result;
+
+  try {
+    const supabase = await getServerSupabase();
+    const { data, error } = await supabase
+      .from("places_library")
+      .select("id, image_url")
+      .in("id", [...byPlaceId.keys()]);
+    if (error) {
+      logQueryError("radar.libraryImages", error);
+      return result;
+    }
+    for (const row of (data ?? []) as Array<{ id: string; image_url: string | null }>) {
+      const url = row.image_url;
+      if (!isUsableVenueImageUrl(url)) continue;
+      for (const itemId of byPlaceId.get(row.id) ?? []) {
+        result.set(itemId, url);
+      }
+    }
+  } catch (error) {
+    logQueryError("radar.libraryImages", error);
+  }
+  return result;
+}
 
 export const loadNorthSurface: Loader<NorthPayload> = async () => {
   try {
@@ -664,12 +716,17 @@ async function withRadarPlanRefs(
   });
 }
 
-function toRadarCard(item: IndexedItem, planRef: RadarPlanRef): RadarCard {
+function toRadarCard(
+  item: IndexedItem,
+  planRef: RadarPlanRef,
+  libraryImage?: string,
+): RadarCard {
   const category = mapCategory(item.type, item.category);
   const planSlug = planRef.slug;
   const briefing = item.briefing;
   const consideration = buildConsiderationBrief(item);
   const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const brief = readCardBrief(payload);
   const intelligence = isRecord(payload.intelligence) ? payload.intelligence : {};
   const move = isRecord(payload.radar_move) ? payload.radar_move : {};
   const actionTitle =
@@ -692,6 +749,16 @@ function toRadarCard(item: IndexedItem, planRef: RadarPlanRef): RadarCard {
     stringValue(intelligence.strongest_angle);
   const planReadiness = readPlanReadiness(payload.plan_readiness ?? intelligence.plan_readiness);
   const scoreBreakdown = readNumberRecord(payload.score_breakdown ?? intelligence.score_breakdown);
+  // The editorial line. Prefer the generated brief's jarvis_line (the
+  // "Longman & Eagle's grown-up Hyde Park spot…" voice), then the council's
+  // rich one-line (mirrored onto item.description), and only fall back to the
+  // terse radar_move summary ("refined dinner") as a last resort.
+  const editorialLine =
+    brief?.jarvisLine ??
+    cleanDisplayText(item.description) ??
+    stringValue(briefing?.one_line) ??
+    cleanDisplayText(item.subtitle) ??
+    reasonSurfaced;
   return {
     id: item.id,
     source: item.source,
@@ -701,7 +768,7 @@ function toRadarCard(item: IndexedItem, planRef: RadarPlanRef): RadarCard {
     planSlug,
     category,
     title: actionTitle || briefing?.display_title || item.title,
-    summary: reasonSurfaced ?? briefing?.one_line ?? item.description ?? item.subtitle ?? "",
+    summary: editorialLine ?? "",
     displayCategory: briefing?.display_category,
     purposeLabel,
     vibe: stringValue(payload.vibe) ?? stringValue(intelligence.vibe),
@@ -711,8 +778,10 @@ function toRadarCard(item: IndexedItem, planRef: RadarPlanRef): RadarCard {
     missingInfo: readStringArray(payload.missing_info ?? intelligence.missing_info),
     planReadiness,
     scoreBreakdown,
-    oneLine: briefing?.one_line,
-    jarvisTake: strongestAngle ?? briefing?.jarvis_take,
+    oneLine: editorialLine,
+    whoItsFor: brief?.whoItsFor,
+    priceEstimate: brief?.priceEstimate,
+    jarvisTake: brief?.jarvisLine ?? strongestAngle ?? briefing?.jarvis_take,
     verdictLabel: consideration.verdictLabel,
     verdictTone: consideration.verdictTone,
     bestMoveTitle: consideration.bestMoveTitle,
@@ -730,7 +799,7 @@ function toRadarCard(item: IndexedItem, planRef: RadarPlanRef): RadarCard {
       consideration.location?.label,
     neighborhood: item.locationName ?? undefined,
     datetime: item.startsAt ?? undefined,
-    imageUrl: heroImageForItem(item) ?? undefined,
+    imageUrl: heroImageForItem(item) ?? brief?.heroImageUrl ?? libraryImage ?? undefined,
     placeholderKind: consideration.media.placeholderKind,
     score: planReadiness?.confidence ?? briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,
 
@@ -1238,6 +1307,28 @@ function readPlanReadiness(value: unknown): RadarCard["planReadiness"] | undefin
 function readSlugFromKeyStats(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   return typeof value.slug === "string" ? value.slug : undefined;
+}
+
+/**
+ * Read the generated Consideration Brief blob (surfaced_items.payload.brief)
+ * for the Radar card. This is the same rich brief the /item page renders —
+ * jarvis_line, who_its_for, price_estimate, hero_image_url — so cards read as
+ * editorial signal, not terse internal labels.
+ */
+function readCardBrief(payload: Record<string, unknown>): {
+  jarvisLine?: string;
+  whoItsFor?: string;
+  priceEstimate?: string;
+  heroImageUrl?: string;
+} | null {
+  const raw = payload.brief;
+  if (!isRecord(raw)) return null;
+  return {
+    jarvisLine: cleanDisplayText(stringValue(raw.jarvis_line)),
+    whoItsFor: cleanDisplayText(stringValue(raw.who_its_for)),
+    priceEstimate: stringValue(raw.price_estimate),
+    heroImageUrl: stringValue(raw.hero_image_url),
+  };
 }
 
 function formatTimeWindow(

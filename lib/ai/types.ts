@@ -217,6 +217,8 @@ export type RadarCard = {
   scoreBreakdown?: Record<string, number>;
   oneLine?: string;
   jarvisTake?: string;
+  whoItsFor?: string;
+  priceEstimate?: string;
   verdictLabel?: string;
   verdictTone?: "positive" | "neutral" | "caution" | "negative";
   bestMoveTitle?: string;

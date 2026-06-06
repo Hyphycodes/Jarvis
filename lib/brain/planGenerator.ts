@@ -201,7 +201,14 @@ export async function generatePlanFromItem(
   }
 
   try {
-    const context = await buildBrainContext({ includeWeather: false });
+    // Thread the owner id through so background plan fills (autopilot pre-build,
+    // `after()` tasks) build real context instead of throwing in requireOwner()
+    // when there is no request session — that throw was silently demoting every
+    // background generation to the deterministic fallback.
+    const context = await buildBrainContext({
+      includeWeather: false,
+      userId: input.userId,
+    });
     const graph = buildInterestGraph({ context });
     const promptBody = renderPrompt(
       input.item,

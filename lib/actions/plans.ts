@@ -555,6 +555,11 @@ export async function fillPlan(input: {
     plan_slug: stubSlug ?? plan.slug,
     plan_status: "ready",
   } as Json;
+  // Surface the venue photo the plan resolved back onto the Radar card, so a
+  // pre-built item stops showing a blank image box. Only when it has none yet.
+  if (result.selectedPhotoUrl && !(itemRow as SurfacedItemRow).image_url) {
+    sourcePatch.image_url = result.selectedPhotoUrl;
+  }
   if (!input.preserveItemSurface) {
     sourcePatch.destination = inferItemDestination(plan.starts_at);
   }

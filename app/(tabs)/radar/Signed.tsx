@@ -22,6 +22,7 @@ type Card = {
   category: string;
   title: string;
   body: string;
+  whoLine?: string;
   meta: string[];
   footerLine: string;
   imageUrl?: string;
@@ -44,28 +45,54 @@ type HoldingItem = {
 
 function adaptRadarToCard(item: RadarPayloadCard): Card {
   const filter = mapCategoryToFilter(item.category);
-  const meta = [
-    formatMeta(item.datetime),
-    item.neighborhood,
-    item.whyNow,
-  ].filter((value): value is string => Boolean(value));
+  const title = item.title;
+  // A real area to show — but never the venue name again (it's already the
+  // title). This kills the "THE PROMONTORY / THE PROMONTORY" stacking.
+  const area = distinctFromTitle(item.neighborhood ?? item.locationLabel, title);
+  // Meta line is for time-bound signal (events). Places don't repeat the venue.
+  const meta = [formatMeta(item.datetime)].filter(
+    (value): value is string => Boolean(value),
+  );
+  // Footer reads like the brief: where + what it costs, deduped, no internals.
+  const footerLine = uniqueParts([area, item.priceEstimate]).join(" · ");
   return {
     id: item.id,
     category: (item.displayCategory ?? mapCategoryToBadge(item.category)).toUpperCase(),
-    title: item.title,
+    title,
     body: item.oneLine || item.summary || item.whyItFits || "Worth a closer look.",
+    whoLine: distinctFromTitle(item.whoItsFor, title),
     meta,
-    footerLine: [
-      item.effortLevel ? `Effort ${item.effortLevel}` : null,
-      item.spendingPosture ? `Spend ${item.spendingPosture}` : null,
-      item.sourceDomain ?? item.locationLabel,
-    ].filter(Boolean).join(" · "),
+    footerLine,
     imageUrl: item.imageUrl,
     placeholderKind: item.placeholderKind,
     planSlug: item.planSlug,
     canGeneratePlan: Boolean(!item.planSlug && item.actions.openPlan),
     filter,
   };
+}
+
+/** Drop a value that is just the title again (case/spacing-insensitive). */
+function distinctFromTitle(
+  value: string | undefined,
+  title: string,
+): string | undefined {
+  if (!value) return undefined;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return norm(value) === norm(title) ? undefined : value;
+}
+
+/** Join non-empty, de-duplicated parts (case-insensitive). */
+function uniqueParts(parts: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!part) continue;
+    const key = part.toLowerCase().trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(part);
+  }
+  return out;
 }
 
 function mapCategoryToFilter(category: string): Filter {
@@ -474,6 +501,11 @@ function RadarCard({
             <p className="mt-3 text-[14px] leading-[1.5] text-warm-ivory/68">
               {card.body}
             </p>
+            {card.whoLine ? (
+              <p className="mt-2 text-[13px] leading-[1.45] text-warm-ivory/50">
+                {card.whoLine}
+              </p>
+            ) : null}
             {card.meta.length > 0 ? (
               <div className="mt-4 text-[10px] uppercase leading-[1.55] tracking-[0.2em] text-warm-ivory/40">
                 {card.meta[0]}

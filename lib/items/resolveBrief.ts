@@ -16,12 +16,22 @@ import type { Json } from "@/lib/types/database";
  * surfaced_items.payload.brief, and returned. Persistence failures are
  * swallowed — the brief still renders for this request.
  */
-export async function resolveBrief(item: IndexedItem): Promise<BriefData> {
+export async function resolveBrief(
+  item: IndexedItem,
+  opts: { userId?: string } = {},
+): Promise<BriefData> {
   const existing = readBrief(item.rawPayload);
-  if (existing) return existing;
+  if (existing) {
+    // Backfill the image_url column if a hero exists but never landed there —
+    // the Radar feed reads image_url first, so this is what surfaces photos.
+    if (existing.hero_image_url && !item.imageUrl) {
+      await persistHeroToColumn(item, existing.hero_image_url);
+    }
+    return existing;
+  }
 
   const [fields, heroImage] = await Promise.all([
-    generateBriefFields(item),
+    generateBriefFields(item, { userId: opts.userId }),
     getBriefHeroImage(item),
   ]);
 
@@ -32,6 +42,9 @@ export async function resolveBrief(item: IndexedItem): Promise<BriefData> {
   };
 
   await persistBrief(item, brief);
+  if (heroImage && !item.imageUrl) {
+    await persistHeroToColumn(item, heroImage);
+  }
   return brief;
 }
 
@@ -74,6 +87,23 @@ async function persistBrief(item: IndexedItem, brief: BriefData): Promise<void> 
     if (error) console.error("[resolveBrief] persist", error);
   } catch (error) {
     console.error("[resolveBrief] persist", error);
+  }
+}
+
+async function persistHeroToColumn(
+  item: IndexedItem,
+  heroImageUrl: string,
+): Promise<void> {
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { error } = await supabase
+      .from("surfaced_items")
+      .update({ image_url: heroImageUrl })
+      .eq("id", item.id)
+      .is("image_url", null);
+    if (error) console.error("[resolveBrief] persistHero", error);
+  } catch (error) {
+    console.error("[resolveBrief] persistHero", error);
   }
 }
 
