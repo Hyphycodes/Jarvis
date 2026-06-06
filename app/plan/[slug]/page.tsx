@@ -1,8 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { loadPlanBriefBySlug } from "@/lib/plans/loadBrief";
+import { buildPlanBrief } from "@/lib/plans/buildPlanBrief";
 import { loadPlanBySlugV2 } from "@/lib/plans/loadPlan";
-import type { LoadedPlanMenuHighlight } from "@/lib/plans/loadPlan";
+import type { LoadedPlan, LoadedPlanMenuHighlight } from "@/lib/plans/loadPlan";
+import type { PlanBrief } from "@/lib/plans/planBrief";
+import { samplePlanBrief } from "@/lib/plans/samplePlanBrief";
 import { enrichInfoStrip, resolveHeroImage } from "@/lib/plans/enrichLogistics";
 import {
   PlanChapterRow,
@@ -30,8 +32,16 @@ export default async function DynamicPlanPage({
   const user = await getSessionUser();
   if (!user) redirect(`/login?next=/plan/${encodeURIComponent(slug)}`);
 
-  const brief = await loadPlanBriefBySlug(slug);
-  if (!brief) notFound();
+  let loaded: LoadedPlan | null;
+  let brief: PlanBrief;
+  if (slug === "sample") {
+    loaded = null;
+    brief = samplePlanBrief();
+  } else {
+    loaded = await loadPlanBySlugV2(slug);
+    if (!loaded) notFound();
+    brief = buildPlanBrief({ loaded });
+  }
 
   // Enrich the info strip with real weather / in-the-area data when available.
   // Sample plans (no planId) skip enrichment — keep their designed fallbacks.
@@ -39,7 +49,7 @@ export default async function DynamicPlanPage({
   let heroImage: string | null | undefined = brief.heroImage;
   let menuHighlights: LoadedPlanMenuHighlight[] = [];
   if (brief.planId) {
-    const loaded = await loadPlanBySlugV2(slug);
+    loaded = loaded ?? (await loadPlanBySlugV2(slug));
     if (loaded) {
       [infoStrip, heroImage] = await Promise.all([
         enrichInfoStrip(brief, loaded),
