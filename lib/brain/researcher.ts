@@ -69,13 +69,38 @@ function priceLevelFromGoogle(
 // Category-aware research hints. The researcher stays one function, but the
 // editorial query and the default place_type adapt so a culture/moves/places
 // candidate isn't searched as if it were a restaurant.
-const CATEGORY_HINTS: Record<RadarCategory, { reviewSuffix: string; placeType: ResearcherOutput["place_type"] }> = {
-  dining: { reviewSuffix: "restaurant review", placeType: "restaurant" },
-  places: { reviewSuffix: "bar lounge spot guide", placeType: "venue" },
-  moves: { reviewSuffix: "class activity outdoor guide", placeType: "outdoor" },
-  culture: { reviewSuffix: "exhibit gallery museum review", placeType: "cultural" },
-  events: { reviewSuffix: "event lineup tickets", placeType: "venue" },
-  style: { reviewSuffix: "product review where to buy", placeType: "shop" },
+const CATEGORY_HINTS: Record<
+  RadarCategory,
+  { reviewSuffix: string; placeType: ResearcherOutput["place_type"]; trustedDomains?: string[] }
+> = {
+  dining: {
+    reviewSuffix: "restaurant review menu chef hours reservation",
+    placeType: "restaurant",
+    trustedDomains: ["chicago.eater.com", "eater.com", "timeout.com", "infatuation.com", "resy.com", "exploretock.com"],
+  },
+  places: {
+    reviewSuffix: "bar lounge cigar lounge bookstore park guide hours",
+    placeType: "venue",
+    trustedDomains: ["timeout.com", "thrillist.com", "atlasobscura.com"],
+  },
+  moves: {
+    reviewSuffix: "class booking schedule price hours sign up",
+    placeType: "outdoor",
+  },
+  culture: {
+    reviewSuffix: "exhibit gallery museum show dates hours tickets",
+    placeType: "cultural",
+    trustedDomains: ["artic.edu", "mcachicago.org", "timeout.com", "chicagoreader.com", "choosechicago.com"],
+  },
+  events: {
+    reviewSuffix: "event date time venue tickets lineup",
+    placeType: "venue",
+    trustedDomains: ["ticketmaster.com", "eventbrite.com", "songkick.com", "dice.fm", "choosechicago.com"],
+  },
+  style: {
+    reviewSuffix: "product review where to buy price",
+    placeType: "shop",
+  },
 };
 
 function deterministicFallback(name: string, reason: string, category?: RadarCategory): ResearcherOutput {
@@ -142,11 +167,18 @@ export async function researchPlace(
     try {
       const city = home?.city;
       const queryName = city ? `"${name}" ${city}` : `"${name}"`;
+      // Source routing: augment the trusted-domain set with category-specific
+      // sources (food press for dining, museum/venue/ticketing for culture/events)
+      // so research pulls from the right places per lane. Merge, never replace,
+      // to keep recall.
+      const trustedDomains = hint?.trustedDomains
+        ? Array.from(new Set([...HIGH_TRUST_DOMAINS, ...hint.trustedDomains]))
+        : HIGH_TRUST_DOMAINS;
       const [trusted, broad] = await Promise.allSettled([
         searchWeb({
           query: queryName,
           maxResults: 5,
-          includeDomains: HIGH_TRUST_DOMAINS,
+          includeDomains: trustedDomains,
         }),
         searchWeb({
           query: `${queryName} ${hint?.reviewSuffix ?? "restaurant review"}`,

@@ -585,6 +585,48 @@ function renderPrompt(
  * Real, honest fallback plan. Uses the item's actual fields. Does not
  * invent timing, prices, or atmosphere details it cannot know.
  */
+/**
+ * Per-plan-type sections so the deterministic fallback keeps each lane's proper
+ * template (dining→atmosphere/after, event→arrival, activity/outdoors/fitness→
+ * route+bring, culture→context, travel→bring). The LLM path already varies
+ * sections by type; this guarantees it offline too. Never used for Finds — those
+ * render on the buyer-research detail page, not a plan.
+ */
+function typeSpecificSections(
+  planType: GeneratedPlan["plan_type"],
+  item: IndexedItem,
+): GeneratedPlan["sections"] {
+  switch (planType) {
+    case "dining":
+      return [
+        { key: "atmosphere", title: "Atmosphere", section_type: "atmosphere", body: "The room and what to expect — confirm the vibe fits the occasion.", sort_order: 35 },
+        { key: "after", title: "After", section_type: "after", body: "A nearby second stop — a drink, a walk, a cigar — to round out the night if it fits.", sort_order: 60 },
+      ];
+    case "event":
+      return [
+        { key: "arrival", title: "Arrival", section_type: "before", body: item.startsAt ? `Plan to arrive ahead of ${formatWhen(item.startsAt)}. Verify the official start time and entry.` : "Verify the official date, time, and entry before committing.", sort_order: 25 },
+        { key: "after", title: "After", section_type: "after", body: "A spot nearby to land after — keep it light and close.", sort_order: 60 },
+      ];
+    case "activity":
+    case "outdoors":
+    case "fitness":
+      return [
+        { key: "route", title: "Route / Sequence", section_type: "route", body: "The sequence: where you start, the flow, and where you finish.", sort_order: 35 },
+        { key: "bring", title: "What to Bring", section_type: "bring", body: "Gear/prep for this — pack it the night before so nothing blocks the move.", sort_order: 48 },
+      ];
+    case "culture":
+      return [
+        { key: "context", title: "Context", section_type: "notes", body: "Why it matters — the cultural angle worth knowing before you go.", sort_order: 35 },
+      ];
+    case "travel":
+      return [
+        { key: "bring", title: "Packing", section_type: "bring", body: "What to pack/organize for this.", sort_order: 48 },
+      ];
+    default:
+      return [];
+  }
+}
+
 function deterministicPlan(item: IndexedItem, chatContext?: PlanChatContext): GeneratedPlan {
   const brief = buildConsiderationBrief(item);
   const slug = slugify(`${item.title}-${item.id.slice(0, 6)}`);
@@ -654,6 +696,8 @@ function deterministicPlan(item: IndexedItem, chatContext?: PlanChatContext): Ge
         : "Confirm hours, availability, and any reservation requirements before going.",
       sort_order: 50,
     },
+    // Per-type sections so each lane keeps its proper template even in fallback.
+    ...typeSpecificSections(planType, item),
   ];
 
   return {

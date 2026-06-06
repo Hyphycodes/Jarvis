@@ -22,6 +22,7 @@ import {
   type QueueEntry,
 } from "@/lib/radar/candidateSelection";
 import { enrichPlace } from "@/lib/library/enrichPlace";
+import { enqueueFindResearch } from "@/lib/finds/researchJobs";
 import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
 import type { RunBudget } from "@/lib/radar/foundationSprint";
 import type { FounderProfileRow, Json, RadarCandidateInboxRow } from "@/lib/types/database";
@@ -42,10 +43,12 @@ export type CandidateConversionResult = {
 };
 
 // Categories that live in places_library and surface through the materializer.
+// NOTE: "moves" is intentionally NOT here — moves route through researchAndRouteMove,
+// which splits free/self-directed flows (surfaced directly) from paid/bookable
+// venue activities (place research).
 const PLACE_LIKE: ReadonlySet<RadarCategory> = new Set<RadarCategory>([
   "dining",
   "places",
-  "moves",
   "culture",
 ]);
 // Below this dossier confidence we don't even store a Library row — same bar the
@@ -215,6 +218,10 @@ async function processEntry(
     }
 
     // ── Route by category into the real research/verdict pipelines ────────────
+    if (category === "moves") {
+      await researchAndRouteMove(supabase, userId, row, context, result, userIntent);
+      return;
+    }
     if (category && PLACE_LIKE.has(category)) {
       await researchAndStorePlace(supabase, userId, row, category, context, result, userIntent);
       return;
@@ -439,6 +446,130 @@ async function surfaceUserIntentPlace(
       user_intent: true,
     } as unknown as Json,
   });
+}
+
+// ── Moves → free flow (surfaced directly) or bookable venue (place research) ────
+async function researchAndRouteMove(
+  supabase: SupabaseClient,
+  userId: string,
+  row: RadarCandidateInboxRow,
+  context: BrainContextPacket,
+  result: CandidateConversionResult,
+  userIntent: boolean,
+): Promise<void> {
+  const moveKindRaw = stringValue(readRaw(row, ["move_kind"]));
+  const sequence = stringValue(readRaw(row, ["sequence"]));
+  const bestTime = stringValue(readRaw(row, ["best_time"]));
+  const priceHint = stringValue(readRaw(row, ["price_hint"]));
+  const gear = arrayValue(readRaw(row, ["gear_needed"]));
+  // Free when explicitly free, or when there's a self-directed sequence and no
+  // bookable/venue signal. Bookable when explicit, or venue/price-driven.
+  const isFree = moveKindRaw === "free" || (moveKindRaw !== "bookable" && Boolean(sequence) && !row.url);
+
+  // Either path can imply gear → quietly seed Finds (deduped).
+  if (gear.length > 0) await linkMoveGearToFinds(supabase, userId, gear, row.title);
+
+  if (!isFree) {
+    // Paid/bookable venue activity — research the venue (hours, price, booking).
+    await researchAndStorePlace(supabase, userId, row, "moves", context, result, userIntent);
+    return;
+  }
+
+  // Free/self-directed move must carry a concrete sequence to be non-stub.
+  if (!sequence) {
+    await markCandidate(supabase, userId, row.id, {
+      status: "evaluated",
+      reason: { summary: "Free move needs a concrete sequence before surfacing.", category: "moves", source: "candidate_research" },
+    });
+    result.needsEnrichment++;
+    return;
+  }
+
+  // Dedup against an existing move with the same title.
+  const { data: existing } = await supabase
+    .from("surfaced_items")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("category", "moves")
+    .ilike("title", row.title)
+    .not("status", "in", "(archived,passed)")
+    .limit(1);
+  if (((existing ?? []) as Array<{ id: string }>)[0]?.id) {
+    await markCandidate(supabase, userId, row.id, { status: "duplicate", rejection_reason: "Move already surfaced." });
+    result.duplicates++;
+    return;
+  }
+
+  const description = stringValue(readRaw(row, ["relevance_brief"])) ?? row.description ?? row.title;
+  const score = userIntent ? 0.82 : 0.62;
+  const { error } = await supabase.from("surfaced_items").insert({
+    user_id: userId,
+    destination: "radar",
+    status: userIntent ? "shown" : "discovered",
+    source: userIntent ? "user_intent" : "category_agent",
+    source_id: row.id,
+    type: "move",
+    category: "moves",
+    title: row.title,
+    subtitle: bestTime ?? null,
+    description,
+    url: row.url ?? null,
+    image_url: httpOrNull(row.image_url),
+    score,
+    planning_state: userIntent ? "saved_to_radar" : "observed",
+    reasons: [description].filter(Boolean),
+    tags: tags(row),
+    payload: {
+      source_layer: "move_discovery",
+      move_kind: "free",
+      sequence,
+      best_time: bestTime,
+      price_hint: priceHint,
+      gear_needed: gear,
+      user_intent: userIntent,
+    } as unknown as Json,
+  });
+  if (error) throw new Error(`move surfaced_items insert failed: ${error.message}`);
+
+  await markCandidate(supabase, userId, row.id, {
+    status: "library",
+    reason: { summary: `Surfaced free move with sequence.`, category: "moves", user_intent: userIntent, source: "candidate_research" },
+  });
+  result.placesCreated++;
+}
+
+/** A move's implied gear becomes quiet, deduped Finds candidates (≤2 per move). */
+async function linkMoveGearToFinds(
+  supabase: SupabaseClient,
+  userId: string,
+  gear: string[],
+  moveTitle: string,
+): Promise<void> {
+  for (const raw of gear.slice(0, 2)) {
+    const mission = raw.trim();
+    if (!mission) continue;
+    try {
+      const { data: existingFind } = await supabase
+        .from("surfaced_items")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("category", "finds")
+        .ilike("title", mission)
+        .limit(1);
+      if (((existingFind ?? []) as Array<{ id: string }>).length > 0) continue;
+      const { data: existingJob } = await supabase
+        .from("finds_research_jobs")
+        .select("id")
+        .eq("user_id", userId)
+        .ilike("mission", mission)
+        .in("status", ["queued", "processing"])
+        .limit(1);
+      if (((existingJob ?? []) as Array<{ id: string }>).length > 0) continue;
+      await enqueueFindResearch({ userId, mission, context: `Gear for: ${moveTitle}`, source: "need_scout" });
+    } catch {
+      // best-effort — gear linkage never blocks move surfacing
+    }
+  }
 }
 
 // ── Events → current_events(pending), only with a real future date ──────────────

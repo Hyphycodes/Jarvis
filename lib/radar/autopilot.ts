@@ -24,6 +24,8 @@ import {
 } from "@/lib/intelligence/radarCurator";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { normalizeRadarCategory } from "@/lib/radar/category";
+import { categoryDataReady, type HoldReason } from "@/lib/brain/categoryCouncils";
+import { runExecutiveCouncil, type ExecutiveCandidate, type ExecutiveDecision } from "@/lib/brain/executiveCouncil";
 import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
 import { planLivingFive, type LivingFiveMember } from "@/lib/radar/livingFive";
 import { preBuildPlansForShownItems } from "@/lib/radar/planPreBuilder";
@@ -1117,6 +1119,7 @@ async function promoteHoldingWithService(input: {
   const candidateMembers: LivingFiveMember[] = [];
   const candidateMeta = new Map<string, { row: SurfacedItemRow; radar: ReturnType<typeof enrichRadarItem>; composite: number }>();
   const gateRejectedIds: string[] = [];
+  const heldByGate: Array<{ id: string; holdReasons: HoldReason[] }> = [];
   for (const row of reviewedRows) {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
@@ -1126,9 +1129,81 @@ async function promoteHoldingWithService(input: {
       gateRejectedIds.push(row.id);
       continue;
     }
+    // Phase 2 guardrail: block true stubs (minimum useful data, not perfect).
+    const readiness = categoryDataReady(item, category);
+    if (!readiness.ready) {
+      reasons.push(`${item.title}: held — ${readiness.holdReasons.join(", ")}.`);
+      console.warn("[radar.guardrail] held", { itemId: row.id, category, holdReasons: readiness.holdReasons });
+      heldByGate.push({ id: row.id, holdReasons: readiness.holdReasons });
+      gateRejectedIds.push(row.id);
+      continue;
+    }
     const composite = compositeFor(radar, item, userLat, userLng);
     candidateMembers.push({ id: row.id, category, composite, eligible: true, timelyValid: !isStaleForRadar(item) });
     candidateMeta.set(row.id, { row, radar, composite });
+  }
+
+  // Persist hold reasons for debugging (SQL-inspectable).
+  if (heldByGate.length > 0) {
+    await Promise.all(
+      heldByGate.map(({ id, holdReasons }) => {
+        const row = reviewedRows.find((r) => r.id === id);
+        const base =
+          row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+            ? (row.payload as Record<string, unknown>)
+            : {};
+        return input.supabase
+          .from("surfaced_items")
+          .update({ payload: { ...base, hold_reasons: holdReasons }, updated_at: new Date().toISOString() })
+          .eq("id", id)
+          .eq("user_id", input.userId);
+      }),
+    );
+  }
+
+  // ── Executive Council: cross-category attention order + user-intent boost ─────
+  // One LLM pass per cycle. Drops hold/archive, nudges composites so the items
+  // that deserve attention now (and explicit asks) win contested slots.
+  const execMeta = new Map<string, ExecutiveDecision>();
+  if (candidateMembers.length >= 2) {
+    const shortlist: ExecutiveCandidate[] = candidateMembers.map((m) => {
+      const meta = candidateMeta.get(m.id)!;
+      const pl =
+        meta.row.payload && typeof meta.row.payload === "object" && !Array.isArray(meta.row.payload)
+          ? (meta.row.payload as Record<string, unknown>)
+          : {};
+      return {
+        id: m.id,
+        category: m.category,
+        title: meta.row.title ?? meta.radar.item.title,
+        laneScore: Math.max(0, Math.min(1, m.composite)),
+        userIntent: meta.row.source === "user_intent",
+        startsAt: meta.row.starts_at ?? undefined,
+        pillarTags: Array.isArray(pl.pillar_tags) ? (pl.pillar_tags as string[]) : [],
+        reason: meta.radar.reasonSurfaced ?? undefined,
+      };
+    });
+    const decisions = await runExecutiveCouncil({ shortlist }).catch(() => []);
+    for (const d of decisions) execMeta.set(d.id, d);
+
+    const kept: LivingFiveMember[] = [];
+    for (const m of candidateMembers) {
+      const d = execMeta.get(m.id);
+      if (d && (d.surface === "archive" || d.surface === "hold")) {
+        gateRejectedIds.push(m.id);
+        reasons.push(`${candidateMeta.get(m.id)?.row.title ?? m.id}: executive → ${d.surface}${d.why_now ? ` (${d.why_now})` : ""}.`);
+        continue;
+      }
+      const rank = d?.attentionRank ?? 99;
+      const boost = Math.max(0, 0.08 - (rank - 1) * 0.01) + (d?.intentBoosted ? 0.12 : 0);
+      const boosted = Math.min(1, m.composite + boost);
+      m.composite = boosted;
+      const meta = candidateMeta.get(m.id);
+      if (meta) meta.composite = boosted;
+      kept.push(m);
+    }
+    candidateMembers.length = 0;
+    candidateMembers.push(...kept);
   }
 
   // ── Plan the living-5: fill open slots, displace weaker sitters ───────────────
@@ -1149,7 +1224,14 @@ async function promoteHoldingWithService(input: {
       meta.row.payload ?? meta.radar.item.rawPayload,
       meta.radar,
     );
-    const payload = { ...(basePayload as Record<string, unknown>), shown_at: now };
+    const exec = execMeta.get(id);
+    const payload = {
+      ...(basePayload as Record<string, unknown>),
+      shown_at: now,
+      ...(exec
+        ? { exec: { attention_rank: exec.attentionRank, surface: exec.surface, why_now: exec.why_now, intent_boosted: exec.intentBoosted } }
+        : {}),
+    };
     const { error } = await input.supabase
       .from("surfaced_items")
       .update({

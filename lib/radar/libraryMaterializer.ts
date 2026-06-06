@@ -2,6 +2,7 @@ import "server-only";
 
 import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
 import { normalizeRadarCategory } from "@/lib/radar/category";
+import { attributePillar } from "@/lib/north/attributionMap";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import type {
   CurrentEventRow,
@@ -161,6 +162,12 @@ export async function materializeEligibleLibraryItems(
 }
 
 function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): SurfacedItemInsert {
+  const category = deriveCategory(place);
+  const pillarTags = attributePillar({
+    category,
+    tags: place.vibe_keywords ?? [],
+    title: place.name,
+  });
   return {
     user_id: userId,
     destination: "radar",
@@ -168,7 +175,7 @@ function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): Surfaced
     source: MATERIALIZER_SOURCE,
     source_id: place.id,
     type: "place",
-    category: deriveCategory(place),
+    category,
     title: place.name,
     subtitle: place.neighborhood ?? null,
     description: place.verdict ?? null,
@@ -192,6 +199,7 @@ function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): Surfaced
       price_level: place.price_level,
       seasonal_notes: place.seasonal_notes,
       times_surfaced: place.times_surfaced,
+      pillar_tags: pillarTags,
     } satisfies Json,
   };
 }
@@ -246,6 +254,11 @@ function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedI
       ticket_url: event.ticket_url,
       price_level: event.price_level,
       library_place_id: event.library_place_id,
+      pillar_tags: attributePillar({
+        category: "events",
+        tags: event.vibe_keywords ?? [],
+        title: event.title,
+      }),
     } satisfies Json,
   };
 }

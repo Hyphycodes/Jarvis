@@ -11,6 +11,8 @@ export type CouncilScores = {
   taste: number;
   growth: number;
   critic: number;
+  /** Phase 2: lane-specialized category council score (0 when no radar category). */
+  category: number;
 };
 
 export type RadarDecision = {
