@@ -6,7 +6,10 @@ import {
   cancelPlan,
   createStubPlan,
   fillPlan,
+  schedulePlan,
 } from "@/lib/actions/plans";
+import { resolveUserIntentItem } from "@/lib/radar/userIntent";
+import { pickPlanDate } from "@/lib/plans/scheduleHint";
 import { passItem, saveItem } from "@/lib/actions/items";
 import { buildBrainContext } from "@/lib/brain/context";
 import { buildIntelligenceReason } from "@/lib/brain/intelligenceReason";
@@ -279,7 +282,15 @@ async function buildPlan(
   payload: Record<string, unknown> | undefined,
 ) {
   const observationId = stringValue(payload?.observation_id);
+  const candidateId = stringValue(payload?.candidate_id);
   let itemId = stringValue(payload?.item_id);
+  // Conversational capture ("make a plan for Naia") → resolve the user-intent
+  // candidate into a real surfaced item (researching it now if the background
+  // pass hasn't finished). This is what makes the chip's tap actually do work.
+  if (!itemId && candidateId) {
+    const resolved = await resolveUserIntentItem(userId, candidateId);
+    itemId = resolved?.itemId ?? null;
+  }
   if (!itemId && observationId) {
     const result = await addToRadarFromObservation({
       userId,
@@ -303,6 +314,16 @@ async function buildPlan(
     .update({ planning_state: "planning_in_progress" })
     .eq("id", itemId)
     .eq("user_id", userId);
+
+  // Auto-schedule so the tap actually confirms something: a fixed event keeps
+  // its official date; a flexible item gets a sensible best date (inside any
+  // hinted window like "this week") that the owner can reschedule.
+  const scheduled = await autoSchedulePlan({
+    userId,
+    planId: stub.planId,
+    timingHint: stringValue(payload?.timing_hint),
+    supabase,
+  });
 
   if (!stub.reused) {
     after(async () => {
@@ -361,14 +382,95 @@ async function buildPlan(
   });
   clearChatContextCache(userId);
 
+  const planVerb = stub.reused ? "That plan already exists." : "Building your plan now.";
+  const scheduleLine = scheduled
+    ? scheduled.fixed
+      ? ` It's set for ${scheduled.label}.`
+      : scheduled.flexible
+        ? ` Penciled in for ${scheduled.label} — tap to change the time.`
+        : ` Set for ${scheduled.label}.`
+    : "";
+  const calendarChips: ChatChip[] = scheduled
+    ? [
+        {
+          label: "Add to Calendar",
+          message: "Add to calendar.",
+          action_type: "add_to_schedule",
+          payload: { plan_id: stub.planId, plan_slug: stub.planSlug, ics: true },
+        },
+        {
+          label: "Change Time",
+          message: "Change the time.",
+          action_type: "add_to_schedule",
+          payload: { plan_id: stub.planId },
+        },
+      ]
+    : [stopPlanningChip(stub.planId)];
+
   return {
     ok: true,
-    message: stub.reused ? "That plan already exists." : "Planning this...",
+    message: `${planVerb}${scheduleLine}`,
     plan_id: stub.planId,
     plan_slug: stub.planSlug,
     item_id: itemId,
-    chips: stub.reused ? [] : [stopPlanningChip(stub.planId)],
+    scheduled_label: scheduled?.label ?? null,
+    chips: calendarChips,
   };
+}
+
+/**
+ * Put a freshly-built plan on the calendar. Fixed (event) plans already carry
+ * their official date — we just report it. Flexible plans get a best date from
+ * the timing hint (or a sensible default) via schedulePlan.
+ */
+async function autoSchedulePlan(input: {
+  userId: string;
+  planId: string;
+  timingHint: string | null;
+  supabase: Awaited<ReturnType<typeof getServerSupabase>>;
+}): Promise<{ label: string; flexible: boolean; fixed: boolean } | null> {
+  try {
+    const { data } = await input.supabase
+      .from("plans")
+      .select("key_stats, scheduled_date, date")
+      .eq("id", input.planId)
+      .eq("user_id", input.userId)
+      .maybeSingle();
+    const plan = data as { key_stats?: unknown; scheduled_date?: string | null; date?: string | null } | null;
+    const keyStats = plan && typeof plan.key_stats === "object" && plan.key_stats !== null
+      ? (plan.key_stats as Record<string, unknown>)
+      : {};
+
+    // Fixed event: official date is locked — don't reschedule, just report it.
+    if (keyStats.schedule_fixed === true) {
+      const startsAt = typeof keyStats.starts_at === "string" ? keyStats.starts_at : null;
+      const label = startsAt ? formatStartLabel(startsAt) : (plan?.date ?? "its date");
+      return { label, flexible: false, fixed: true };
+    }
+    // Already scheduled: leave it.
+    if (plan?.scheduled_date) {
+      return { label: plan.date ?? plan.scheduled_date, flexible: false, fixed: false };
+    }
+
+    const picked = pickPlanDate(input.timingHint);
+    await schedulePlan({
+      planId: input.planId,
+      scheduledDate: picked.date,
+      scheduledTime: picked.time,
+    });
+    return { label: picked.label, flexible: picked.flexible, fixed: false };
+  } catch (error) {
+    console.error("[chat.actions] autoSchedulePlan failed", error);
+    return null;
+  }
+}
+
+function formatStartLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const t = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `${day} · ${t}`;
 }
 
 async function stopPlanning(

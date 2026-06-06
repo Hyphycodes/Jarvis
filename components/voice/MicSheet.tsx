@@ -533,27 +533,23 @@ export function MicSheet({
     if (chip.action_type === "build_plan") {
       const itemId = stringPayload(chip.payload, "item_id");
       const observationId = stringPayload(chip.payload, "observation_id");
-      if (!itemId && !observationId) return;
+      const candidateId = stringPayload(chip.payload, "candidate_id");
+      if (!itemId && !observationId && !candidateId) return;
+      haptic(8);
       const chatContext = chatContextPayload(chip);
-      const jarvisMsg: Message = {
-        role: "jarvis",
-        content: "On it — I'll have the plan ready shortly. I'll let you know when it's done.",
+      const userMessage: Message = {
+        role: "user",
+        content: chip.message,
         timestamp: Date.now(),
       };
-      const nextMessages = [...messages, jarvisMsg];
-      setMessages(nextMessages);
-      saveSession(nextMessages);
-      setState("idle");
-      onClose();
-
-      if (itemId) {
-        void fetch(`/api/items/${itemId}/generate-plan`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_context: chatContext }),
-        }).catch(() => {});
-      } else if (observationId) {
-        void fetch("/api/chat/actions", {
+      setMessages((prev) => [...prev, userMessage]);
+      setState("thinking");
+      setError(null);
+      // Route every Build Plan tap through the server action: it resolves the
+      // item (researching a captured intent if needed), builds, and auto-schedules
+      // so the tap actually confirms a date — then we render the confirmation.
+      try {
+        const res = await fetch("/api/chat/actions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -561,7 +557,29 @@ export function MicSheet({
             message: chip.message,
             payload: { ...chip.payload, ...chatContext },
           }),
-        }).catch(() => {});
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          message?: string;
+          chips?: Array<string | ChatChip>;
+          error?: string;
+        };
+        if (!res.ok || !data.ok) throw new Error(data.error ?? "Couldn't build the plan.");
+        const jarvisMsg: Message = {
+          role: "jarvis",
+          content: data.message ?? "Building your plan now — I'll have it ready shortly.",
+          timestamp: Date.now(),
+          chips: normalizeChips(data.chips),
+        };
+        setMessages((prev) => {
+          const next = [...prev, jarvisMsg];
+          saveSession(next);
+          return next;
+        });
+        setState("idle");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't build the plan.");
+        setState("idle");
       }
       return;
     }
@@ -573,6 +591,11 @@ export function MicSheet({
         return;
       }
       haptic(8);
+      // "Add to Calendar" → export the .ics; "Change Time" → open the picker.
+      if (chip.payload?.ics) {
+        window.open(`/api/plans/${planId}/ics`, "_blank");
+        return;
+      }
       setSchedulePicker({ planId, label: chip.label });
       return;
     }
