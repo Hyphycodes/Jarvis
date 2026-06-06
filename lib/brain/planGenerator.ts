@@ -37,7 +37,9 @@ import type { PlanChatContext } from "@/lib/plans/chatContext";
 import { queryWardrobeForEvent } from "@/lib/wardrobe/wardrobeAgent";
 import { sourceWardrobeGaps } from "@/lib/wardrobe/sourcingAgent";
 import {
+  EFFORT_LEVELS,
   generatedPlanSchema,
+  SPENDING_POSTURES,
   slugify,
   type GeneratedPlan,
   type PlanGenerationResult,
@@ -69,6 +71,9 @@ const GENERATED_PLAN_KEYS = [
   "cautions",
   "source_item_id",
 ] as const;
+
+const EFFORT_LEVEL_SET = new Set<string>(EFFORT_LEVELS);
+const SPENDING_POSTURE_SET = new Set<string>(SPENDING_POSTURES);
 
 export class PlanGeneratorValidationError extends Error {
   constructor(
@@ -216,6 +221,7 @@ export async function generatePlanFromItem(
         maxTokens: 8000,
       });
       parsed = await validateGeneratedPlanWithRepair({
+        item: input.item,
         promptBody,
         firstRaw: first.rawText,
         firstData: first.data,
@@ -225,6 +231,7 @@ export async function generatePlanFromItem(
         throw error;
       }
       parsed = await validateGeneratedPlanWithRepair({
+        item: input.item,
         promptBody,
         firstRaw: error.rawText,
         firstIssues: [`<root>: invalid JSON: ${error.message}`],
@@ -254,11 +261,13 @@ export async function generatePlanFromItem(
 }
 
 async function validateGeneratedPlanWithRepair({
+  item,
   promptBody,
   firstRaw,
   firstData,
   firstIssues,
 }: {
+  item: IndexedItem;
   promptBody: string;
   firstRaw: string;
   firstData?: unknown;
@@ -266,7 +275,7 @@ async function validateGeneratedPlanWithRepair({
 }): Promise<GeneratedPlan> {
   const first =
     firstIssues === undefined
-      ? validateGeneratedPlan(firstData, firstRaw, "initial")
+      ? validateGeneratedPlan(firstData, firstRaw, "initial", item)
       : logGeneratedPlanValidationFailure(firstIssues, firstRaw, "initial");
   if (first.success) return first.plan;
 
@@ -295,7 +304,7 @@ async function validateGeneratedPlanWithRepair({
       error.rawText,
     );
   }
-  const repaired = validateGeneratedPlan(repair.data, repair.rawText, "repair");
+  const repaired = validateGeneratedPlan(repair.data, repair.rawText, "repair", item);
   if (repaired.success) return repaired.plan;
 
   throw new PlanGeneratorValidationError(
@@ -309,10 +318,11 @@ function validateGeneratedPlan(
   raw: unknown,
   rawOutput: string,
   attempt: "initial" | "repair",
+  item: IndexedItem,
 ):
   | { success: true; plan: GeneratedPlan }
   | { success: false; issues: string[] } {
-  const parsed = generatedPlanSchema.safeParse(coerceGeneratedPlanPayload(raw));
+  const parsed = generatedPlanSchema.safeParse(coerceGeneratedPlanPayload(raw, item));
   if (parsed.success) return { success: true, plan: parsed.data };
 
   const issues = parsed.error.issues.map((issue) => {
@@ -335,7 +345,7 @@ function logGeneratedPlanValidationFailure(
   return { success: false, issues };
 }
 
-function coerceGeneratedPlanPayload(raw: unknown): unknown {
+function coerceGeneratedPlanPayload(raw: unknown, item: IndexedItem): unknown {
   const value =
     isRecord(raw) && isRecord(raw.plan)
       ? raw.plan
@@ -350,7 +360,22 @@ function coerceGeneratedPlanPayload(raw: unknown): unknown {
       cleaned[key] = value[key];
     }
   }
+  cleaned.plan_type = inferPlanType(item);
+  if (!isEffortLevel(cleaned.effort_level)) {
+    cleaned.effort_level = inferEffort(item);
+  }
+  if (!isSpendingPosture(cleaned.spending_posture)) {
+    cleaned.spending_posture = inferSpending(item);
+  }
   return cleaned;
+}
+
+function isEffortLevel(value: unknown): value is GeneratedPlan["effort_level"] {
+  return typeof value === "string" && EFFORT_LEVEL_SET.has(value);
+}
+
+function isSpendingPosture(value: unknown): value is GeneratedPlan["spending_posture"] {
+  return typeof value === "string" && SPENDING_POSTURE_SET.has(value);
 }
 
 function renderRepairPrompt({
@@ -436,6 +461,7 @@ function renderPrompt(
         reasons: item.reasons,
         score: item.score,
         plan_shape: detectPlanShape(item), // tells the LLM what kind of plan this is
+        derived_plan_type: inferPlanType(item), // server-owned; do not substitute plan_shape here
       },
       consideration_brief: {
         verdict: brief.verdict,
@@ -513,6 +539,7 @@ function renderPrompt(
         "Include an 'alternatives' section with 2–3 pivot options (if you change your mind at the last minute, these are the real nearby options). Same satellite bullet format.",
         "For shape 'occasion': focus sections on contribution (gift ideas in 'detours'), attendance logistics in 'before', and relational context in 'notes'.",
         "For shape 'acquisition': structure 'before' as sourcing options with prices and where to get them.",
+        "Use item.derived_plan_type if you include plan_type. Never use plan_shape values like 'experience' as plan_type.",
         "If wardrobe.owned is present, reference specific owned pieces in the wear section. If wardrobe.gaps + sourcing are present, include a sourcing note in the wear section: what to get, approximate price, and buy link.",
         "Set effort_level and spending_posture honestly.",
         "Set status to 'draft'. Activation is a user action.",
@@ -1049,7 +1076,10 @@ function stringValue(value: unknown): string | undefined {
 
 function inferPlanType(item: IndexedItem): GeneratedPlan["plan_type"] {
   const tags = new Set(item.tags.map((tag) => tag.toLowerCase()));
-  const category = (item.category ?? "").toLowerCase();
+  const category = normalizePlanTaxonomyValue(item.category);
+  const categoryType = planTypeFromCategory(category);
+  if (categoryType) return categoryType;
+
   switch (item.type) {
     case "restaurant":
       return "dining";
@@ -1080,6 +1110,134 @@ function inferPlanType(item: IndexedItem): GeneratedPlan["plan_type"] {
     default:
       return "general";
   }
+}
+
+function planTypeFromCategory(category: string): GeneratedPlan["plan_type"] | undefined {
+  if (!category) return undefined;
+  if (
+    matchesPlanCategory(category, [
+      "dining",
+      "restaurant",
+      "restaurants",
+      "food",
+      "cafe",
+      "cafes",
+      "bar",
+      "bars",
+      "lounge",
+      "lounges",
+      "supper",
+    ])
+  ) {
+    return "dining";
+  }
+  if (
+    matchesPlanCategory(category, [
+      "event",
+      "events",
+      "show",
+      "shows",
+      "concert",
+      "concerts",
+      "ticketed",
+      "festival",
+      "festivals",
+      "game",
+      "games",
+    ])
+  ) {
+    return "event";
+  }
+  if (
+    matchesPlanCategory(category, [
+      "move",
+      "moves",
+      "activity",
+      "activities",
+      "place",
+      "places",
+      "skill",
+      "skills",
+      "social",
+      "sports",
+    ])
+  ) {
+    return "activity";
+  }
+  if (
+    matchesPlanCategory(category, [
+      "culture",
+      "cultural",
+      "music",
+      "art",
+      "arts",
+      "gallery",
+      "galleries",
+      "museum",
+      "museums",
+      "film",
+      "theater",
+      "theatre",
+      "opera",
+      "jazz",
+    ])
+  ) {
+    return "culture";
+  }
+  if (matchesPlanCategory(category, ["style", "menswear", "fashion", "watch", "watches"])) {
+    return "style";
+  }
+  if (matchesPlanCategory(category, ["product", "products", "shopping", "shop", "gear", "goods", "buy"])) {
+    return "product";
+  }
+  if (matchesPlanCategory(category, ["travel", "hotel", "hotels", "lodging", "trip", "stay"])) {
+    return "travel";
+  }
+  if (matchesPlanCategory(category, ["fitness", "health", "body", "gym", "training", "recovery"])) {
+    return "fitness";
+  }
+  if (matchesPlanCategory(category, ["creative", "craft", "studio", "dj", "camera", "production", "visual"])) {
+    return "creative";
+  }
+  if (
+    matchesPlanCategory(category, [
+      "real_estate",
+      "real-estate",
+      "real estate",
+      "property",
+      "properties",
+      "ownership",
+      "opportunity",
+      "investment",
+    ])
+  ) {
+    return "real_estate";
+  }
+  if (matchesPlanCategory(category, ["land", "homestead", "acreage"])) {
+    return "land";
+  }
+  if (matchesPlanCategory(category, ["outdoors", "outdoor", "nature", "trail", "trails", "park", "parks", "golf"])) {
+    return "outdoors";
+  }
+  if (matchesPlanCategory(category, ["idea", "ideas", "article", "articles", "research", "faith", "meaning", "north"])) {
+    return "idea";
+  }
+  return undefined;
+}
+
+function normalizePlanTaxonomyValue(value: string | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function matchesPlanCategory(category: string, needles: string[]): boolean {
+  const tokens = new Set(category.split(" ").filter(Boolean));
+  return needles.some((needle) => {
+    const normalizedNeedle = normalizePlanTaxonomyValue(needle);
+    if (!normalizedNeedle) return false;
+    return normalizedNeedle.includes(" ")
+      ? category.includes(normalizedNeedle)
+      : category === normalizedNeedle || tokens.has(normalizedNeedle);
+  });
 }
 
 /**
