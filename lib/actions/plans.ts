@@ -203,11 +203,8 @@ export async function createStubPlan(input: {
           key_stats: Json;
           build_status?: string | null;
         };
-        const slug =
-          existing.planSlug ??
-          readSlugFromKeyStats(planRow.key_stats) ??
-          slugify(item.title);
-        if (!existing.planSlug) {
+        const slug = readSlugFromKeyStats(planRow.key_stats) ?? planRow.id;
+        if (existing.planSlug !== slug) {
           const currentPayload = isRecord(item.rawPayload) ? item.rawPayload : {};
           await supabase
             .from("surfaced_items")
@@ -555,6 +552,7 @@ export async function fillPlan(input: {
   sourcePatch.payload = {
     ...currentPayload,
     plan_id: input.planId,
+    plan_slug: stubSlug ?? plan.slug,
     plan_status: "ready",
   } as Json;
   if (!input.preserveItemSurface) {

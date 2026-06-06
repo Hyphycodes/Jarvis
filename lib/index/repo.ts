@@ -27,6 +27,7 @@ const ALL_DESTINATIONS = new Set<IndexDestination>([
 ]);
 
 export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
+  const payload = isRecord(row.payload) ? row.payload : {};
   return {
     id: row.id,
     source: (row.source ?? "system") as IndexedItem["source"],
@@ -44,7 +45,7 @@ export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
     endsAt: row.ends_at ?? undefined,
     expiresAt: row.expires_at ?? undefined,
     url: row.url ?? undefined,
-    imageUrl: row.image_url ?? undefined,
+    imageUrl: row.image_url ?? readImageUrlFromPayload(payload) ?? undefined,
     rawPayload: row.payload,
     briefing: readBriefingFromPayload(row.payload) ?? undefined,
     status: row.status,
@@ -55,6 +56,64 @@ export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function readImageUrlFromPayload(payload: Record<string, unknown>): string | undefined {
+  return [
+    stringValue(payload.image_url),
+    stringValue(payload.hero_image_url),
+    stringValue(isRecord(payload.briefing) ? payload.briefing.hero_image_url : undefined),
+    firstMediaUrl(payload.media),
+    firstImageUrl(payload.images),
+    firstImageUrl(isRecord(payload.raw_payload) ? payload.raw_payload.images : undefined),
+    firstImageUrl(isRecord(payload.raw_payload) ? payload.raw_payload.photos : undefined),
+    stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.image_url : undefined),
+    stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.photo_url : undefined),
+    stringValue(isRecord(payload.raw_payload) ? payload.raw_payload.thumbnail : undefined),
+    stringValue(payload.thumbnail),
+  ].find(isHttpUrl);
+}
+
+function firstMediaUrl(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const entry of value) {
+    if (typeof entry === "string" && isHttpUrl(entry)) return entry;
+    if (!isRecord(entry)) continue;
+    const url =
+      stringValue(entry.url) ??
+      stringValue(entry.image_url) ??
+      stringValue(entry.src);
+    if (isHttpUrl(url)) return url;
+  }
+  return undefined;
+}
+
+function firstImageUrl(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const entry of value) {
+    if (typeof entry === "string" && isHttpUrl(entry)) return entry;
+    if (!isRecord(entry)) continue;
+    const url =
+      stringValue(entry.url) ??
+      stringValue(entry.image_url) ??
+      stringValue(entry.src);
+    if (isHttpUrl(url)) return url;
+  }
+  return undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function isHttpUrl(value: unknown): value is string {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function listIndexItems(

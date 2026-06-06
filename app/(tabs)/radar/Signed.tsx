@@ -434,6 +434,12 @@ function RadarCard({
     persist("save");
   }
 
+  function handleOpenCard(e: React.MouseEvent) {
+    if (pending || card.planSlug || !card.canGeneratePlan) return;
+    e.preventDefault();
+    generatePlan();
+  }
+
   function handleWait(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -447,6 +453,7 @@ function RadarCard({
     >
       <Link
         href={card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`}
+        onClick={handleOpenCard}
         className="block transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
         aria-label={`Open ${card.title}`}
       >

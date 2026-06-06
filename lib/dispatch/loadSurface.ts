@@ -363,11 +363,12 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
       status: ["shown", "opened"],
       limit: RADAR_ACTIVE_ITEM_LIMIT * 2,
     });
-    return items
+    const visibleItems = items
       .filter((item) => evaluateActiveRadarItem(item).allowed)
       .sort(compareRadarItems)
-      .slice(0, RADAR_ACTIVE_ITEM_LIMIT)
-      .map(toRadarCard);
+      .slice(0, RADAR_ACTIVE_ITEM_LIMIT);
+    const withPlanRefs = await withRadarPlanRefs(visibleItems);
+    return withPlanRefs.map(({ item, planRef }) => toRadarCard(item, planRef));
   } catch (error) {
     logSurfaceError("radar", error);
     return [];
@@ -595,9 +596,77 @@ export async function loadPlanBySlug(
   }
 }
 
-function toRadarCard(item: IndexedItem): RadarCard {
+type RadarPlanRef = {
+  slug?: string;
+  hasStoredRef: boolean;
+};
+
+async function withRadarPlanRefs(
+  items: IndexedItem[],
+): Promise<Array<{ item: IndexedItem; planRef: RadarPlanRef }>> {
+  const refs = items.map((item) => ({
+    item,
+    planId: readPlanId(item.rawPayload),
+    planSlug: readPlanSlug(item.rawPayload),
+  }));
+  const hasAnyRef = refs.some((ref) => ref.planId || ref.planSlug);
+  if (!hasAnyRef) {
+    return refs.map(({ item }) => ({
+      item,
+      planRef: { hasStoredRef: false },
+    }));
+  }
+
+  const { id } = await getViewableProfileId();
+  if (!id) {
+    return refs.map(({ item, planId, planSlug }) => ({
+      item,
+      planRef: { hasStoredRef: Boolean(planId || planSlug) },
+    }));
+  }
+  const supabase = await getServerSupabase();
+  const { data, error } = await supabase
+    .from("plans")
+    .select("id,key_stats")
+    .eq("user_id", id)
+    .order("updated_at", { ascending: false })
+    .limit(300);
+  if (error) {
+    logQueryError("radar.planRefs", error);
+    return refs.map(({ item, planId, planSlug }) => ({
+      item,
+      planRef: { hasStoredRef: Boolean(planId || planSlug) },
+    }));
+  }
+
+  const plans = (data ?? []) as Array<{ id: string; key_stats: unknown }>;
+  const byId = new Map(plans.map((plan) => [plan.id, plan]));
+  const bySlug = new Map(
+    plans
+      .map((plan) => [readSlugFromKeyStats(plan.key_stats), plan] as const)
+      .filter((entry): entry is readonly [string, { id: string; key_stats: unknown }] =>
+        typeof entry[0] === "string",
+      ),
+  );
+
+  return refs.map(({ item, planId, planSlug }) => {
+    const plan =
+      (planId ? byId.get(planId) : undefined) ??
+      (planSlug ? bySlug.get(planSlug) : undefined);
+    const actualSlug = plan ? readSlugFromKeyStats(plan.key_stats) ?? plan.id : undefined;
+    return {
+      item,
+      planRef: {
+        slug: actualSlug,
+        hasStoredRef: Boolean(planId || planSlug),
+      },
+    };
+  });
+}
+
+function toRadarCard(item: IndexedItem, planRef: RadarPlanRef): RadarCard {
   const category = mapCategory(item.type, item.category);
-  const planSlug = readPlanSlug(item.rawPayload);
+  const planSlug = planRef.slug;
   const briefing = item.briefing;
   const consideration = buildConsiderationBrief(item);
   const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
@@ -667,7 +736,11 @@ function toRadarCard(item: IndexedItem): RadarCard {
 
     whyItFits: stringValue(move.why_this) ?? reasonSurfaced ?? briefing?.why_it_matters ?? item.reasons[0] ?? "Matches your taste profile.",
     whyNow: stringValue(move.why_now) ?? briefing?.why_now ?? strongestAngle ?? item.reasons[1] ?? "Available now.",
-    actions: { save: true, pass: true, openPlan: Boolean(planSlug || planReadiness?.shouldPreparePlan) },
+    actions: {
+      save: true,
+      pass: true,
+      openPlan: Boolean(planSlug || planRef.hasStoredRef || planReadiness?.shouldPreparePlan),
+    },
     routeOnSave: ["radar.saved"],
     routeOnPass: ["radar.passed"],
   };
