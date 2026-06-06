@@ -102,12 +102,6 @@ export default async function AccountPage() {
           description="Identity, North Star, taste, and personal direction."
         />
         <AccountNavRow
-          href="/account/memory"
-          icon={<Sparkle size={20} />}
-          title="Memory"
-          description="Pending patterns Jarvis wants to remember. Accept, reject, or archive."
-        />
-        <AccountNavRow
           href="/account/tastemakers"
           icon={<Sparkle size={20} />}
           title="Tastemakers"

@@ -117,7 +117,6 @@ export default async function ProfilePage() {
         {/* 3. Simple actions — manage screens live elsewhere. */}
         <section className="mt-10">
           <ul className="flex flex-col">
-            <ActionLink href="/account/memory" label="Manage Memory" />
             <ActionLink href="/account/tastemakers" label="Manage Taste" />
             <ActionLink href="/account/library" label="Manage Places" />
           </ul>
