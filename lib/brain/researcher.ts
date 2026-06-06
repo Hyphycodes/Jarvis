@@ -6,6 +6,7 @@ import { hasGooglePlaces, searchPlaces } from "@/lib/sources/googlePlaces";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import { HIGH_TRUST_DOMAINS } from "@/lib/intelligence/sourceTrust";
 import { getDefaultLocation } from "@/lib/env";
+import type { RadarCategory } from "@/lib/radar/category";
 
 export type ResearcherOutput = {
   canonical_name: string;
@@ -65,11 +66,23 @@ function priceLevelFromGoogle(
   }
 }
 
-function deterministicFallback(name: string, reason: string): ResearcherOutput {
+// Category-aware research hints. The researcher stays one function, but the
+// editorial query and the default place_type adapt so a culture/moves/places
+// candidate isn't searched as if it were a restaurant.
+const CATEGORY_HINTS: Record<RadarCategory, { reviewSuffix: string; placeType: ResearcherOutput["place_type"] }> = {
+  dining: { reviewSuffix: "restaurant review", placeType: "restaurant" },
+  places: { reviewSuffix: "bar lounge spot guide", placeType: "venue" },
+  moves: { reviewSuffix: "class activity outdoor guide", placeType: "outdoor" },
+  culture: { reviewSuffix: "exhibit gallery museum review", placeType: "cultural" },
+  events: { reviewSuffix: "event lineup tickets", placeType: "venue" },
+  style: { reviewSuffix: "product review where to buy", placeType: "shop" },
+};
+
+function deterministicFallback(name: string, reason: string, category?: RadarCategory): ResearcherOutput {
   return {
     canonical_name: name,
     slug: makeSlug(name),
-    place_type: "restaurant",
+    place_type: category ? CATEGORY_HINTS[category].placeType : "restaurant",
     neighborhood: null,
     cuisine_or_focus: "unknown",
     price_level: "unknown",
@@ -85,8 +98,9 @@ function deterministicFallback(name: string, reason: string): ResearcherOutput {
 
 export async function researchPlace(
   name: string,
-  context?: { discoveredUrl?: string; snippet?: string },
+  context?: { discoveredUrl?: string; snippet?: string; category?: RadarCategory },
 ): Promise<ResearcherOutput> {
+  const hint = context?.category ? CATEGORY_HINTS[context.category] : null;
   const home = (() => {
     try { return getDefaultLocation(); }
     catch { return null; }
@@ -135,7 +149,7 @@ export async function researchPlace(
           includeDomains: HIGH_TRUST_DOMAINS,
         }),
         searchWeb({
-          query: `${queryName} restaurant review`,
+          query: `${queryName} ${hint?.reviewSuffix ?? "restaurant review"}`,
           maxResults: 3,
         }),
       ]);
@@ -156,7 +170,7 @@ export async function researchPlace(
   }
 
   if (!hasAnthropic()) {
-    return deterministicFallback(name, "No Anthropic key — dossier not synthesized");
+    return deterministicFallback(name, "No Anthropic key — dossier not synthesized", context?.category);
   }
 
   const prompt = JSON.stringify(
@@ -187,12 +201,13 @@ export async function researchPlace(
       temperature: 0.2,
       maxTokens: 4000,
     });
-    // Ensure slug is set
+    // Ensure slug + place_type are set (fall back to the category default).
     const slug = raw.slug?.trim() || makeSlug(raw.canonical_name ?? name);
-    return { ...raw, slug, canonical_name: raw.canonical_name ?? name };
+    const place_type = raw.place_type ?? hint?.placeType ?? "restaurant";
+    return { ...raw, slug, place_type, canonical_name: raw.canonical_name ?? name };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error("[researcher] structured generation failed", { name, reason });
-    return deterministicFallback(name, `Claude error: ${reason}`);
+    return deterministicFallback(name, `Claude error: ${reason}`, context?.category);
   }
 }
