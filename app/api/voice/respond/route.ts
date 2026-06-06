@@ -246,6 +246,7 @@ export async function POST(req: Request) {
     // candidate and research/surface it through the unified pipeline in the
     // background. Gated by a cheap regex so we don't spend an LLM call per turn.
     let capturedIntentTitle: string | null = null;
+    const capturedIntentChips: ChatChip[] = [];
     if (
       !imageAttachment &&
       !linkAttachment &&
@@ -265,6 +266,18 @@ export async function POST(req: Request) {
             origin: "voice",
           });
           capturedIntentTitle = intent.title;
+          // A real, actionable chip carrying the candidate id (+ any timing hint)
+          // so tapping "Build Plan" researches, surfaces, builds + schedules it.
+          capturedIntentChips.push({
+            label: "Build Plan",
+            message: `Build a plan for ${intent.title}.`,
+            action_type: "build_plan",
+            payload: {
+              candidate_id: candidateId,
+              title: intent.title,
+              ...(intent.dateHint ? { timing_hint: intent.dateHint } : {}),
+            },
+          });
           after(() =>
             researchUserIntent(owner.id, candidateId).catch((err) =>
               console.error("[voice.respond] user-intent research failed", err),
@@ -277,6 +290,7 @@ export async function POST(req: Request) {
     }
 
     const actionChips = mergeChips(
+      capturedIntentChips,
       committedActionType
         ? commandChips.filter((chip) => chip.action_type !== committedActionType)
         : commandChips,

@@ -140,6 +140,50 @@ export async function researchUserIntent(
   return result;
 }
 
+/**
+ * Resolve a captured user-intent candidate to a surfaced Radar item id, so
+ * tapping "Build Plan" can act on it. Uses the item the background research
+ * already produced if present; otherwise researches it now.
+ */
+export async function resolveUserIntentItem(
+  userId: string,
+  candidateId: string,
+  supabase?: SupabaseClient,
+): Promise<{ itemId: string; title: string } | null> {
+  const sb = supabase ?? getSupabaseServiceClient();
+
+  const { data: cand } = await sb
+    .from("radar_candidate_inbox")
+    .select("title")
+    .eq("id", candidateId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const title = (cand as { title?: string } | null)?.title?.trim();
+  if (!title) return null;
+
+  const findItem = async (): Promise<string | null> => {
+    const { data } = await sb
+      .from("surfaced_items")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("source", "user_intent")
+      .ilike("title", title)
+      .not("status", "in", "(archived,passed)")
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    return ((data ?? []) as Array<{ id: string }>)[0]?.id ?? null;
+  };
+
+  // Fast path: the background capture already surfaced it.
+  const existing = await findItem();
+  if (existing) return { itemId: existing, title };
+
+  // Otherwise research + surface it now, then look again.
+  await researchUserIntent(userId, candidateId, sb);
+  const surfaced = await findItem();
+  return surfaced ? { itemId: surfaced, title } : null;
+}
+
 function resolveCategory(input: UserIntentInput): RadarCategory {
   return (
     normalizeRadarCategory(input.category) ??
