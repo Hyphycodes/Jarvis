@@ -97,6 +97,7 @@ export default async function DynamicPlanPage({
               planId={brief.planId}
               suggestedStart={brief.targetStart}
               scheduled={Boolean(brief.scheduledDate)}
+              scheduleFixed={Boolean(brief.scheduleFixed)}
               dayOf={dayOf}
             />
           ) : undefined
@@ -123,7 +124,7 @@ export default async function DynamicPlanPage({
         </nav>
       ) : null}
 
-      {brief.scheduledDate ? (
+      {brief.scheduledDate || brief.scheduleFixed ? (
         <div className="mt-4 flex justify-center">
           <a
             href={`/api/plans/${brief.planId}/ics`}

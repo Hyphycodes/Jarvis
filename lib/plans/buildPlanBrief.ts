@@ -125,6 +125,7 @@ export function buildPlanBrief(input: BuildPlanBriefInput): PlanBrief {
     venueLinks,
     scheduledDate: loaded.scheduledDate,
     scheduledTime: loaded.scheduledTime,
+    scheduleFixed: loaded.scheduleFixed,
     buildStatus: loaded.buildStatus,
     heroImage: undefined,
     summary,

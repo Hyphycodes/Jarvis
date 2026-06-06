@@ -52,6 +52,8 @@ export type LoadedPlan = {
   liveLabel: string;
   scheduledDate?: string;
   scheduledTime?: string;
+  /** True when the plan's date is an official, locked event time (not flexible). */
+  scheduleFixed?: boolean;
   dateLabel?: string;
   locationLine?: string;
   summary?: string;
@@ -224,6 +226,7 @@ async function loadPlanByRow(planRow: PlanRow): Promise<LoadedPlan | null> {
     liveLabel: planRow.live_label,
     scheduledDate: planRow.scheduled_date ?? undefined,
     scheduledTime: planRow.scheduled_time ?? undefined,
+    scheduleFixed: keyStats.schedule_fixed === true,
     dateLabel: planRow.date ?? undefined,
     locationLine: planRow.location_line ?? undefined,
     summary: planRow.summary ?? undefined,

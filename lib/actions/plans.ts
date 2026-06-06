@@ -142,7 +142,8 @@ type PlanInsertWithShape = {
   category: string | null;
   location_line: string | null;
   live_enabled: boolean;
-  live_label: "BEGIN";
+  live_label: "BEGIN" | "UPCOMING";
+  date?: string | null;
   key_stats: Json;
   quote_card: Json;
   status: "draft";
@@ -240,13 +241,18 @@ export async function createStubPlan(input: {
 
   const slug = await ensureUniqueSlug(owner.id, slugify(item.title), item.id, supabase);
   const planShape = detectPlanShape(item);
+  // An item carrying a real, official future date (an event) is schedule-FIXED:
+  // its date is locked and we offer Add-to-Calendar directly rather than asking
+  // the owner to pick a time. Flexible items (places/style) stay editable.
+  const fixedStartsAt = readFixedStartsAt(item);
   const planInsertPayload: PlanInsertWithShape = {
     user_id: owner.id,
     title: item.title,
     category: item.category ?? null,
     location_line: item.locationName ?? item.address ?? null,
     live_enabled: false,
-    live_label: "BEGIN",
+    live_label: fixedStartsAt && isFutureOrToday(fixedStartsAt) ? "UPCOMING" : "BEGIN",
+    date: fixedStartsAt ? formatDateLabel(fixedStartsAt) : null,
     key_stats: {
       slug,
       source_item_id: item.id,
@@ -255,6 +261,7 @@ export async function createStubPlan(input: {
       plan_shape: planShape,
       source_observation_id: input.sourceObservationId ?? null,
       chat_context: input.chatContext ?? null,
+      ...(fixedStartsAt ? { starts_at: fixedStartsAt, schedule_fixed: true } : {}),
     } as Json,
     quote_card: {} as Json,
     status: "draft",
@@ -1172,6 +1179,25 @@ function isFutureOrToday(iso: string | null | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * A real, official, not-long-past date makes a plan schedule-FIXED (event-like):
+ * the date is locked and Add-to-Calendar uses it directly. Flexible items
+ * (places/style with no official date) return null and stay reschedulable.
+ */
+function readFixedStartsAt(item: { startsAt?: string | null; rawPayload?: Json }): string | null {
+  const raw =
+    item.startsAt ??
+    (isRecord(item.rawPayload) && typeof item.rawPayload.starts_at === "string"
+      ? item.rawPayload.starts_at
+      : null);
+  if (typeof raw !== "string" || !raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  // Ignore stale past dates — a finished event isn't a schedulable fixed plan.
+  if (d.getTime() < Date.now() - 12 * 60 * 60 * 1000) return null;
+  return d.toISOString();
 }
 
 function formatDateLabel(iso?: string): string | null {

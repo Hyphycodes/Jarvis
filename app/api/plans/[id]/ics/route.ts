@@ -40,13 +40,17 @@ export async function GET(
     key_stats: Json;
   };
 
-  if (!plan.scheduled_date) {
+  // Fixed (event) plans carry the exact official instant in key_stats.starts_at —
+  // use it directly so the calendar entry is timezone-accurate. Flexible plans
+  // reconstruct from the picked scheduled_date/time.
+  const fixedStart = readStartsAt(plan.key_stats);
+  if (!fixedStart && !plan.scheduled_date) {
     return new Response("Plan is not scheduled yet", { status: 409 });
   }
 
-  const start = new Date(
-    `${plan.scheduled_date}T${plan.scheduled_time ?? "19:00"}:00`,
-  );
+  const start = fixedStart
+    ? new Date(fixedStart)
+    : new Date(`${plan.scheduled_date}T${plan.scheduled_time ?? "19:00"}:00`);
   const end = new Date(start.getTime() + 2 * 60 * 60 * 1000); // default 2h block
   const address = readAddress(plan.key_stats) ?? plan.location_line ?? "";
 
@@ -95,4 +99,14 @@ function readAddress(keyStats: Json): string | null {
   }
   const value = (keyStats as Record<string, unknown>).address;
   return typeof value === "string" ? value : null;
+}
+
+function readStartsAt(keyStats: Json): string | null {
+  if (typeof keyStats !== "object" || keyStats === null || Array.isArray(keyStats)) {
+    return null;
+  }
+  const value = (keyStats as Record<string, unknown>).starts_at;
+  if (typeof value !== "string") return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : value;
 }
