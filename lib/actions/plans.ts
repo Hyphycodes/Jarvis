@@ -14,9 +14,18 @@ import {
   safeWriteIntelligenceTrace,
   writeIntelligenceTraceWithClient,
 } from "@/lib/brain/intelligenceTrace";
-import { detectPlanShape, generatePlanFromItem } from "@/lib/brain/planGenerator";
+import {
+  detectPlanShape,
+  generatePlanFromItem,
+  PlanGeneratorValidationError,
+} from "@/lib/brain/planGenerator";
 import { updateSourceStatsFromAction } from "@/lib/library/sourceGraph";
-import { slugify, type GeneratedPlan, type PlanShape } from "@/lib/brain/planTypes";
+import {
+  slugify,
+  type GeneratedPlan,
+  type PlanGenerationResult,
+  type PlanShape,
+} from "@/lib/brain/planTypes";
 import type { IndexedItem } from "@/lib/index/types";
 import type { PlanChatContext } from "@/lib/plans/chatContext";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
@@ -330,11 +339,74 @@ export async function fillPlan(input: {
   if (!itemRow) throw new Error("Item not found.");
   const item = rowToIndexedItem(itemRow as SurfacedItemRow);
 
-  const result = await generatePlanFromItem({
-    item,
-    chatContext: input.chatContext,
-    userId: input.userId,
-  });
+  let result: PlanGenerationResult;
+  try {
+    result = await generatePlanFromItem({
+      item,
+      chatContext: input.chatContext,
+      userId: input.userId,
+    });
+  } catch (error) {
+    if (error instanceof PlanGeneratorValidationError) {
+      console.error("[plan.generator] final validation failure", {
+        planId: input.planId,
+        itemId: input.itemId,
+        issues: error.issues,
+        rawOutput: error.rawOutput.slice(0, 2000),
+      });
+
+      const { data: failedPlanRow } = await supabase
+        .from("plans")
+        .select("key_stats")
+        .eq("id", input.planId)
+        .eq("user_id", input.userId)
+        .maybeSingle();
+      const failedKeyStats = isRecord(
+        (failedPlanRow as { key_stats?: Json } | null)?.key_stats,
+      )
+        ? ((failedPlanRow as { key_stats: Json }).key_stats as Record<
+            string,
+            unknown
+          >)
+        : {};
+      await supabase
+        .from("plans")
+        .update({
+          build_status: "failed",
+          key_stats: {
+            ...failedKeyStats,
+            fallback_used: true,
+            plan_generation_error: {
+              reason: "schema_invalid",
+              issues: error.issues,
+              failed_at: new Date().toISOString(),
+            },
+          } as Json,
+        })
+        .eq("id", input.planId)
+        .eq("user_id", input.userId);
+
+      const currentPayload = isRecord(itemRow.payload) ? { ...itemRow.payload } : {};
+      await supabase
+        .from("surfaced_items")
+        .update({
+          planning_state: "planning_failed",
+          payload: {
+            ...currentPayload,
+            plan_status: "failed",
+          } as Json,
+        })
+        .eq("id", input.itemId)
+        .eq("user_id", input.userId);
+
+      return {
+        ok: true,
+        fallbackUsed: true,
+        fallbackReason: "schema_invalid",
+      };
+    }
+    throw error;
+  }
   if (result.fallbackUsed) {
     console.error("[fillPlan] deterministic fallback used", {
       planId: input.planId,

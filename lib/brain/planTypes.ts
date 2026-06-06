@@ -62,16 +62,33 @@ export const SECTION_TYPES = [
 export const EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export const SPENDING_POSTURES = ["free", "low", "paid", "high", "unknown"] as const;
 
+const optionalString = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .nullish()
+    .transform((value) => value ?? undefined);
+
+const optionalDatetime = z
+  .string()
+  .datetime()
+  .nullish()
+  .transform((value) => value ?? undefined);
+
 // ── Section schema ──────────────────────────────────────────────────────────
 
 export const planSectionSchema = z.object({
   key: z.string().min(1).max(80),
   title: z.string().min(1).max(120),
-  subtitle: z.string().max(180).optional(),
+  subtitle: optionalString(180),
   body: z.string().min(1).max(1200),
   sort_order: z.number().int().min(0).default(0),
   section_type: z.enum(SECTION_TYPES),
-  bullets: z.array(z.string().min(1).max(220)).max(8).optional(),
+  bullets: z
+    .array(z.string().min(1).max(220))
+    .max(8)
+    .nullish()
+    .transform((value) => value ?? undefined),
 });
 
 export type PlanSection = z.infer<typeof planSectionSchema>;
@@ -80,11 +97,11 @@ export type PlanSection = z.infer<typeof planSectionSchema>;
 
 export const planTimelineEntrySchema = z.object({
   title: z.string().min(1).max(120),
-  starts_at: z.string().datetime().optional(),
-  ends_at: z.string().datetime().optional(),
+  starts_at: optionalDatetime,
+  ends_at: optionalDatetime,
   /** Human-friendly time label when ISO not available — e.g. "After dinner". */
-  time_label: z.string().max(60).optional(),
-  description: z.string().max(280).optional(),
+  time_label: optionalString(60),
+  description: optionalString(280),
   sort_order: z.number().int().min(0).default(0),
 });
 
@@ -94,7 +111,7 @@ export type PlanTimelineEntry = z.infer<typeof planTimelineEntrySchema>;
 
 export const planGrabItemSchema = z.object({
   label: z.string().min(1).max(60),
-  reason: z.string().max(160).optional(),
+  reason: optionalString(160),
 });
 
 export type PlanGrabItem = z.infer<typeof planGrabItemSchema>;
@@ -103,7 +120,7 @@ export type PlanGrabItem = z.infer<typeof planGrabItemSchema>;
 
 export const generatedPlanSchema = z.object({
   title: z.string().min(1).max(120),
-  subtitle: z.string().max(180).optional(),
+  subtitle: optionalString(180),
   slug: z
     .string()
     .min(1)
@@ -111,14 +128,14 @@ export const generatedPlanSchema = z.object({
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be lowercase-kebab"),
   plan_type: z.enum(PLAN_TYPES),
   is_sequential: z.boolean().optional().default(false),
-  status: z.literal("draft"),
-  starts_at: z.string().datetime().optional(),
-  ends_at: z.string().datetime().optional(),
-  location_name: z.string().max(160).optional(),
-  address: z.string().max(240).optional(),
+  status: z.literal("draft").optional().default("draft"),
+  starts_at: optionalDatetime,
+  ends_at: optionalDatetime,
+  location_name: optionalString(160),
+  address: optionalString(240),
   hero_angle: z.string().min(1).max(220),
   why_this_fits: z.string().min(1).max(360),
-  best_window: z.string().max(180).optional(),
+  best_window: optionalString(180),
   effort_level: z.enum(EFFORT_LEVELS),
   spending_posture: z.enum(SPENDING_POSTURES),
   confidence: z.number().min(0).max(1),
@@ -130,13 +147,22 @@ export const generatedPlanSchema = z.object({
     .array(
       z.object({
         dish: z.string().min(1).max(80),
-        note: z.string().max(160).optional(),
+        note: optionalString(160),
       }),
     )
     .max(6)
-    .optional(),
-  cautions: z.array(z.string().min(1).max(200)).max(4).optional(),
-  source_item_id: z.string().uuid().optional(),
+    .nullish()
+    .transform((value) => value ?? undefined),
+  cautions: z
+    .array(z.string().min(1).max(200))
+    .max(4)
+    .nullish()
+    .transform((value) => value ?? undefined),
+  source_item_id: z
+    .string()
+    .uuid()
+    .nullish()
+    .transform((value) => value ?? undefined),
 });
 
 export type GeneratedPlan = z.infer<typeof generatedPlanSchema>;

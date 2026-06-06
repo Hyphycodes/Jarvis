@@ -24,6 +24,29 @@ export async function generateStructured<T>({
   temperature?: number;
   maxTokens?: number;
 }): Promise<T> {
+  const { data } = await generateStructuredWithRaw<T>({
+    system,
+    prompt,
+    schemaName,
+    temperature,
+    maxTokens,
+  });
+  return data;
+}
+
+export async function generateStructuredWithRaw<T>({
+  system,
+  prompt,
+  schemaName,
+  temperature = 0.2,
+  maxTokens = 4096,
+}: {
+  system: string;
+  prompt: string;
+  schemaName: string;
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<{ data: T; rawText: string }> {
   const client = getAnthropicClient();
   let response;
   try {
@@ -54,7 +77,7 @@ export async function generateStructured<T>({
     .trim();
 
   try {
-    return JSON.parse(stripJsonFence(rawText)) as T;
+    return { data: JSON.parse(stripJsonFence(rawText)) as T, rawText };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown JSON parse error";

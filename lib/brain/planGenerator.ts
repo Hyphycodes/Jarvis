@@ -16,7 +16,10 @@
 import "server-only";
 
 import { hasAnthropic } from "@/lib/ai/anthropic";
-import { generateStructured } from "@/lib/ai/structured";
+import {
+  generateStructuredWithRaw,
+  StructuredGenerationError,
+} from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
 import { buildInterestGraph } from "@/lib/brain/interestGraph";
 import { summarizeInterestGraph } from "@/lib/brain/interests";
@@ -40,6 +43,43 @@ import {
   type PlanGenerationResult,
   type PlanShape,
 } from "@/lib/brain/planTypes";
+
+const GENERATED_PLAN_KEYS = [
+  "title",
+  "subtitle",
+  "slug",
+  "plan_type",
+  "is_sequential",
+  "status",
+  "starts_at",
+  "ends_at",
+  "location_name",
+  "address",
+  "hero_angle",
+  "why_this_fits",
+  "best_window",
+  "effort_level",
+  "spending_posture",
+  "confidence",
+  "primary_move",
+  "sections",
+  "timeline",
+  "grab_list",
+  "menu_highlights",
+  "cautions",
+  "source_item_id",
+] as const;
+
+export class PlanGeneratorValidationError extends Error {
+  constructor(
+    message: string,
+    readonly issues: string[],
+    readonly rawOutput: string,
+  ) {
+    super(message);
+    this.name = "PlanGeneratorValidationError";
+  }
+}
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
 
@@ -166,34 +206,42 @@ export async function generatePlanFromItem(
       supplemental,
     );
 
-    const raw = await generateStructured<unknown>({
-      system: SYSTEM_PROMPT,
-      prompt: promptBody,
-      schemaName: "GeneratedPlan",
-      temperature: 0.4,
-      maxTokens: 8000,
-    });
-
-    const parsed = generatedPlanSchema.safeParse(raw);
-    if (!parsed.success) {
-      console.error("[plan.generator] schema mismatch", parsed.error.message);
-      return {
-        plan: deterministicPlan(input.item, input.chatContext),
-        fallbackUsed: true,
-        reason: "schema_invalid",
-        selectedPhotoUrl: supplemental.selectedPhotoUrl,
-        reservation: supplemental.reservation,
-      };
+    let parsed: GeneratedPlan;
+    try {
+      const first = await generateStructuredWithRaw<unknown>({
+        system: SYSTEM_PROMPT,
+        prompt: promptBody,
+        schemaName: "GeneratedPlan",
+        temperature: 0.4,
+        maxTokens: 8000,
+      });
+      parsed = await validateGeneratedPlanWithRepair({
+        promptBody,
+        firstRaw: first.rawText,
+        firstData: first.data,
+      });
+    } catch (error) {
+      if (!(error instanceof StructuredGenerationError)) {
+        throw error;
+      }
+      parsed = await validateGeneratedPlanWithRepair({
+        promptBody,
+        firstRaw: error.rawText,
+        firstIssues: [`<root>: invalid JSON: ${error.message}`],
+      });
     }
 
     // Force draft status (never trust the model on lifecycle)
     return {
-      plan: { ...parsed.data, status: "draft" },
+      plan: { ...parsed, status: "draft" },
       fallbackUsed: false,
       selectedPhotoUrl: supplemental.selectedPhotoUrl,
       reservation: supplemental.reservation,
     };
   } catch (error) {
+    if (error instanceof PlanGeneratorValidationError) {
+      throw error;
+    }
     console.error("[plan.generator] claude failed", error);
     return {
       plan: deterministicPlan(input.item, input.chatContext),
@@ -203,6 +251,135 @@ export async function generatePlanFromItem(
       reservation: supplemental.reservation,
     };
   }
+}
+
+async function validateGeneratedPlanWithRepair({
+  promptBody,
+  firstRaw,
+  firstData,
+  firstIssues,
+}: {
+  promptBody: string;
+  firstRaw: string;
+  firstData?: unknown;
+  firstIssues?: string[];
+}): Promise<GeneratedPlan> {
+  const first =
+    firstIssues === undefined
+      ? validateGeneratedPlan(firstData, firstRaw, "initial")
+      : logGeneratedPlanValidationFailure(firstIssues, firstRaw, "initial");
+  if (first.success) return first.plan;
+
+  let repair: { data: unknown; rawText: string };
+  try {
+    repair = await generateStructuredWithRaw<unknown>({
+      system: SYSTEM_PROMPT,
+      prompt: renderRepairPrompt({
+        originalPrompt: promptBody,
+        validationIssues: first.issues,
+        rawOutput: firstRaw,
+      }),
+      schemaName: "GeneratedPlan",
+      temperature: 0.2,
+      maxTokens: 8000,
+    });
+  } catch (error) {
+    if (!(error instanceof StructuredGenerationError)) {
+      throw error;
+    }
+    const issues = [`<root>: invalid JSON: ${error.message}`];
+    logGeneratedPlanValidationFailure(issues, error.rawText, "repair");
+    throw new PlanGeneratorValidationError(
+      "Claude output failed GeneratedPlan JSON parsing after repair retry",
+      issues,
+      error.rawText,
+    );
+  }
+  const repaired = validateGeneratedPlan(repair.data, repair.rawText, "repair");
+  if (repaired.success) return repaired.plan;
+
+  throw new PlanGeneratorValidationError(
+    "Claude output failed GeneratedPlan schema validation after repair retry",
+    repaired.issues,
+    repair.rawText,
+  );
+}
+
+function validateGeneratedPlan(
+  raw: unknown,
+  rawOutput: string,
+  attempt: "initial" | "repair",
+):
+  | { success: true; plan: GeneratedPlan }
+  | { success: false; issues: string[] } {
+  const parsed = generatedPlanSchema.safeParse(coerceGeneratedPlanPayload(raw));
+  if (parsed.success) return { success: true, plan: parsed.data };
+
+  const issues = parsed.error.issues.map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join(".") : "<root>";
+    return `${path}: ${issue.message}`;
+  });
+  return logGeneratedPlanValidationFailure(issues, rawOutput, attempt);
+}
+
+function logGeneratedPlanValidationFailure(
+  issues: string[],
+  rawOutput: string,
+  attempt: "initial" | "repair",
+): { success: false; issues: string[] } {
+  console.error("[plan.generator] schema validation failed", {
+    attempt,
+    issues,
+    rawOutput: truncateForLog(rawOutput, 2000),
+  });
+  return { success: false, issues };
+}
+
+function coerceGeneratedPlanPayload(raw: unknown): unknown {
+  const value =
+    isRecord(raw) && isRecord(raw.plan)
+      ? raw.plan
+      : isRecord(raw) && isRecord(raw.generated_plan)
+        ? raw.generated_plan
+        : raw;
+  if (!isRecord(value)) return value;
+
+  const cleaned: Record<string, unknown> = {};
+  for (const key of GENERATED_PLAN_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      cleaned[key] = value[key];
+    }
+  }
+  return cleaned;
+}
+
+function renderRepairPrompt({
+  originalPrompt,
+  validationIssues,
+  rawOutput,
+}: {
+  originalPrompt: string;
+  validationIssues: string[];
+  rawOutput: string;
+}): string {
+  return JSON.stringify({
+    task: "Repair the previous GeneratedPlan response. Return JSON only, with no markdown fences.",
+    validation_errors: validationIssues,
+    previous_output: truncateForLog(rawOutput, 2000),
+    required_corrections: [
+      "Return one top-level GeneratedPlan object, not an envelope.",
+      "Remove unknown top-level keys.",
+      "Use only valid enum values and section_type values.",
+      "Use ISO datetime strings only when a real time is known; otherwise omit the field.",
+      "Use status draft or omit status.",
+      "Include 3-6 concise sections with required key, title, body, sort_order, and section_type fields.",
+    ],
+    original_input: originalPrompt,
+  });
+}
+
+function truncateForLog(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
 // ── Prompt rendering ────────────────────────────────────────────────────────
