@@ -2,6 +2,9 @@
   "functions": {
     "app/api/radar/autopilot/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/library/convert-inbox/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -19,6 +22,10 @@
     },
     {
       "path": "/api/radar/autopilot?mode=foundation_sprint",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/library/convert-inbox",
       "schedule": "*/15 * * * *"
     },
     {

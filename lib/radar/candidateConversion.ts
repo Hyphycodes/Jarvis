@@ -59,6 +59,8 @@ export async function convertCandidateInboxToLibrary(input: {
   userId: string;
   supabase: SupabaseClient;
   limit?: number;
+  /** Override how many candidates to research this run (default caps at 12). */
+  researchBudget?: number;
   budget?: RunBudget;
 }): Promise<CandidateConversionResult> {
   const result: CandidateConversionResult = {
@@ -75,7 +77,7 @@ export async function convertCandidateInboxToLibrary(input: {
     errors: [],
     timeBudgetReached: false,
   };
-  const researchBudget = Math.min(input.limit ?? 30, DEFAULT_RESEARCH_BUDGET);
+  const researchBudget = input.researchBudget ?? Math.min(input.limit ?? 30, DEFAULT_RESEARCH_BUDGET);
 
   const { data: founderRow } = await input.supabase
     .from("founder_profile")
