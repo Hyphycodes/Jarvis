@@ -13,7 +13,6 @@ const FILTERS = [
   "Dining",
   "Culture",
   "Places",
-  "Style",
   "Finds",
 ] as const;
 type Filter = (typeof FILTERS)[number];
@@ -31,6 +30,7 @@ type Card = {
   planSlug?: string;
   canGeneratePlan: boolean;
   filter: Filter;
+  sourceBrain?: string;
 };
 
 type HoldingItem = {
@@ -69,6 +69,7 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
     planSlug: item.planSlug,
     canGeneratePlan: Boolean(!item.planSlug && item.actions.openPlan),
     filter,
+    sourceBrain: item.sourceBrain,
   };
 }
 
@@ -118,8 +119,8 @@ function mapCategoryToFilter(category: string): Filter {
       return "Places";
     case "style":
     case "product":
-      return "Style";
     case "finds":
+      // Style/product are no longer a visible tab — they live under Finds.
       return "Finds";
     case "music":
       return "Events";
@@ -144,9 +145,8 @@ function mapCategoryToBadge(category: string): Card["category"] {
     case "music":
       return "CULTURE";
     case "style":
-      return "STYLE";
     case "product":
-      return "PRODUCT";
+      return "FINDS";
     case "activity":
       return "ACTIVITY";
     case "outdoors":
@@ -518,7 +518,7 @@ function RadarCard({
         >
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-gold/80">
-              {card.category}
+              {isFind && card.sourceBrain ? `${card.category} · ${card.sourceBrain}` : card.category}
             </div>
             <h2 className="mt-3 font-serif text-[28px] leading-[1.06] tracking-[-0.005em] text-warm-ivory">
               {card.title}
@@ -566,7 +566,7 @@ function RadarCard({
           disabled={pending}
           className="border-r border-white/[0.045] py-4 text-[11px] uppercase tracking-[0.22em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-60"
         >
-          Go
+          {isFind ? "View" : "Go"}
         </button>
         <button
           type="button"
@@ -574,7 +574,7 @@ function RadarCard({
           disabled={pending}
           className="py-4 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
         >
-          Wait
+          {isFind ? "Pass" : "Wait"}
         </button>
       </div>
     </article>

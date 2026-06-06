@@ -849,6 +849,7 @@ function toRadarCard(
     title: actionTitle || briefing?.display_title || item.title,
     summary: editorialLine ?? "",
     displayCategory: briefing?.display_category,
+    sourceBrain: stringValue(payload.source_brain),
     purposeLabel,
     vibe: stringValue(payload.vibe) ?? stringValue(intelligence.vibe),
     diversityGroup: stringValue(payload.diversity_group) ?? stringValue(intelligence.diversity_group),

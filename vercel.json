@@ -74,6 +74,10 @@
     {
       "path": "/api/wardrobe/process-imports",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/finds/process-jobs",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

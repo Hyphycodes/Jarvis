@@ -3,7 +3,7 @@ import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { looksActionable, extractActionableIntent } from "@/lib/chat/intentCapture";
 import { captureUserIntent, researchUserIntent } from "@/lib/radar/userIntent";
-import { createFind } from "@/lib/finds/finds";
+import { enqueueFindResearch, processFindResearchJob } from "@/lib/finds/researchJobs";
 import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import { buildChatContext } from "@/lib/chat/context/buildChatContext";
 import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPrompt";
@@ -311,17 +311,25 @@ export async function POST(req: Request) {
       try {
         const intent = await extractActionableIntent(message, history);
         if (intent && intent.kind === "finds") {
-          // A thing to buy/source → research it and put the best pick in Finds.
+          // A thing to buy/source → enqueue a durable research job and ack now.
+          // The Product Researcher runs in the background and fills in the Find.
           capturedIntentTitle = intent.title;
           capturedIntentKind = "finds";
-          after(() =>
-            createFind({
+          try {
+            const { jobId } = await enqueueFindResearch({
               userId: owner.id,
               mission: intent.title,
               context: intent.note,
               source: "user_intent",
-            }).catch((err) => console.error("[voice.respond] find research failed", err)),
-          );
+            });
+            after(() =>
+              processFindResearchJob(jobId).catch((err) =>
+                console.error("[voice.respond] find research failed", err),
+              ),
+            );
+          } catch (err) {
+            console.error("[voice.respond] find enqueue failed", err);
+          }
         } else if (intent) {
           const candidateId = await captureUserIntent({
             userId: owner.id,
