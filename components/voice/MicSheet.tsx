@@ -179,7 +179,7 @@ export function MicSheet({
   const [planCard, setPlanCard] = useState<PlanCard | null>(null);
   const [textInput, setTextInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [attachment, setAttachment] = useState<AttachmentContext | null>(null);
+  const [attachments, setAttachments] = useState<AttachmentContext[]>([]);
   const [, setDetectedLinkUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [analyzingImage, setAnalyzingImage] = useState(false);
@@ -249,7 +249,7 @@ export function MicSheet({
       setCurrentResponse("");
       setError(null);
       setPlanCard(null);
-      setAttachment(null);
+      setAttachments([]);
       setDetectedLinkUrl(null);
       setSchedulePicker(null);
     }
@@ -304,12 +304,13 @@ export function MicSheet({
     if (!trimmed || state === "thinking" || state === "responding") return;
 
     haptic([10, 50, 10]);
-    const outgoingAttachment = attachment;
+    const outgoingAttachments = attachments;
+    const firstAttachment = outgoingAttachments[0] ?? null;
     const userMessage: Message = {
       role: "user",
       content: trimmed,
       timestamp: Date.now(),
-      attachment: outgoingAttachment ?? undefined,
+      attachment: firstAttachment ?? undefined,
     };
     setMessages((prev) => [...prev, userMessage]);
     setTextInput("");
@@ -318,7 +319,7 @@ export function MicSheet({
     setCurrentResponse("");
     setPlanCard(null);
     setError(null);
-    setAnalyzingImage(outgoingAttachment?.type === "image");
+    setAnalyzingImage(outgoingAttachments.some((a) => a.type === "image"));
 
     const historyForApi = [...messages, userMessage].map((m) => ({
       role: m.role as "user" | "jarvis",
@@ -328,15 +329,15 @@ export function MicSheet({
     // Build sheet context silently
     const sheetContext = buildSheetContext({ currentRoute: pathname, visibleItem, tonightEvents });
 
-    // Attachment context
-    const messageWithAttachment = outgoingAttachment && outgoingAttachment.type !== "image"
-      ? `${trimmed}\n\n[Attached: ${outgoingAttachment.label}]\n${outgoingAttachment.context ?? ""}`
-      : trimmed;
-    const attachmentsForApi = outgoingAttachment
-      ? [attachmentForApi(outgoingAttachment)]
-      : [];
+    // Non-image attachments get appended to text; images go as vision blocks
+    const nonImageText = outgoingAttachments
+      .filter((a) => a.type !== "image")
+      .map((a) => `[Attached: ${a.label}]\n${a.context ?? ""}`)
+      .join("\n\n");
+    const messageWithAttachment = nonImageText ? `${trimmed}\n\n${nonImageText}` : trimmed;
+    const attachmentsForApi = outgoingAttachments.map(attachmentForApi);
 
-    setAttachment(null);
+    setAttachments([]);
 
     try {
       const res = await fetch("/api/voice/respond", {
@@ -453,7 +454,7 @@ export function MicSheet({
       setAnalyzingImage(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachment, maybeAddPushPromptChip]);
+  }, [messages, state, voiceOn, pathname, visibleItem, tonightEvents, attachments, maybeAddPushPromptChip]);
 
   const busy = state === "thinking" || state === "responding";
 
@@ -462,9 +463,9 @@ export function MicSheet({
     if (!url) {
       setDetectedLinkUrl((current) => {
         if (current) {
-          setAttachment((existing) => (
-            existing?.type === "link" && existing.url === current ? null : existing
-          ));
+          setAttachments((existing) =>
+            existing.filter((a) => !(a.type === "link" && a.url === current)),
+          );
         }
         return null;
       });
@@ -473,14 +474,12 @@ export function MicSheet({
 
     setDetectedLinkUrl((current) => {
       if (current === url) return current;
-      setAttachment((existing) => {
-        if (existing?.type === "image") return existing;
-        return {
-          type: "link",
-          label: url,
-          context: `User pasted link: ${url}`,
-          url,
-        };
+      setAttachments((existing) => {
+        const withoutLink = existing.filter((a) => a.type !== "link");
+        return [
+          ...withoutLink,
+          { type: "link", label: url, context: `User pasted link: ${url}`, url },
+        ];
       });
       return url;
     });
@@ -673,23 +672,29 @@ export function MicSheet({
 
   // ── Attachment tray ─────────────────────────────────────────────────────────
 
-  const handlePhotoAttach = useCallback(async (file: File) => {
+  const handlePhotoAttach = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
     setPhotoLoading(true);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const base64 = dataUrl.split(",")[1] ?? "";
-      setAttachment({
-        type: "image",
-        label: file.name || "Photo",
-        imageDataUrl: dataUrl,
-        imageBase64: base64,
-        imageMediaType: file.type || "image/jpeg",
-      });
+      const newAttachments = await Promise.all(
+        files.map(async (file) => {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+          const base64 = dataUrl.split(",")[1] ?? "";
+          return {
+            type: "image" as const,
+            label: file.name || "Photo",
+            imageDataUrl: dataUrl,
+            imageBase64: base64,
+            imageMediaType: file.type || "image/jpeg",
+          };
+        }),
+      );
+      setAttachments((prev) => [...prev, ...newAttachments]);
     } catch { /* noop */ }
     setPhotoLoading(false);
   }, []);
@@ -891,20 +896,40 @@ export function MicSheet({
           </div>
         ) : null}
 
-        {/* Attachment preview */}
-        {attachment ? (
-          <div className="mx-5 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-soft)] border border-white/[0.08] bg-white/[0.025] px-3 py-2">
-            <AttachmentPreview attachment={attachment} />
-            <button
-              type="button"
-              onClick={() => {
-                setAttachment(null);
-                setDetectedLinkUrl(null);
-              }}
-              className="ml-2 shrink-0 text-[11px] text-warm-ivory/35 hover:text-warm-ivory/60"
-            >
-              ✕
-            </button>
+        {/* Attachment preview strip */}
+        {attachments.length > 0 ? (
+          <div className="mx-4 mb-2 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            {attachments.map((att, idx) => (
+              <div
+                key={idx}
+                className="relative shrink-0"
+              >
+                {att.type === "image" && att.imageDataUrl ? (
+                  <img
+                    src={att.imageDataUrl}
+                    alt=""
+                    className="h-16 w-16 rounded-lg object-cover"
+                    style={{ border: "1px solid rgba(246,239,221,0.10)" }}
+                  />
+                ) : (
+                  <div
+                    className="flex h-16 w-36 items-center justify-center rounded-lg px-2"
+                    style={{ border: "1px solid rgba(246,239,221,0.10)", background: "rgba(255,255,255,0.03)" }}
+                  >
+                    <span className="truncate text-[11px] text-warm-ivory/55">{att.label}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  aria-label="Remove"
+                  onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] text-warm-ivory/80"
+                  style={{ background: "rgba(30,28,24,0.92)", border: "1px solid rgba(246,239,221,0.18)" }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -918,10 +943,11 @@ export function MicSheet({
               ref={photoInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handlePhotoAttach(file);
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) void handlePhotoAttach(files);
                 e.currentTarget.value = "";
               }}
             />
