@@ -38,10 +38,21 @@ export async function preBuildPlansForShownItems(
     .filter((row) => {
       const payload = isRecord(row.payload) ? row.payload : null;
       if (payload?.plan_build_exhausted) return false;
+      // Skip items the intelligence layer marked as not ready for a plan.
+      // These lack enough context (source, evidence) to produce a useful plan
+      // and will only burn retries. They'll still show as Radar cards.
+      if (payload?.plan_disposition === "not_ready") return false;
       if (!payload?.plan_slug) return true;
       // Retry plans that are still building OR previously failed (schema/transient).
-      // Failed plans used to stick forever; they now get fresh attempts (capped).
-      return payload.plan_status === "building" || payload.plan_status === "failed";
+      // Also retry 'draft' — that's a legacy status from before the pre-builder was
+      // introduced; items can end up with a stale plan_slug pointing to a deleted
+      // plan, and they'd be stuck forever without this.
+      // 'cancelled' and 'ready' are intentional terminal states — never retry those.
+      return (
+        payload.plan_status === "building" ||
+        payload.plan_status === "failed" ||
+        payload.plan_status === "draft"
+      );
     })
     .slice(0, max);
 
