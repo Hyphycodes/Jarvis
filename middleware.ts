@@ -11,7 +11,6 @@ export const CRON_API_PATHS = [
   "/api/library/refresh",
   "/api/library/enrich",
   "/api/library/archive-mine",
-  "/api/library/probe",
   "/api/events/scout",
   "/api/events/process",
   "/api/finds/scout",
