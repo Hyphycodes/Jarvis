@@ -197,7 +197,8 @@ export type RadarCard = {
     | "ownership"
     | "source_lead"
     | "watch"
-    | "opportunity";
+    | "opportunity"
+    | "finds";
   title: string;
   summary: string;
   displayCategory?: string;

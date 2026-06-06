@@ -5,6 +5,9 @@
     },
     "app/api/library/convert-inbox/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/finds/scout/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -27,6 +30,10 @@
     {
       "path": "/api/library/convert-inbox",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/finds/scout",
+      "schedule": "0 9,18 * * *"
     },
     {
       "path": "/api/library/scout",

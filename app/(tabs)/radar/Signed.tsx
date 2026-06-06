@@ -14,6 +14,7 @@ const FILTERS = [
   "Culture",
   "Places",
   "Style",
+  "Finds",
 ] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -118,6 +119,8 @@ function mapCategoryToFilter(category: string): Filter {
     case "style":
     case "product":
       return "Style";
+    case "finds":
+      return "Finds";
     case "music":
       return "Events";
     default:
@@ -164,6 +167,8 @@ function mapCategoryToBadge(category: string): Card["category"] {
       return "WATCH";
     case "source_lead":
       return "SOURCE LEAD";
+    case "finds":
+      return "FINDS";
     default:
       return "MOVE";
   }
@@ -419,6 +424,10 @@ function RadarCard({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const hasMedia = Boolean(card.imageUrl) || Boolean(card.placeholderKind);
+  // Finds are products, not outings — they open their own detail page and never
+  // generate a plan.
+  const isFind = card.filter === "Finds";
+  const detailHref = isFind ? `/find/${card.id}` : card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`;
 
   function persist(action: "save" | "move-holding") {
     onDismiss();
@@ -431,7 +440,7 @@ function RadarCard({
         }
         onPersistedAction();
         if (action === "save") {
-          router.push(card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`);
+          router.push(detailHref);
         }
       } catch (err) {
         onRestore(err instanceof Error ? err.message : "Action failed.");
@@ -465,6 +474,10 @@ function RadarCard({
     e.preventDefault();
     e.stopPropagation();
     if (pending) return;
+    if (isFind) {
+      router.push(detailHref);
+      return;
+    }
     if (card.canGeneratePlan) {
       generatePlan();
       return;
@@ -473,6 +486,7 @@ function RadarCard({
   }
 
   function handleOpenCard(e: React.MouseEvent) {
+    if (isFind) return; // let the Link navigate to the Finds detail page
     if (pending || card.planSlug || !card.canGeneratePlan) return;
     e.preventDefault();
     generatePlan();
@@ -490,7 +504,7 @@ function RadarCard({
       className="lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric"
     >
       <Link
-        href={card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`}
+        href={detailHref}
         onClick={handleOpenCard}
         className="block transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
         aria-label={`Open ${card.title}`}

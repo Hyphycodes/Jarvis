@@ -365,7 +365,8 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
       limit: RADAR_ACTIVE_ITEM_LIMIT * 2,
     });
     const visibleItems = items
-      .filter((item) => evaluateActiveRadarItem(item).allowed)
+      // Finds are products, not outings — they bypass the outing-readiness gate.
+      .filter((item) => item.category === "finds" || evaluateActiveRadarItem(item).allowed)
       .sort(compareRadarItems)
       .slice(0, RADAR_ACTIVE_ITEM_LIMIT);
     const [withPlanRefs, libraryImages] = await Promise.all([
@@ -373,9 +374,10 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
       resolveLibraryImages(visibleItems),
     ]);
     // Only surface a card once its plan is fully built and viewable — tapping a
-    // Radar card should always land on a complete plan page, never a stub.
+    // Radar card should land on a complete plan page, never a stub. Finds are
+    // exempt: they have no plan and open their own Finds detail page.
     return withPlanRefs
-      .filter(({ planRef }) => planRef.isReady)
+      .filter(({ item, planRef }) => item.category === "finds" || planRef.isReady)
       .map(({ item, planRef }) =>
         toRadarCard(item, planRef, libraryImages.get(item.id)),
       );
@@ -1250,6 +1252,7 @@ function mapCategory(
   if (normalized === "sports") return "sports";
   if (normalized === "travel") return "travel";
   if (normalized === "style" || normalized === "shopping") return "style";
+  if (normalized === "finds") return "finds";
   if (normalized === "product") return "product";
   if (normalized === "idea") return "idea";
   if (normalized === "creative") return "creative";
