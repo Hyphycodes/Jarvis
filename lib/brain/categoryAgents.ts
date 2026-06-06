@@ -31,6 +31,16 @@ export type CategoryAgentCandidate = {
   search_query?: string;
   url?: string;
   neighborhood?: string;
+  /** Moves only: a free/self-directed flow vs a paid/bookable venue activity. */
+  move_kind?: "free" | "bookable";
+  /** A concrete sequence/route for a move (required for free moves). */
+  sequence?: string;
+  /** Gear the move implies — spawns Finds candidates (basketball→shoes, cigar→cutter). */
+  gear_needed?: string[];
+  /** Best time/window to do/visit (moves, places). */
+  best_time?: string;
+  /** Rough price hint for bookable moves / products. */
+  price_hint?: string;
 };
 
 export type CategoryAgentOutput = {
@@ -72,9 +82,12 @@ export type SynthesisResult = {
 // ── Versioned agent briefs (the highest-leverage prompts in the system) ───────
 
 export const CATEGORY_AGENT_BRIEFS: Record<RadarCategory, string> = {
-  moves: `You are Jerry's MOVES agent — think like a coach who knows his body and his week. MOVES are active, physical things to DO: a hard hike, an early golf round, a real workout, a court run, a ride. You know his rhythm — Sunday resets (steaks, a cigar with his dad), golf when weather and schedule align — and how his energy moves across the week. Calibrate to earned exertion, time outdoors, skill over spectacle. Avoid performative fitness, soulless group classes, anything staged for a camera.
-SOURCES & QUERY: reason from the weather window, the season, course/trail/club conditions, and his actual calendar + recent load — not a generic "things to do" list.
-THE BAR: ask first — is this even a MOVE week? If his energy/recent activity/weather/schedule say rest, return nothing_this_week=true with a reason. An empty Moves week is correct; never pad. Each candidate: a specific, well-timed physical challenge + a tight relevance_brief on why now.`,
+  moves: `You are Jerry's MOVES agent — a coach who knows his body, his week, and his city. MOVES are executable activities and flows, not places to look up. Generate TWO kinds:
+- FREE / self-directed (move_kind:"free"): a Gold Coast cigar walk after dinner, a 45-min shootaround before dinner, a Sunday reset, a camera/location-scout walk before sunset, an errands+coffee loop, a park hang. These need a concrete SEQUENCE/route, a best_time, and any gear_needed.
+- PAID / bookable (move_kind:"bookable"): a boxing class, gun-range session, golf lesson/range, private court, pickleball, dance class, recovery/spa, guided tour, drop-in league. These need a venue/neighborhood, a price_hint, and a search_query that finds the booking page.
+You know his rhythm — Sunday resets (steaks, a cigar with his dad), golf when weather/schedule align — and how energy moves across the week. Calibrate to earned exertion, time outdoors, skill over spectacle. Avoid performative fitness, soulless group classes, anything staged for a camera. When a move implies equipment, list gear_needed (basketball→ball/court shoes, boxing→gloves/wraps, golf→glove/range, cigar walk→cutter/lighter) — these become Finds.
+SOURCES & QUERY: reason from the weather window, season, course/trail/club conditions, and his actual calendar + recent load. For bookable moves, target real venues/booking pages via search_query.
+THE BAR: every move must be specific and executable — never "be active" or "go outside". Mix free and bookable across the week. If his energy/weather/schedule genuinely say rest, return nothing_this_week=true. Never pad.`,
   events: `You are Jerry's EVENTS agent — urgency and taste fused. EVENTS are ticketed, time-bound happenings in the next ~10 days: a concert in a room that matters, a Sox game, the right wine tasting (not just any one). You know his music lineage — classic soul, jazz, vinyl-led rooms — and that timeliness is first-class: a great event three days out beats the same one three weeks out.
 SOURCES & QUERY: venue calendars, ticketing/listings, local culture press for what's actually happening this week. ALWAYS capture the real date and why the window matters now.
 THE BAR: skip the generic and the oversold. Ask — is the window closing on anything genuinely worth the interruption? If nothing real fits, return nothing_this_week=true. Each candidate: name, date, neighborhood, and a relevance_brief that earns it.`,
@@ -133,12 +146,20 @@ export function normalizeAgentOutput(raw: unknown, category: RadarCategory): Cat
           const name = typeof c.name === "string" ? c.name.trim() : "";
           const brief = typeof c.relevance_brief === "string" ? c.relevance_brief.trim() : "";
           if (!name || !brief) return null;
+          const moveKind = c.move_kind === "free" || c.move_kind === "bookable" ? c.move_kind : undefined;
           return {
             name,
             relevance_brief: brief,
             search_query: strOrUndef(c.search_query),
             url: strOrUndef(c.url),
             neighborhood: strOrUndef(c.neighborhood),
+            move_kind: moveKind,
+            sequence: strOrUndef(c.sequence),
+            gear_needed: Array.isArray(c.gear_needed)
+              ? c.gear_needed.filter((g): g is string => typeof g === "string" && g.trim().length > 0).map((g) => g.trim()).slice(0, 6)
+              : undefined,
+            best_time: strOrUndef(c.best_time),
+            price_hint: strOrUndef(c.price_hint),
           };
         })
         .filter((c): c is CategoryAgentCandidate => c !== null)
@@ -193,8 +214,10 @@ async function runCategoryAgent(
         "",
         `Find what is genuinely worth surfacing in YOUR category (${category}) right now — or decide the answer this week is nothing.`,
         "Return JSON with this shape:",
-        `{ "category": "${category}", "candidates": [{ "name": string, "relevance_brief": string (why this, why now), "search_query": string, "url"?: string, "neighborhood"?: string }], "nothing_this_week": boolean, "reason": string, "gap": boolean }`,
-        "Rules: at most 6 candidates, each a real, specific place/event/product (no generic 'fun activities'). If nothing clears the bar, set nothing_this_week=true and candidates=[]. Never pad. Set gap=true if you found fewer than 5 strong fits.",
+        `{ "category": "${category}", "candidates": [{ "name": string, "relevance_brief": string (why this, why now), "search_query": string, "url"?: string, "neighborhood"?: string, "best_time"?: string, "price_hint"?: string, "move_kind"?: "free"|"bookable", "sequence"?: string, "gear_needed"?: string[] }], "nothing_this_week": boolean, "reason": string, "gap": boolean }`,
+        category === "moves"
+          ? `Rules: at most 6 candidates. EVERY move must be concrete and executable — never vague ("be active", "go outside"). Set move_kind: "free" for self-directed flows (cigar walk, shootaround, Sunday reset, camera walk) and "bookable" for paid/venue activities (boxing class, gun range, golf lesson, court). For FREE moves, ALWAYS include a "sequence" (e.g. "Shoot around 45 min at Seward Park, then walk to dinner"). For BOOKABLE moves, include neighborhood/url/price_hint where known. Add "gear_needed" when the move implies equipment (basketball→ball/court shoes, boxing→gloves/wraps, cigar walk→cutter/lighter). If nothing clears the bar, nothing_this_week=true. gap=true if fewer than 5 strong fits.`
+          : "Rules: at most 6 candidates, each a real, specific place/event/product (no generic 'fun activities'). Capture search_query targeting the right sources, and neighborhood/best_time where relevant. If nothing clears the bar, set nothing_this_week=true and candidates=[]. Never pad. Set gap=true if you found fewer than 5 strong fits.",
       ].join("\n"),
       schemaName: `category_agent_${category}`,
       temperature: 0.4,
@@ -339,6 +362,11 @@ export async function runCategoryScout(input: {
         relevance_brief: candidate.relevance_brief,
         search_query: candidate.search_query ?? null,
         neighborhood: candidate.neighborhood ?? null,
+        move_kind: candidate.move_kind ?? null,
+        sequence: candidate.sequence ?? null,
+        gear_needed: candidate.gear_needed ?? null,
+        best_time: candidate.best_time ?? null,
+        price_hint: candidate.price_hint ?? null,
         synthesis_rank: rank,
         source: "category_agent",
       } as Json,

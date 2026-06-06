@@ -6,6 +6,8 @@ import {
   scoreAgainstTasteConstitution,
 } from "@/lib/brain/tasteConstitution";
 import { scoreSourceTrust, safeDomain } from "@/lib/intelligence/sourceTrust";
+import { scoreCategoryCouncil } from "@/lib/brain/categoryCouncils";
+import { normalizeRadarCategory } from "@/lib/radar/category";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import type { ItemBriefing } from "@/lib/brain/briefingTypes";
 import type { IndexedItem } from "@/lib/index/types";
@@ -210,28 +212,53 @@ export function evaluateCandidateForRadar(
   if (isWatchCopy(briefing)) flags.add("no_current_value");
   if (candidate.source !== "ai" && sourceTrust.trustScore < 0.5) flags.add("weak_evidence");
 
+  // Phase 2: lane-specialized council. Adds its concerns to the flag set BEFORE
+  // the critic scores them (so e.g. a generic dining room is penalized), and
+  // contributes a category-aware score to the confidence blend.
+  const radarCategory = normalizeRadarCategory(candidate.category);
+  const categoryCouncil = radarCategory
+    ? scoreCategoryCouncil(candidate, radarCategory, context.brainContext)
+    : null;
+  if (categoryCouncil) {
+    for (const f of categoryCouncil.flags) flags.add(f);
+  }
+
   const councilScores = {
     scout: scoreScout(candidate, sourceTrust.trustScore, flags),
     operator: scoreOperator(candidate, briefing, context.brainContext),
     taste: taste.score,
     growth: scoreGrowth(candidate, purposeLabel, taste.positiveSignals),
     critic: scoreCritic(flags),
+    category: categoryCouncil?.score ?? 0,
   };
 
   const briefingConfidence = briefing?.confidence ?? candidate.score ?? 0.5;
-  const confidence = clamp01(
-    briefingConfidence * 0.36 +
-      councilScores.scout * 0.17 +
-      councilScores.operator * 0.14 +
-      councilScores.taste * 0.16 +
-      councilScores.growth * 0.08 +
-      councilScores.critic * 0.09,
-  );
+  // When a radar category is known, carve out a 0.13 slice for the lane council;
+  // otherwise fall back to the original 6-term blend.
+  const confidence = categoryCouncil
+    ? clamp01(
+        briefingConfidence * 0.30 +
+          councilScores.scout * 0.15 +
+          councilScores.operator * 0.12 +
+          councilScores.taste * 0.15 +
+          councilScores.growth * 0.07 +
+          councilScores.critic * 0.08 +
+          councilScores.category * 0.13,
+      )
+    : clamp01(
+        briefingConfidence * 0.36 +
+          councilScores.scout * 0.17 +
+          councilScores.operator * 0.14 +
+          councilScores.taste * 0.16 +
+          councilScores.growth * 0.08 +
+          councilScores.critic * 0.09,
+      );
   if (confidence < floor) flags.add("no_current_value");
 
   const positiveSignals = unique([
     ...taste.positiveSignals,
     ...taste.laneMatches,
+    ...(categoryCouncil?.signals ?? []),
     sourceTrust.sourceType === "trusted" ? "trusted source" : "",
     candidate.source === "ai" ? "contextual move" : "",
   ]);
