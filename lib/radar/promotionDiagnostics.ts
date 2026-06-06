@@ -9,6 +9,8 @@ import {
 import { buildJarvisContext } from "@/lib/intelligence/context";
 import { enrichRadarItem } from "@/lib/intelligence/core";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
+import { normalizeRadarCategory } from "@/lib/radar/category";
+import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 import { isPromotableWhenUnderfilled } from "@/lib/intelligence/radarCurator";
 import { readItemIntent } from "@/lib/items/intents";
 import { rowToIndexedItem } from "@/lib/index/repo";
@@ -20,6 +22,7 @@ import type {
   SurfacedItemRow,
 } from "@/lib/types/database";
 import type { RadarItem } from "@/lib/intelligence/types";
+import type { IndexedItem } from "@/lib/index/types";
 
 export type PromotionSourceLayer =
   | "candidate_inbox"
@@ -142,7 +145,7 @@ export async function readRadarPromotionDiagnostics(input: {
     });
   const activeItems = activeRows
     .map(rowToIndexedItem)
-    .filter((item) => evaluateActiveRadarItem(item).allowed);
+    .filter(isActiveRadarInventoryItem);
   const activeBoard = activeItems.map((item) => enrichRadarItem({ item }));
   const context = await buildJarvisContext({
     userId: input.userId,
@@ -166,9 +169,34 @@ export async function readRadarPromotionDiagnostics(input: {
     activeCount: activeItems.length,
     target: RADAR_MIN_ACTIVE_ITEM_TARGET,
     cap: RADAR_ACTIVE_ITEM_LIMIT,
-    summary: promotionSummary(activeRows.length, eligible, items.length),
+    summary: promotionSummary(activeItems.length, eligible, items.length),
     items,
   };
+}
+
+function isActiveRadarInventoryItem(item: IndexedItem): boolean {
+  const category = normalizeRadarCategory(item.category ?? item.type);
+  if (category === "finds") {
+    const dossier = readFindsDossier(item.rawPayload);
+    if (!dossier || !findIsReady(dossier)) return false;
+    const userRequested = String(item.source) === "user_intent";
+    return userRequested || readFindBudgetTier(dossier) !== "hold";
+  }
+  return evaluateActiveRadarItem(item).allowed;
+}
+
+function readFindsDossier(payload: unknown): ProductDossier | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const finds = (payload as Record<string, unknown>).finds;
+  return finds && typeof finds === "object" && !Array.isArray(finds)
+    ? (finds as ProductDossier)
+    : null;
+}
+
+function readFindBudgetTier(dossier: ProductDossier): BudgetTier {
+  const tier = dossier.budget_tier;
+  if (tier === "attainable" || tier === "premium-realistic" || tier === "aspirational" || tier === "hold") return tier;
+  return assessFindBudget(dossier).budget_tier;
 }
 
 export function candidateDiagnostic(row: RadarCandidateInboxRow): RadarPromotionDiagnostic {

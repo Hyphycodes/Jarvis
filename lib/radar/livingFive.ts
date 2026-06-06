@@ -1,9 +1,10 @@
 import { RADAR_CATEGORIES, type RadarCategory } from "@/lib/radar/category";
+import { RADAR_PER_CATEGORY_ACTIVE_TARGET } from "@/lib/brain/constants";
 
 /**
  * The living-5 engine (Prompt 2, Task 3).
  *
- * Radar's job: each of the six categories always holds exactly its 5 strongest
+ * Radar's job: each of the six categories always holds its 7 strongest
  * current fits — never empty (if real fits exist), never stale, never padded
  * with junk. This module is the pure decision core: given the current board and
  * the eligible candidate pool (already past the quality gate), it computes which
@@ -13,7 +14,7 @@ import { RADAR_CATEGORIES, type RadarCategory } from "@/lib/radar/category";
  * (so the Decision Council gate stays the sole arbiter of quality), and apply the
  * returned plan to the DB.
  */
-export const LIVING_FIVE_PER_CATEGORY = 5;
+export const LIVING_FIVE_PER_CATEGORY = RADAR_PER_CATEGORY_ACTIVE_TARGET;
 
 // A candidate must beat the weakest sitting member by at least this margin to
 // displace it — hysteresis so the board doesn't churn on noise.

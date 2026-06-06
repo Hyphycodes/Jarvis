@@ -6,6 +6,8 @@ import {
   researchProduct,
   classifyBrain,
   findIsReady,
+  assessFindBudget,
+  defaultFindBudgetMax,
   type ProductDossier,
   type SourceBrain,
 } from "@/lib/brain/productResearcher";
@@ -53,6 +55,7 @@ export async function createFind(input: {
     context,
     refine: input.refine,
     sourceBrain: brain,
+    budgetMax: defaultFindBudgetMax(brain, input.mission, source),
   });
 
   // Never surface an empty, unresearched shell with nothing to show.
@@ -83,14 +86,15 @@ export async function refineFind(input: {
   const payload = (data as { payload?: unknown } | null)?.payload;
   const prior = isRecord(payload) && isRecord(payload.finds) ? (payload.finds as ProductDossier) : null;
   if (!prior) return { ok: false };
+  const source = (isRecord(payload) && typeof payload.source === "string" ? payload.source : "finds") as FindSource;
 
   const dossier = await researchProduct({
     mission: prior.mission_title,
     context: prior.why_surfaced,
     refine: input.refine,
     sourceBrain: prior.source_brain,
+    budgetMax: defaultFindBudgetMax(prior.source_brain, prior.mission_title, source),
   });
-  const source = (isRecord(payload) && typeof payload.source === "string" ? payload.source : "finds") as FindSource;
   const row = buildFindRow(input.userId, dossier, source);
   await sb.from("surfaced_items").update({ ...row, updated_at: new Date().toISOString() }).eq("id", input.itemId).eq("user_id", input.userId);
   return { ok: true, dossier };
@@ -129,15 +133,20 @@ async function upsertFind(
 function buildFindRow(userId: string, dossier: ProductDossier, source: FindSource): Record<string, unknown> {
   const pick = dossier.best_pick;
   const ready = findIsReady(dossier);
+  const budget = assessFindBudget(dossier);
+  const userRequested = source === "user_intent";
   // User asks lead the Finds feed; background finds stay useful but quieter.
   // Not-ready finds rank low until enriched.
-  const base = source === "user_intent" ? Math.max(dossier.verdict_strength, 0.9) : Math.min(dossier.verdict_strength, 0.82);
-  const score = ready ? base : Math.min(base, 0.35);
+  const base = userRequested ? Math.max(dossier.verdict_strength, 0.9) : Math.min(dossier.verdict_strength, 0.82);
+  const budgetAdjusted = Math.max(0, base - budget.aspirational_penalty);
+  const score = ready ? budgetAdjusted : Math.min(budgetAdjusted, 0.35);
+  const destination = userRequested && ready ? "radar" : "holding";
+  const status = userRequested && ready ? "shown" : "discovered";
 
   return {
     user_id: userId,
-    destination: "radar",
-    status: "shown",
+    destination,
+    status,
     source,
     type: "finds",
     category: "finds",
@@ -150,7 +159,21 @@ function buildFindRow(userId: string, dossier: ProductDossier, source: FindSourc
     reasons: [dossier.why_surfaced].filter(Boolean),
     tags: ["finds", dossier.source_brain],
     planning_state: "saved_to_radar",
-    payload: { finds: dossier, source, source_brain: dossier.source_brain } as unknown as Json,
+    payload: {
+      finds: { ...dossier, ...budget },
+      source,
+      source_brain: dossier.source_brain,
+      budget_tier: budget.budget_tier,
+      budget_fit: budget.budget_fit,
+      value_for_income: budget.value_for_income,
+      cost_per_use: budget.cost_per_use,
+      realistic_purchase_timing: budget.realistic_purchase_timing,
+      aspirational_penalty: budget.aspirational_penalty,
+      quality_without_flash: budget.quality_without_flash,
+      ...(budget.budget_tier === "aspirational" || budget.budget_tier === "hold"
+        ? { budget_guardrail: "Background luxury is held unless the owner explicitly asks for it." }
+        : {}),
+    } as unknown as Json,
   };
 }
 

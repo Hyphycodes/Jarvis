@@ -230,7 +230,7 @@ async function processEntry(
       await tryQueueEvent(supabase, userId, row, result, userIntent);
       return;
     }
-    if (category === "style") {
+    if (category === "finds") {
       await researchAndSurfaceStyle(supabase, userId, row, context, result, userIntent);
       return;
     }

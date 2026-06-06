@@ -195,7 +195,7 @@ function resolveCategory(input: UserIntentInput): RadarCategory {
 
 function entityTypeFor(category: RadarCategory, kind: UserIntentInput["kind"]): string {
   if (kind === "event" || category === "events") return "event";
-  if (kind === "style" || category === "style") return "opportunity";
+  if (kind === "style" || category === "finds") return "opportunity";
   return "place";
 }
 

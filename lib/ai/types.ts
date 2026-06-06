@@ -204,6 +204,8 @@ export type RadarCard = {
   displayCategory?: string;
   /** For Finds: which internal specialist surfaced it (style|gear|home|travel|hosting|fitness). */
   sourceBrain?: string;
+  /** For Finds: budget realism label. */
+  budgetTier?: "attainable" | "premium-realistic" | "aspirational" | "hold";
   purposeLabel?: string;
   vibe?: string;
   diversityGroup?: string;

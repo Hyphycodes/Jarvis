@@ -8,15 +8,22 @@
 
 // ── Active Radar limits ─────────────────────────────────────────────────────
 
-/** Minimum target for a healthy Radar board. Never padded with weak filler. */
-export const RADAR_MIN_ACTIVE_ITEM_TARGET = 6;
+/** Visible Radar lane count: Moves, Events, Dining, Culture, Places, Finds. */
+export const RADAR_VISIBLE_CATEGORY_COUNT = 6;
 
-/** Ideal number of items shown on Radar at any time. */
-export const RADAR_IDEAL_ACTIVE_ITEM_LIMIT = 10;
+/** Healthy active inventory target per visible Radar category. */
+export const RADAR_PER_CATEGORY_ACTIVE_TARGET = 7;
+
+/** Minimum target for a healthy Radar board. Never padded with weak filler. */
+export const RADAR_MIN_ACTIVE_ITEM_TARGET = RADAR_VISIBLE_CATEGORY_COUNT * 3;
+
+/** Ideal active inventory across all lanes. */
+export const RADAR_IDEAL_ACTIVE_ITEM_LIMIT =
+  RADAR_VISIBLE_CATEGORY_COUNT * RADAR_PER_CATEGORY_ACTIVE_TARGET;
 
 /** Hard ceiling for shown Radar items. Above this, stale/low-scored items
  *  move to Holding or are reset to discovered. */
-export const RADAR_ACTIVE_ITEM_LIMIT = 14;
+export const RADAR_ACTIVE_ITEM_LIMIT = RADAR_IDEAL_ACTIVE_ITEM_LIMIT;
 
 /** Days before a "shown" Radar item is considered stale and eligible for
  *  rotation into Holding / Later. */
@@ -56,10 +63,10 @@ export const MAX_PRODUCTS_PER_REFRESH = 3;
 /** Max North / direction-oriented items per refresh. */
 export const MAX_NORTH_IDEAS_PER_REFRESH = 3;
 
-// ── Living-5 engine (per-category top-5) ─────────────────────────────────────
+// ── Living category engine (per-category top 7) ──────────────────────────────
 
-/** Each Radar category holds exactly its 5 strongest current fits. */
-export const RADAR_LIVING_FIVE_PER_CATEGORY = 5;
+/** Each Radar category holds its 7 strongest current fits. */
+export const RADAR_LIVING_FIVE_PER_CATEGORY = RADAR_PER_CATEGORY_ACTIVE_TARGET;
 
 /** Max board changes (promotions + displacements) per autopilot run. Bounds the
  *  time / Claude budget per run; the board fills across runs. Not suppressed by

@@ -11,7 +11,7 @@
  * - culture — drop-in & ongoing art/intellectual (exhibits, galleries, readings)
  * - dining  — food & drink (restaurants, bars, lounges)
  * - places  — non-food spots / atmosphere (cigar lounge, hidden bar, a park, a view)
- * - style   — products to acquire (drops, a watch, the right overshirt)
+ * - finds   — products to acquire/source/upgrade (style, gear, home, travel)
  */
 export const RADAR_CATEGORIES = [
   "moves",
@@ -19,7 +19,7 @@ export const RADAR_CATEGORIES = [
   "culture",
   "dining",
   "places",
-  "style",
+  "finds",
 ] as const;
 
 export type RadarCategory = (typeof RADAR_CATEGORIES)[number];
@@ -57,11 +57,13 @@ const DIRECT: Record<string, RadarCategory> = {
   place: "places", places: "places", park: "places", parks: "places",
   shop: "places", venue: "places", view: "places", spa: "places",
   hotel: "places", cigar: "places", garden: "places", neighborhood: "places",
-  // style — products to acquire
-  style: "style", shopping: "style", product: "style", products: "style",
-  fashion: "style", apparel: "style", clothing: "style", watch: "style",
-  watches: "style", drop: "style", gear: "style", retail: "style",
-  tops: "style", accessory: "style", accessories: "style", sneakers: "style",
+  // finds — products to acquire. Style remains an internal source brain, but
+  // the visible Radar lane is Finds.
+  finds: "finds", find: "finds", style: "finds", shopping: "finds",
+  product: "finds", products: "finds", fashion: "finds", apparel: "finds",
+  clothing: "finds", watch: "finds", watches: "finds", drop: "finds",
+  gear: "finds", retail: "finds", tops: "finds", accessory: "finds",
+  accessories: "finds", sneakers: "finds",
 };
 
 // Ordered substring fallback for free-form multi-word inputs. Order encodes
@@ -72,7 +74,7 @@ const KEYWORD_ORDER: Array<[RegExp, RadarCategory | null]> = [
   [/cigar|speakeasy|hidden bar|rooftop|\bpark\b|garden|\bview\b|\bspa\b|hotel|boutique\b/, "places"],
   [/gallery|museum|exhibit|\bart\b|reading|lecture|opening|literary/, "culture"],
   [/concert|\bmusic\b|festival|\bshow\b|\bgame\b|ticket|comedy|nightlife|\bgig\b/, "events"],
-  [/watch|\bdrop\b|sneaker|apparel|fashion|overshirt|jacket|retail|shopping|\bbuy\b/, "style"],
+  [/watch|\bdrop\b|sneaker|apparel|fashion|overshirt|jacket|retail|shopping|\bbuy\b/, "finds"],
   [/restaurant|dining|\bbar\b|\bcafe\b|coffee|lounge|brunch|\bfood\b|cuisine|cocktail|steak|sushi/, "dining"],
   [/hike|golf|basketball|workout|fitness|outdoor|wellness|\brun\b|\bgym\b|\bclass\b/, "moves"],
 ];

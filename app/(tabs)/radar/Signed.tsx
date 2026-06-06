@@ -15,6 +15,7 @@ const FILTERS = [
   "Places",
   "Finds",
 ] as const;
+const ALL_FEED_VISIBLE_LIMIT = 18;
 type Filter = (typeof FILTERS)[number];
 
 type Card = {
@@ -31,6 +32,7 @@ type Card = {
   canGeneratePlan: boolean;
   filter: Filter;
   sourceBrain?: string;
+  budgetTier?: RadarPayloadCard["budgetTier"];
 };
 
 type HoldingItem = {
@@ -70,6 +72,7 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
     canGeneratePlan: Boolean(!item.planSlug && item.actions.openPlan),
     filter,
     sourceBrain: item.sourceBrain,
+    budgetTier: item.budgetTier,
   };
 }
 
@@ -209,6 +212,21 @@ function formatToday(): string {
     .toUpperCase();
 }
 
+function formatBudgetTier(tier?: RadarPayloadCard["budgetTier"]): string | undefined {
+  switch (tier) {
+    case "attainable":
+      return "attainable";
+    case "premium-realistic":
+      return "premium-realistic";
+    case "aspirational":
+      return "aspirational";
+    case "hold":
+      return "hold";
+    default:
+      return undefined;
+  }
+}
+
 export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("All");
@@ -224,10 +242,9 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
     return items.map(adaptRadarToCard);
   }, [items]);
 
-  const visible = cards.filter(
-    (c) =>
-      !dismissed[c.id] && (filter === "All" || c.filter === filter),
-  );
+  const visible = cards
+    .filter((c) => !dismissed[c.id] && (filter === "All" || c.filter === filter))
+    .slice(0, filter === "All" ? ALL_FEED_VISIBLE_LIMIT : undefined);
 
   async function loadHolding(openSheet = false) {
     if (openSheet) setHoldingOpen(true);
@@ -518,7 +535,9 @@ function RadarCard({
         >
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-gold/80">
-              {isFind && card.sourceBrain ? `${card.category} · ${card.sourceBrain}` : card.category}
+              {isFind
+                ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
+                : card.category}
             </div>
             <h2 className="mt-3 font-serif text-[28px] leading-[1.06] tracking-[-0.005em] text-warm-ivory">
               {card.title}

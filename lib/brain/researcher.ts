@@ -97,7 +97,7 @@ const CATEGORY_HINTS: Record<
     placeType: "venue",
     trustedDomains: ["ticketmaster.com", "eventbrite.com", "songkick.com", "dice.fm", "choosechicago.com"],
   },
-  style: {
+  finds: {
     reviewSuffix: "product review where to buy price",
     placeType: "shop",
   },

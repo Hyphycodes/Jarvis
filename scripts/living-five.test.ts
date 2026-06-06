@@ -44,37 +44,39 @@ assert("energy = 1 - cost", Math.abs(dims.energy - 0.3) < 1e-9);
 assert("money peaks at worth-it spend", dims.money > 0.95);
 assert("flow close = 1", dims.flow === 1);
 
-console.log("living-5: fills empty category up to 5, reports gaps");
+console.log("living-7: fills empty category up to 7, reports gaps");
 {
   const active: LivingFiveMember[] = [m("d1", "dining", 0.9), m("d2", "dining", 0.8)];
   const candidates: LivingFiveMember[] = [
     m("d3", "dining", 0.7), m("d4", "dining", 0.6), m("d5", "dining", 0.5), m("d6", "dining", 0.4),
+    m("d7", "dining", 0.3), m("d8", "dining", 0.2),
     m("e1", "events", 0.7),
   ];
   const plan = planLivingFive({ active, candidates });
   const diningPromos = plan.promotions.filter((p) => p.category === "dining").map((p) => p.id);
-  assert("dining fills to 5 (3 promos)", diningPromos.length === 3 && diningPromos.includes("d3") && diningPromos.includes("d5") && !diningPromos.includes("d6"));
+  assert("dining fills to 7 (5 promos)", diningPromos.length === 5 && diningPromos.includes("d3") && diningPromos.includes("d7") && !diningPromos.includes("d8"));
   assert("events promotes its 1 candidate", plan.promotions.some((p) => p.id === "e1"));
   assert("dining no gap, events gap have=1", !plan.gaps.some((g) => g.category === "dining") && plan.gaps.some((g) => g.category === "events" && g.have === 1));
   assert("empty categories reported as gaps", plan.gaps.some((g) => g.category === "moves" && g.have === 0));
+  assert("finds is a first-class lane gap", plan.gaps.some((g) => g.category === "finds" && g.have === 0));
 }
 
-console.log("living-5: displacement only when strictly stronger by margin");
+console.log("living-7: displacement only when strictly stronger by margin");
 {
   const active: LivingFiveMember[] = [
-    m("p1", "places", 0.9), m("p2", "places", 0.85), m("p3", "places", 0.8), m("p4", "places", 0.75), m("p5", "places", 0.6),
+    m("p1", "places", 0.9), m("p2", "places", 0.85), m("p3", "places", 0.8), m("p4", "places", 0.75), m("p5", "places", 0.7), m("p6", "places", 0.65), m("p7", "places", 0.6),
   ];
   const candidates: LivingFiveMember[] = [
     m("c-strong", "places", 0.7),   // beats weakest 0.6 by > margin → displaces
     m("c-weak", "places", 0.61),     // within margin of 0.6 → no displace
   ];
   const plan = planLivingFive({ active, candidates });
-  assert("strong challenger displaces weakest", plan.displacements.some((d) => d.promote === "c-strong" && d.demote === "p5"));
+  assert("strong challenger displaces weakest", plan.displacements.some((d) => d.promote === "c-strong" && d.demote === "p7"));
   assert("weak challenger does not displace", !plan.displacements.some((d) => d.promote === "c-weak"));
   assert("no promotions when full", plan.promotions.filter((p) => p.category === "places").length === 0);
 }
 
-console.log("living-5: never pads with ineligible, respects maxChanges");
+console.log("living-7: never pads with ineligible, respects maxChanges");
 {
   const active: LivingFiveMember[] = [m("d1", "dining", 0.9)];
   const candidates: LivingFiveMember[] = [

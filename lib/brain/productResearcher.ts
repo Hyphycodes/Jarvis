@@ -17,6 +17,7 @@ export type SourceBrain =
 
 /** Whether a find is a real, presentable buyer recommendation yet. */
 export type ResearchState = "researching" | "needs_enrichment" | "ready";
+export type BudgetTier = "attainable" | "premium-realistic" | "aspirational" | "hold";
 
 export type ProductPick = {
   name: string;
@@ -55,7 +56,25 @@ export type ProductDossier = {
   verdict_strength: number;
   confidence: number;
   research_state: ResearchState;
+  budget_tier: BudgetTier;
+  budget_fit: number;
+  value_for_income: number;
+  cost_per_use: number;
+  realistic_purchase_timing: string | null;
+  aspirational_penalty: number;
+  quality_without_flash: number;
 };
+
+export type FindsBudgetAssessment = Pick<
+  ProductDossier,
+  | "budget_tier"
+  | "budget_fit"
+  | "value_for_income"
+  | "cost_per_use"
+  | "realistic_purchase_timing"
+  | "aspirational_penalty"
+  | "quality_without_flash"
+>;
 
 // ── Brain classification ───────────────────────────────────────────────────
 
@@ -122,6 +141,15 @@ OUTPUT per pick:
 - avoid: specific traps. buy_if / skip_if: one crisp line each.
 - verdict_strength (0..1): conviction it's worth surfacing. confidence (0..1): how solid the data is.
 - subcategory: a short product type ("linen shirt", "carry-on", "NAS").
+- budget_tier: "attainable", "premium-realistic", "aspirational", or "hold".
+- budget_fit/value_for_income/cost_per_use/aspirational_penalty/quality_without_flash: 0..1.
+- realistic_purchase_timing: crisp timing such as "this month", "save for 1-2 months", "aspirational only", or null.
+
+OWNER MONEY CONTEXT:
+- Owner makes around $100k/year and likes refined, subtle luxury.
+- Prefer quality, longevity, and attainable premium over fantasy luxury.
+- Watches or luxury apparel above realistic everyday budgets must be rare, marked aspirational/hold, and paired with realistic alternatives.
+- Do not treat $10k-$30k watches or luxury apparel as normal background Finds unless explicitly requested.
 
 Return strict JSON:
 {
@@ -134,7 +162,14 @@ Return strict JSON:
   "buy_if": string|null,
   "skip_if": string|null,
   "verdict_strength": number,
-  "confidence": number
+  "confidence": number,
+  "budget_tier": "attainable"|"premium-realistic"|"aspirational"|"hold",
+  "budget_fit": number,
+  "value_for_income": number,
+  "cost_per_use": number,
+  "realistic_purchase_timing": string|null,
+  "aspirational_penalty": number,
+  "quality_without_flash": number
 }
 Pick = { "name": string, "brand": string|null, "retailer": string|null, "price": string|null, "image_url": string|null, "product_url": string|null, "rating": number|null, "availability": string|null, "key_specs": string[], "pros": string[], "cons": string[], "taste_fit": string|null }`;
 
@@ -169,6 +204,7 @@ export async function researchProduct(input: {
     verdict_strength: 0,
     confidence: 0,
     research_state: state,
+    ...fallbackBudgetAssessment(sourceBrain),
   });
   if (!hasAnthropic() || !mission) return fallback("needs_enrichment");
 
@@ -284,8 +320,16 @@ function normalize(
     verdict_strength: clamp01(raw.verdict_strength ?? 0),
     confidence: clamp01(raw.confidence ?? 0),
     research_state: "researching",
+    budget_tier: normalizeBudgetTier(raw.budget_tier),
+    budget_fit: clamp01(raw.budget_fit ?? 0.5),
+    value_for_income: clamp01(raw.value_for_income ?? 0.5),
+    cost_per_use: clamp01(raw.cost_per_use ?? 0.5),
+    realistic_purchase_timing: str(raw.realistic_purchase_timing),
+    aspirational_penalty: clamp01(raw.aspirational_penalty ?? 0),
+    quality_without_flash: clamp01(raw.quality_without_flash ?? 0.5),
   };
   dossier.research_state = findIsReady(dossier) ? "ready" : "needs_enrichment";
+  Object.assign(dossier, assessFindBudget(dossier));
   return dossier;
 }
 
@@ -328,6 +372,123 @@ function normalizePick(
     taste_fit: str(p.taste_fit),
     url_is_fallback,
   };
+}
+
+export function assessFindBudget(dossier: Pick<ProductDossier, "mission_title" | "source_brain" | "subcategory" | "best_pick">): FindsBudgetAssessment {
+  const price = parsePrice(dossier.best_pick?.price);
+  const blob = [dossier.mission_title, dossier.subcategory, dossier.best_pick?.name, dossier.best_pick?.brand]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const isWatch = /\bwatch|watches|timepiece|rolex|omega|cartier|vacheron|patek|audemars|jaeger|iwc\b/.test(blob);
+  const isLuxuryApparel = /\bbrunello|cucinelli|loro piana|zegna|kiton|cashmere polo|designer\b/.test(blob);
+  const isShoeOrBag = /\bloafer|sneaker|boot|shoe|bag|briefcase|duffel\b/.test(blob);
+  const isGear = dossier.source_brain === "gear";
+  const isHomeOrTravel = dossier.source_brain === "home" || dossier.source_brain === "travel";
+
+  let attainable = 250;
+  let premium = 900;
+  let aspirational = 2500;
+  let hold = 5000;
+
+  if (isWatch) {
+    attainable = 350;
+    premium = 1500;
+    aspirational = 5000;
+    hold = 8000;
+  } else if (isLuxuryApparel) {
+    attainable = 250;
+    premium = 700;
+    aspirational = 1200;
+    hold = 2000;
+  } else if (isShoeOrBag) {
+    attainable = 250;
+    premium = 650;
+    aspirational = 1200;
+    hold = 2200;
+  } else if (isGear) {
+    attainable = 600;
+    premium = 2500;
+    aspirational = 5000;
+    hold = 8000;
+  } else if (isHomeOrTravel) {
+    attainable = 400;
+    premium = 1500;
+    aspirational = 3000;
+    hold = 5000;
+  }
+
+  const tier: BudgetTier =
+    price == null
+      ? "premium-realistic"
+      : price <= attainable
+        ? "attainable"
+        : price <= premium
+          ? "premium-realistic"
+          : price <= aspirational
+            ? "aspirational"
+            : "hold";
+  const budgetFit =
+    tier === "attainable" ? 0.95 : tier === "premium-realistic" ? 0.82 : tier === "aspirational" ? 0.42 : 0.16;
+  return {
+    budget_tier: tier,
+    budget_fit: budgetFit,
+    value_for_income:
+      tier === "attainable" ? 0.85 : tier === "premium-realistic" ? 0.78 : tier === "aspirational" ? 0.42 : 0.18,
+    cost_per_use:
+      isGear || isHomeOrTravel ? Math.max(0.35, budgetFit - 0.05) : tier === "hold" ? 0.2 : budgetFit,
+    realistic_purchase_timing:
+      tier === "attainable"
+        ? "this month"
+        : tier === "premium-realistic"
+          ? "save for 1-2 months"
+          : tier === "aspirational"
+            ? "aspirational only"
+            : "hold",
+    aspirational_penalty: tier === "hold" ? 0.55 : tier === "aspirational" ? 0.28 : 0,
+    quality_without_flash: isLuxuryApparel || isWatch ? (tier === "attainable" || tier === "premium-realistic" ? 0.65 : 0.35) : 0.78,
+  };
+}
+
+export function defaultFindBudgetMax(brain: SourceBrain, mission: string, source: "user_intent" | "need_scout" | "finds"): number | undefined {
+  const explicitLuxury = /\b(vacheron|patek|audemars|rolex|cartier|brunello|cucinelli|loro piana|luxury|grail|aspirational|\$[5-9][,\d]{3,}|\$[1-9]\d{4,})\b/i.test(mission);
+  if (explicitLuxury && source === "user_intent") return undefined;
+  const text = mission.toLowerCase();
+  if (brain === "style") {
+    if (/\bwatch|watches|timepiece\b/.test(text)) return source === "user_intent" ? 1800 : 1200;
+    if (/\bloafer|sneaker|boot|shoe|bag|briefcase|duffel\b/.test(text)) return source === "user_intent" ? 750 : 550;
+    return source === "user_intent" ? 650 : 450;
+  }
+  if (brain === "gear") return source === "user_intent" ? 3000 : 2000;
+  if (brain === "home") return source === "user_intent" ? 1600 : 1000;
+  if (brain === "travel") return source === "user_intent" ? 900 : 650;
+  if (brain === "hosting") return source === "user_intent" ? 600 : 350;
+  if (brain === "fitness") return source === "user_intent" ? 450 : 300;
+  return source === "user_intent" ? 900 : 500;
+}
+
+function fallbackBudgetAssessment(brain: SourceBrain): FindsBudgetAssessment {
+  return {
+    budget_tier: "premium-realistic",
+    budget_fit: 0.5,
+    value_for_income: 0.5,
+    cost_per_use: brain === "gear" ? 0.55 : 0.5,
+    realistic_purchase_timing: null,
+    aspirational_penalty: 0,
+    quality_without_flash: 0.5,
+  };
+}
+
+function normalizeBudgetTier(value: unknown): BudgetTier {
+  return value === "attainable" || value === "premium-realistic" || value === "aspirational" || value === "hold"
+    ? value
+    : "premium-realistic";
+}
+
+function parsePrice(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const match = value.replace(/,/g, "").match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+  return match ? Number(match[1]) : null;
 }
 
 /** A bare brand/retailer page (no deep product path/query) is acceptable as a

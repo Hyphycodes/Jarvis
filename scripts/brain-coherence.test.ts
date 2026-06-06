@@ -58,6 +58,7 @@ import type { LibraryHealth } from "../lib/library/types";
 import { sourceKeyFromUrl } from "../lib/library/sourceIdentity";
 import { scoreSourceQuality } from "../lib/library/sourceScoring";
 import type { ExplorationLane } from "../lib/brain/tasteStrategist";
+import { RADAR_MIN_ACTIVE_ITEM_TARGET } from "../lib/brain/constants";
 import type { IndexedItem } from "../lib/index/types";
 import type { RadarItem } from "../lib/intelligence/types";
 
@@ -390,7 +391,7 @@ function healthyLibrary(overrides: Partial<LibraryHealth> = {}): LibraryHealth {
 
 function autopilotHealth(overrides: Partial<RadarAutopilotHealth> = {}): RadarAutopilotHealth {
   return {
-    activeCount: 7,
+    activeCount: RADAR_MIN_ACTIVE_ITEM_TARGET,
     holdingCount: 24,
     discoveredBacklogCount: 0,
     candidateInboxCount: BOOTSTRAP_TARGETS.candidateInbox,
@@ -670,7 +671,7 @@ function testCandidateAndLibraryBoundaries() {
   assert.equal(
     chooseRadarAutopilotOperation({
       health: autopilotHealth({
-        activeCount: 7,
+        activeCount: RADAR_MIN_ACTIVE_ITEM_TARGET,
         holdingCount: 24,
         candidateInboxCount: BOOTSTRAP_TARGETS.candidateInbox,
         library: healthyLibrary({ depthScore: 0.9 }),

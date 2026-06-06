@@ -24,7 +24,7 @@ function assert(label: string, cond: boolean) {
 
 console.log("agent briefs");
 assert("one brief per category", RADAR_CATEGORIES.every((c) => CATEGORY_AGENT_BRIEFS[c]?.length > 50));
-assert("style brief is product-facing", /product|buyer|drop/i.test(CATEGORY_AGENT_BRIEFS.style));
+assert("finds brief is product-facing", /product|buyer|drop/i.test(CATEGORY_AGENT_BRIEFS.finds));
 assert("moves brief allows rest weeks", /rest|nothing_this_week/i.test(CATEGORY_AGENT_BRIEFS.moves));
 
 console.log("buildWeekContext");

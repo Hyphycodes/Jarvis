@@ -25,6 +25,7 @@ import {
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { normalizeRadarCategory } from "@/lib/radar/category";
 import { categoryDataReady, type HoldReason } from "@/lib/brain/categoryCouncils";
+import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 import { runExecutiveCouncil, type ExecutiveCandidate, type ExecutiveDecision } from "@/lib/brain/executiveCouncil";
 import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
 import { planLivingFive, type LivingFiveMember } from "@/lib/radar/livingFive";
@@ -480,7 +481,7 @@ async function readAutopilotHealth(input: {
   const activeRows = (activeRes.data ?? []) as SurfacedItemRow[];
   const visibleActiveCount = activeRows
     .map(rowToIndexedItem)
-    .filter((item) => evaluateActiveRadarItem(item).allowed)
+    .filter(isActiveRadarInventoryItem)
     .length;
   return {
     activeCount: visibleActiveCount,
@@ -1047,12 +1048,12 @@ async function executeOperation(input: {
 }
 
 /**
- * The living-5 promotion service. Maintains exactly the top-5 strongest fits per
+ * The category promotion service. Maintains the top 7 strongest fits per
  * category on Radar, by composite score (lib/scoring/radarComposite), with
  * displacement of the weakest sitting member when a stronger candidate appears.
  * The Decision Council gate (isPromotableWhenUnderfilled) remains the sole
- * arbiter of eligibility — living-5 only chooses *which* eligible items occupy
- * each category's five slots. Never empty (if real fits exist), never padded.
+ * arbiter of eligibility — the category planner only chooses *which* eligible
+ * items occupy each lane's slots. Never empty (if real fits exist), never padded.
  */
 async function promoteHoldingWithService(input: {
   userId: string;
@@ -1077,8 +1078,8 @@ async function promoteHoldingWithService(input: {
     .order("score", { ascending: false, nullsFirst: false })
     .order("updated_at", { ascending: false })
     .limit(80);
-  const activeRowList = ((activeRows ?? []) as SurfacedItemRow[]).filter(
-    (row) => evaluateActiveRadarItem(rowToIndexedItem(row)).allowed,
+  const activeRowList = ((activeRows ?? []) as SurfacedItemRow[]).filter((row) =>
+    isActiveRadarInventoryItem(rowToIndexedItem(row)),
   );
   const context = await buildJarvisContext({
     userId: input.userId,
@@ -1097,7 +1098,7 @@ async function promoteHoldingWithService(input: {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
     const category = normalizeRadarCategory(item.category ?? radar.category);
-    if (!category) continue; // uncategorized legacy item — not in any category's five
+    if (!category) continue; // uncategorized legacy item — not in any category lane
     activeMembers.push({
       id: row.id,
       category,
@@ -1310,6 +1311,31 @@ async function promoteHoldingWithService(input: {
     promoted,
     reasons,
   };
+}
+
+function isActiveRadarInventoryItem(item: ReturnType<typeof rowToIndexedItem>): boolean {
+  const category = normalizeRadarCategory(item.category ?? item.type);
+  if (category === "finds") {
+    const dossier = readFindsDossier(item.rawPayload);
+    if (!dossier || !findIsReady(dossier)) return false;
+    const userRequested = String(item.source) === "user_intent";
+    return userRequested || readFindBudgetTier(dossier) !== "hold";
+  }
+  return evaluateActiveRadarItem(item).allowed;
+}
+
+function readFindsDossier(payload: unknown): ProductDossier | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const finds = (payload as Record<string, unknown>).finds;
+  return finds && typeof finds === "object" && !Array.isArray(finds)
+    ? (finds as ProductDossier)
+    : null;
+}
+
+function readFindBudgetTier(dossier: ProductDossier): BudgetTier {
+  const tier = dossier.budget_tier;
+  if (tier === "attainable" || tier === "premium-realistic" || tier === "aspirational" || tier === "hold") return tier;
+  return assessFindBudget(dossier).budget_tier;
 }
 
 async function markSourceProducedForPromotion(input: {

@@ -164,7 +164,7 @@ export async function resolveItemImage(input: {
       fetchOgImage(input.url).then((u) => (u ? [{ url: u, source: "og:image", priority: 70 }] : [])),
     );
   }
-  if (name && category === "style" && hasSerpapi()) {
+  if (name && (category === "style" || category === "finds" || category === "product") && hasSerpapi()) {
     tasks.push(serpProductImage(name));
   }
   if (name && hasBrave()) {

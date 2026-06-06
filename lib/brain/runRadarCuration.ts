@@ -411,7 +411,7 @@ function enforceGates(
         continue;
       }
       quotaCounters.events++;
-    } else if ((category === "style" || type === "product") && s.destination === "radar") {
+    } else if ((category === "finds" || type === "product") && s.destination === "radar") {
       if (quotaCounters.product >= MAX_PRODUCTS_PER_REFRESH) {
         quotaLimited.push({ ...s, destination: "holding" });
         continue;

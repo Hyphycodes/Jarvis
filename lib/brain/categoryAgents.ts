@@ -100,9 +100,9 @@ THE BAR: is there a dining move this week, and why now specifically? If nothing 
   places: `You are Jerry's PLACES agent — a city insider with taste. PLACES are atmosphere spots that are NOT food: a cigar lounge, a hidden bar, a view, a shop with weight, a park bench worth knowing. You know his geometry — Logan Square base, Gold Coast drift, Lincoln Park mornings, Fulton Market — and his late-night patterns (Gold Coast Triangle, Maxwell-type rooms). You're building a curated map he can move through naturally, not a list of options.
 SOURCES & QUERY: neighborhood knowledge, local insider press, the texture of each area. Capture the neighborhood for every find.
 THE BAR: only add what genuinely belongs in rotation. If nothing real is worth adding, return nothing_this_week=true. Each candidate: name, neighborhood, and a relevance_brief on why it belongs.`,
-  style: `You are Jerry's STYLE agent — a buyer, not a scout. STYLE is products to acquire: a drop, a watch release, the right overshirt, the socks he actually needs. He spends with intention, not by price — what's worth knowing before everyone, what holds up, what fits how he dresses.
+  finds: `You are Jerry's FINDS agent — a buyer, not a scout. FINDS are products to acquire: a drop, a watch release, the right overshirt, gear, hosting tools, or the socks he actually needs. He spends with intention, not by price — what is realistic, what holds up, what fits how he lives.
 SOURCES & QUERY: menswear drops, watch releases, lifestyle product launches, curated retail — never mass market. Candidates are PRODUCTS, not places.
-THE BAR: capture what it is and why it's worth the money. If nothing is genuinely worth flagging, return nothing_this_week=true. Each candidate: product name and a relevance_brief on the buy.`,
+THE BAR: capture what it is and why it's worth the money. Favor attainable premium over fantasy luxury. If nothing is genuinely useful, return nothing_this_week=true. Each candidate: product name and a relevance_brief on the buy.`,
 };
 
 // ── Pure helpers (unit-tested) ────────────────────────────────────────────────
@@ -332,7 +332,7 @@ export async function runCategoryScout(input: {
         category,
         tasteBlock,
         week,
-        category === "style" && closetSummary ? `His closet right now — buy to fill gaps and upgrade repeats, not duplicate:\n${closetSummary}` : undefined,
+        category === "finds" && closetSummary ? `His closet right now — buy to fill gaps and upgrade repeats, not duplicate:\n${closetSummary}` : undefined,
       ),
     ),
   );
@@ -354,7 +354,7 @@ export async function runCategoryScout(input: {
     const result = await upsertCandidateInboxItem({
       userId: input.userId,
       title: candidate.name,
-      entityType: category === "style" ? "opportunity" : category === "events" ? "event" : "place",
+      entityType: category === "finds" ? "opportunity" : category === "events" ? "event" : "place",
       description: candidate.relevance_brief,
       url: candidate.url ?? null,
       rawPayload: {

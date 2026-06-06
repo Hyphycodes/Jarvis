@@ -14,7 +14,12 @@ import { actionTitleForItem } from "@/lib/brain/actionTitles";
 import { buildNorthLifeCadence } from "@/lib/brain/lifeCadence";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
-import { RADAR_ACTIVE_ITEM_LIMIT } from "@/lib/brain/constants";
+import {
+  RADAR_ACTIVE_ITEM_LIMIT,
+  RADAR_PER_CATEGORY_ACTIVE_TARGET,
+} from "@/lib/brain/constants";
+import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
+import { normalizeRadarCategory, type RadarCategory } from "@/lib/radar/category";
 import {
   buildConsiderationBrief,
   heroImageForItem,
@@ -367,22 +372,14 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
     const items = await listIndexItems({
       destination: "radar",
       status: ["shown", "opened"],
-      limit: RADAR_ACTIVE_ITEM_LIMIT * 2,
+      limit: RADAR_ACTIVE_ITEM_LIMIT * 3,
     });
-    const visibleItems = items
-      // Finds are products, not outings — they bypass the outing-readiness gate.
-      .filter((item) => item.category === "finds" || evaluateActiveRadarItem(item).allowed)
-      .sort(compareRadarItems)
-      .slice(0, RADAR_ACTIVE_ITEM_LIMIT);
+    const visibleItems = selectBalancedRadarInventory(items);
     const [withPlanRefs, libraryImages] = await Promise.all([
       withRadarPlanRefs(visibleItems),
       resolveLibraryImages(visibleItems),
     ]);
-    // Only surface a card once its plan is fully built and viewable — tapping a
-    // Radar card should land on a complete plan page, never a stub. Finds are
-    // exempt: they have no plan and open their own Finds detail page.
     return withPlanRefs
-      .filter(({ item, planRef }) => item.category === "finds" || planRef.isReady)
       .map(({ item, planRef }) =>
         toRadarCard(item, planRef, libraryImages.get(item.id)),
       );
@@ -850,6 +847,7 @@ function toRadarCard(
     summary: editorialLine ?? "",
     displayCategory: briefing?.display_category,
     sourceBrain: stringValue(payload.source_brain),
+    budgetTier: visibleRadarCategory(item) === "finds" ? readFindBudgetTier(item) : undefined,
     purposeLabel,
     vibe: stringValue(payload.vibe) ?? stringValue(intelligence.vibe),
     diversityGroup: stringValue(payload.diversity_group) ?? stringValue(intelligence.diversity_group),
@@ -895,6 +893,130 @@ function toRadarCard(
     routeOnSave: ["radar.saved"],
     routeOnPass: ["radar.passed"],
   };
+}
+
+const VISIBLE_RADAR_CATEGORY_ORDER: RadarCategory[] = [
+  "moves",
+  "events",
+  "dining",
+  "culture",
+  "places",
+  "finds",
+];
+
+function selectBalancedRadarInventory(items: IndexedItem[]): IndexedItem[] {
+  const byCategory = new Map<RadarCategory, IndexedItem[]>();
+  for (const item of items) {
+    const category = visibleRadarCategory(item);
+    if (!category || !isVisibleRadarItem(item, category)) continue;
+    const list = byCategory.get(category) ?? [];
+    list.push(item);
+    byCategory.set(category, list);
+  }
+
+  const selected: IndexedItem[] = [];
+  for (const category of VISIBLE_RADAR_CATEGORY_ORDER) {
+    const lane = (byCategory.get(category) ?? [])
+      .sort(compareRadarItemsWithinLane)
+      .slice(0, RADAR_PER_CATEGORY_ACTIVE_TARGET);
+    selected.push(...lane);
+  }
+  return orderBalancedAllFeed(selected).slice(0, RADAR_ACTIVE_ITEM_LIMIT);
+}
+
+function visibleRadarCategory(item: IndexedItem): RadarCategory | null {
+  return normalizeRadarCategory(item.category ?? item.type);
+}
+
+function isVisibleRadarItem(item: IndexedItem, category: RadarCategory): boolean {
+  if (category === "finds") {
+    const dossier = readFindsDossier(item);
+    if (!dossier || !findIsReady(dossier)) return false;
+    const budget = readFindBudgetTier(item);
+    return String(item.source) === "user_intent" || budget !== "hold";
+  }
+  return evaluateActiveRadarItem(item).allowed;
+}
+
+function orderBalancedAllFeed(items: IndexedItem[]): IndexedItem[] {
+  const remaining = new Set(items.map((item) => item.id));
+  const userIntent = items.filter(isUserIntent).sort(compareRadarItemsWithinLane);
+  const urgentEvents = items
+    .filter((item) => remaining.has(item.id) && !isUserIntent(item) && isUrgentDatedEvent(item))
+    .sort(compareRadarItemsWithinLane);
+
+  const ordered: IndexedItem[] = [];
+  for (const item of [...userIntent, ...urgentEvents]) {
+    if (!remaining.delete(item.id)) continue;
+    ordered.push(item);
+  }
+
+  const groups = new Map<RadarCategory, IndexedItem[]>();
+  for (const item of items) {
+    if (!remaining.has(item.id)) continue;
+    const category = visibleRadarCategory(item);
+    if (!category) continue;
+    const list = groups.get(category) ?? [];
+    list.push(item);
+    groups.set(category, list);
+  }
+  for (const category of VISIBLE_RADAR_CATEGORY_ORDER) {
+    groups.set(category, (groups.get(category) ?? []).sort(compareRadarItemsWithinLane));
+  }
+
+  while ([...groups.values()].some((list) => list.length > 0)) {
+    const activeCategories = VISIBLE_RADAR_CATEGORY_ORDER
+      .filter((category) => (groups.get(category)?.length ?? 0) > 0)
+      .sort((a, b) => compareRadarItemsWithinLane(groups.get(a)![0], groups.get(b)![0]));
+    for (const category of activeCategories) {
+      const next = groups.get(category)?.shift();
+      if (next) ordered.push(next);
+    }
+  }
+
+  return ordered;
+}
+
+function compareRadarItemsWithinLane(a: IndexedItem, b: IndexedItem): number {
+  const intentDiff = Number(isUserIntent(b)) - Number(isUserIntent(a));
+  if (intentDiff !== 0) return intentDiff;
+  const urgentDiff = Number(isUrgentDatedEvent(b)) - Number(isUrgentDatedEvent(a));
+  if (urgentDiff !== 0) return urgentDiff;
+  const budgetDiff = findBudgetSortPenalty(a) - findBudgetSortPenalty(b);
+  if (budgetDiff !== 0) return budgetDiff;
+  return compareRadarItems(a, b);
+}
+
+function isUserIntent(item: IndexedItem): boolean {
+  return String(item.source) === "user_intent";
+}
+
+function isUrgentDatedEvent(item: IndexedItem): boolean {
+  if (visibleRadarCategory(item) !== "events" || !item.startsAt) return false;
+  const days = (Date.parse(item.startsAt) - Date.now()) / 86_400_000;
+  return Number.isFinite(days) && days >= 0 && days <= 10;
+}
+
+function findBudgetSortPenalty(item: IndexedItem): number {
+  if (visibleRadarCategory(item) !== "finds" || isUserIntent(item)) return 0;
+  const tier = readFindBudgetTier(item);
+  if (tier === "hold") return 4;
+  if (tier === "aspirational") return 2;
+  return 0;
+}
+
+function readFindsDossier(item: IndexedItem): ProductDossier | null {
+  const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const dossier = isRecord(payload.finds) ? payload.finds : null;
+  return dossier ? (dossier as unknown as ProductDossier) : null;
+}
+
+function readFindBudgetTier(item: IndexedItem): BudgetTier | undefined {
+  const dossier = readFindsDossier(item);
+  if (!dossier) return undefined;
+  const tier = dossier.budget_tier;
+  if (tier === "attainable" || tier === "premium-realistic" || tier === "aspirational" || tier === "hold") return tier;
+  return assessFindBudget(dossier).budget_tier;
 }
 
 function compareRadarItems(a: IndexedItem, b: IndexedItem): number {
@@ -1257,9 +1379,7 @@ function mapCategory(
   if (normalized === "place" || normalized === "places") return "place";
   if (normalized === "sports") return "sports";
   if (normalized === "travel") return "travel";
-  if (normalized === "style" || normalized === "shopping") return "style";
-  if (normalized === "finds") return "finds";
-  if (normalized === "product") return "product";
+  if (normalized === "style" || normalized === "shopping" || normalized === "product" || normalized === "finds") return "finds";
   if (normalized === "idea") return "idea";
   if (normalized === "creative") return "creative";
   if (normalized === "activity") return "activity";
@@ -1277,11 +1397,11 @@ function mapCategory(
     case "place":
       return "place";
     case "product":
-      return "product";
+      return "finds";
     case "travel":
       return "travel";
     case "style":
-      return "style";
+      return "finds";
     case "creative":
       return "creative";
     case "health":

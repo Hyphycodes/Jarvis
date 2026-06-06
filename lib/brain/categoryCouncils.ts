@@ -4,7 +4,7 @@ import type { IndexedItem } from "@/lib/index/types";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import { normalizeRadarCategory, type RadarCategory } from "@/lib/radar/category";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
-import { findIsReady, type ProductDossier } from "@/lib/brain/productResearcher";
+import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 
 /**
  * Phase 2 category councils — deterministic, lane-specialized judgment that
@@ -24,6 +24,7 @@ export type HoldReason =
   | "missing_source"
   | "missing_sequence"
   | "missing_product_url"
+  | "unrealistic_budget"
   | "low_confidence"
   | "wrong_template_risk";
 
@@ -178,7 +179,7 @@ const RUBRICS: Record<RadarCategory, RubricFn> = {
     return { score: clamp01(s), signals, flags, label: signals.includes("weather-fit") ? "Weather-fit" : undefined };
   },
 
-  style: (item) => {
+  finds: (item) => {
     // Style now feeds Finds; judged by the Finds readiness gate, not here.
     const dossier = readFindsDossier(item);
     const ready = dossier ? findIsReady(dossier) : false;
@@ -197,7 +198,7 @@ const LABEL_PREFIX: Record<RadarCategory, string> = {
   culture: "Culture",
   places: "Places",
   moves: "Moves",
-  style: "Finds",
+  finds: "Finds",
 };
 
 /** Lane-specialized score + signals/flags. Deterministic. */
@@ -259,19 +260,30 @@ export function categoryDataReady(item: IndexedItem, categoryInput?: string | nu
     case "moves": {
       const p = payloadRecord(item);
       const hasSequence = Boolean(p.sequence || p.steps || p.route) || SEQUENCE_RE.test(textBlob(item));
-      if (!hasSequence) holdReasons.push("missing_sequence");
+      const hasMoveContext = Boolean(
+        p.move_kind ||
+          p.best_time ||
+          p.gear_needed ||
+          p.price_hint ||
+          item.locationName ||
+          hasSource(item) ||
+          hasReason(item),
+      );
+      if (!hasSequence && !hasMoveContext) holdReasons.push("missing_sequence");
       break;
     }
-    case "style": {
+    case "finds": {
       const dossier = readFindsDossier(item);
       if (!dossier || !findIsReady(dossier)) holdReasons.push("missing_product_url");
+      const userRequested = String(item.source) === "user_intent";
+      if (!userRequested && dossier && readFindBudgetTier(dossier) === "hold") holdReasons.push("unrealistic_budget");
       break;
     }
   }
 
   // Wrong-template risk: category says one thing, type says another (e.g.
   // category=finds but type=place). Light check, never hard-blocks alone.
-  if (category === "style" && item.type === "place") holdReasons.push("wrong_template_risk");
+  if (category === "finds" && item.type === "place") holdReasons.push("wrong_template_risk");
 
   return { ready: holdReasons.length === 0, holdReasons };
 }
@@ -282,6 +294,12 @@ function readFindsDossier(item: IndexedItem): ProductDossier | null {
   const p = payloadRecord(item);
   const finds = p.finds;
   return typeof finds === "object" && finds !== null && !Array.isArray(finds) ? (finds as ProductDossier) : null;
+}
+
+function readFindBudgetTier(dossier: ProductDossier): BudgetTier {
+  const tier = dossier.budget_tier;
+  if (tier === "attainable" || tier === "premium-realistic" || tier === "aspirational" || tier === "hold") return tier;
+  return assessFindBudget(dossier).budget_tier;
 }
 
 function clamp01(n: number): number {
