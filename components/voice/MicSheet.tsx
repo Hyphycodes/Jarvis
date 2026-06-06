@@ -301,7 +301,7 @@ export function MicSheet({
 
   const handleSendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || state === "thinking" || state === "responding") return;
+    if ((!trimmed && attachments.length === 0) || state === "thinking" || state === "responding") return;
 
     haptic([10, 50, 10]);
     const outgoingAttachments = attachments;
@@ -492,9 +492,9 @@ export function MicSheet({
 
   const handleTextSubmit = useCallback(() => {
     const txt = textInput.trim();
-    if (!txt) return;
+    if (!txt && attachments.length === 0) return;
     void handleSendMessage(txt);
-  }, [textInput, handleSendMessage]);
+  }, [textInput, attachments, handleSendMessage]);
 
   const handleChipClick = useCallback(async (chip: ChatChip) => {
     if (busy) return;
@@ -982,6 +982,24 @@ export function MicSheet({
               className="flex-1 bg-transparent text-[14px] text-warm-ivory/88 placeholder:text-warm-ivory/25 focus:outline-none disabled:opacity-40"
             />
 
+            {(textInput.trim().length > 0 || attachments.length > 0) && (
+              <button
+                type="button"
+                aria-label="Send"
+                onClick={handleTextSubmit}
+                disabled={busy}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-150 disabled:opacity-40"
+                style={{
+                  border: "1px solid rgba(246,239,221,0.18)",
+                  background: "transparent",
+                  color: "rgba(246,239,221,0.45)",
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path d="M2 11L11 2M11 2H4.5M11 2V8.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
             <button
               type="button"
               aria-label={isListening ? "Stop recording" : "Start recording"}

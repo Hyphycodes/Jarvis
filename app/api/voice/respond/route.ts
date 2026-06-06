@@ -175,15 +175,17 @@ export async function POST(req: Request) {
       attachments?: unknown;
     };
 
-    const message = typeof body.text === "string" ? body.text.trim() : "";
+    const messageRaw = typeof body.text === "string" ? body.text.trim() : "";
     const sheetContext = typeof body.sheet_context === "string" ? body.sheet_context.trim() : "";
     const attachments = normalizeAttachments(body.attachments);
-    if (!message) {
+    const hasImages = attachments.some((a) => a.type === "image");
+    if (!messageRaw && !hasImages) {
       return new Response(
         `data: ${JSON.stringify({ type: "error", message: "text is required" })}\n\n`,
         { status: 400, headers: { "Content-Type": "text/event-stream" } },
       );
     }
+    const message = messageRaw || "Here are some photos.";
 
     const history: ConversationMessage[] = Array.isArray(body.history)
       ? body.history.slice(-16)
