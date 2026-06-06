@@ -92,6 +92,9 @@ export default async function SettingsPage() {
 
           {/* 4. Places — manage saved places. */}
           <SettingsRow href="/account/library" label="Places" />
+
+          {/* 5. Closet — wardrobe Jarvis built from your photos. */}
+          <SettingsRow href="/wardrobe" label="Closet" />
         </SettingsList>
 
         <section className="mt-14 border-t border-divider/60 pt-8">

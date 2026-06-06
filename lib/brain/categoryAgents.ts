@@ -6,6 +6,7 @@ import { generateStructured } from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
 import { upsertCandidateInboxItem } from "@/lib/radar/candidateInbox";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { buildClosetSummary } from "@/lib/wardrobe/closet";
 import { RADAR_CATEGORIES, type RadarCategory } from "@/lib/radar/category";
 import type { Json } from "@/lib/types/database";
 
@@ -178,6 +179,7 @@ async function runCategoryAgent(
   category: RadarCategory,
   tasteBlock: string,
   week: WeekContext,
+  extraContext?: string,
 ): Promise<CategoryAgentOutput> {
   try {
     const raw = await generateStructured<unknown>({
@@ -187,6 +189,7 @@ async function runCategoryAgent(
         "",
         "Jerry's taste, pulled fresh:",
         tasteBlock,
+        ...(extraContext ? ["", extraContext] : []),
         "",
         `Find what is genuinely worth surfacing in YOUR category (${category}) right now — or decide the answer this week is nothing.`,
         "Return JSON with this shape:",
@@ -295,9 +298,20 @@ export async function runCategoryScout(input: {
   const week = buildWeekContext(new Date(brain.now), city);
   const tasteBlock = buildAgentTasteBlock(taste);
 
+  // The Style agent buys against what he already owns — feed it the Closet so it
+  // suggests what fills gaps and upgrades repeats, not what he already has.
+  const closetSummary = await buildClosetSummary(input.userId, supabase).catch(() => null);
+
   // Six agents in parallel — total wall-clock ≈ one agent's time.
   const outputs = await Promise.all(
-    RADAR_CATEGORIES.map((category) => runCategoryAgent(category, tasteBlock, week)),
+    RADAR_CATEGORIES.map((category) =>
+      runCategoryAgent(
+        category,
+        tasteBlock,
+        week,
+        category === "style" && closetSummary ? `His closet right now — buy to fill gaps and upgrade repeats, not duplicate:\n${closetSummary}` : undefined,
+      ),
+    ),
   );
 
   const circleNotes = (brain.people ?? [])
