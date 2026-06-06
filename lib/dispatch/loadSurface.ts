@@ -101,7 +101,12 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .select("*")
           .eq("user_id", id)
           .eq("destination", "today")
-          .in("status", ["discovered", "shown", "opened", "saved", "planned"])
+          // Today reflects only what the owner has COMMITTED to (saved or planned
+          // from Radar, or added via Calendar). Auto-surfaced discovered/shown/
+          // opened items are discovery, not commitments — they live on Radar, not
+          // Today. Without this gate Today fills with suggestions the owner never
+          // chose.
+          .in("status", ["saved", "planned"])
           .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
           .order("starts_at", { ascending: true, nullsFirst: false })
           .order("score", { ascending: false, nullsFirst: false })
