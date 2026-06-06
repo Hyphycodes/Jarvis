@@ -232,6 +232,8 @@ export type RadarCard = {
   locationLabel?: string;
   neighborhood?: string;
   datetime?: string;
+  /** True when datetime is a committed time (event/scheduled) vs a suggestion. */
+  whenConfirmed?: boolean;
   imageUrl?: string;
   placeholderKind?: "event" | "place" | "product" | "idea" | "activity" | "general";
   score: number;

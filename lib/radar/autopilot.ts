@@ -988,13 +988,13 @@ async function executeOperation(input: {
           ? `${result.summary}Promotion review promoted ${promoted.promoted} qualified Holding item(s).`
           : `${result.summary}Promotion review promoted 0 items. ${diagnostics.summary}`;
         // Pre-build plans for newly-shown Radar items so they open instantly.
-        // Radar now only surfaces items whose plan is fully built, so build a
-        // few more per run to keep the gated feed full. Skipped if low on time.
+        // Radar only surfaces items whose plan is fully built, so build several
+        // per run to keep the gated feed full autonomously. Bounded by runBudget.
         if (!input.runBudget.shouldStopSoon()) {
           const preBuild = await preBuildPlansForShownItems(
             input.userId,
             input.supabase,
-            { maxItems: 4 },
+            { maxItems: 6 },
           );
           if (preBuild.built > 0) {
             result.summary += ` Pre-built ${preBuild.built} plan(s).`;

@@ -657,6 +657,10 @@ type RadarPlanRef = {
   hasStoredRef: boolean;
   /** True only when the plan is fully built (build_status='ready' + has sections). */
   isReady: boolean;
+  /** When this should happen — a committed start, else the brain's suggested time. */
+  whenIso?: string;
+  /** True when the time is committed (event/scheduled) vs merely suggested. */
+  whenConfirmed?: boolean;
 };
 
 type PlanRefRow = { id: string; key_stats: unknown; build_status: string | null };
@@ -737,15 +741,31 @@ async function withRadarPlanRefs(
     const isReady = Boolean(
       plan && plan.build_status === "ready" && withSections.has(plan.id),
     );
+    const when = plan ? readPlanWhen(plan.key_stats) : undefined;
     return {
       item,
       planRef: {
         slug: actualSlug,
         hasStoredRef: Boolean(planId || planSlug),
         isReady,
+        whenIso: when?.iso,
+        whenConfirmed: when?.confirmed,
       },
     };
   });
+}
+
+/** When the plan happens: a committed start_at (confirmed) or suggested_start. */
+function readPlanWhen(
+  keyStats: unknown,
+): { iso?: string; confirmed: boolean } | undefined {
+  if (!isRecord(keyStats)) return undefined;
+  const startsAt = typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined;
+  if (startsAt) return { iso: startsAt, confirmed: true };
+  const suggested =
+    typeof keyStats.suggested_start === "string" ? keyStats.suggested_start : undefined;
+  if (suggested) return { iso: suggested, confirmed: false };
+  return undefined;
 }
 
 /** Returns the subset of plan ids that have at least one persisted section. */
@@ -850,7 +870,9 @@ function toRadarCard(
       consideration.location?.city ??
       consideration.location?.label,
     neighborhood: item.locationName ?? undefined,
-    datetime: item.startsAt ?? undefined,
+    // Show WHEN: the event's own time, else the plan's committed/suggested time.
+    datetime: item.startsAt ?? planRef.whenIso ?? undefined,
+    whenConfirmed: Boolean(item.startsAt) || Boolean(planRef.whenConfirmed),
     imageUrl: heroImageForItem(item) ?? brief?.heroImageUrl ?? libraryImage ?? undefined,
     placeholderKind: consideration.media.placeholderKind,
     score: planReadiness?.confidence ?? briefing?.confidence ?? item.score ?? scoreIndexedItem(item).total,

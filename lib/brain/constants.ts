@@ -9,14 +9,14 @@
 // ── Active Radar limits ─────────────────────────────────────────────────────
 
 /** Minimum target for a healthy Radar board. Never padded with weak filler. */
-export const RADAR_MIN_ACTIVE_ITEM_TARGET = 5;
+export const RADAR_MIN_ACTIVE_ITEM_TARGET = 6;
 
 /** Ideal number of items shown on Radar at any time. */
-export const RADAR_IDEAL_ACTIVE_ITEM_LIMIT = 7;
+export const RADAR_IDEAL_ACTIVE_ITEM_LIMIT = 10;
 
 /** Hard ceiling for shown Radar items. Above this, stale/low-scored items
  *  move to Holding or are reset to discovered. */
-export const RADAR_ACTIVE_ITEM_LIMIT = 10;
+export const RADAR_ACTIVE_ITEM_LIMIT = 14;
 
 /** Days before a "shown" Radar item is considered stale and eligible for
  *  rotation into Holding / Later. */
@@ -25,7 +25,7 @@ export const RADAR_STALE_SHOWN_DAYS = 14;
 // ── Curation selection limits ────────────────────────────────────────────────
 
 /** Default max items the Curator may select per run. */
-export const RADAR_DEFAULT_SELECTED_LIMIT = 5;
+export const RADAR_DEFAULT_SELECTED_LIMIT = 8;
 
 /** Absolute max — Curator result is sliced to this even if Claude returns more. */
 export const RADAR_HARD_SELECTED_LIMIT = RADAR_ACTIVE_ITEM_LIMIT;
@@ -45,16 +45,16 @@ export const RADAR_UNDERFILLED_PROMOTION_FLOOR = 0.52;
 // ── Category quotas (per refresh run) ────────────────────────────────────────
 
 /** Max dining / restaurant items per refresh. */
-export const MAX_DINING_PER_REFRESH = 3;
+export const MAX_DINING_PER_REFRESH = 4;
 
 /** Max event items per refresh. */
-export const MAX_EVENTS_PER_REFRESH = 3;
+export const MAX_EVENTS_PER_REFRESH = 4;
 
 /** Max product / shopping items per refresh. */
-export const MAX_PRODUCTS_PER_REFRESH = 2;
+export const MAX_PRODUCTS_PER_REFRESH = 3;
 
 /** Max North / direction-oriented items per refresh. */
-export const MAX_NORTH_IDEAS_PER_REFRESH = 2;
+export const MAX_NORTH_IDEAS_PER_REFRESH = 3;
 
 // ── Living-5 engine (per-category top-5) ─────────────────────────────────────
 
@@ -64,7 +64,7 @@ export const RADAR_LIVING_FIVE_PER_CATEGORY = 5;
 /** Max board changes (promotions + displacements) per autopilot run. Bounds the
  *  time / Claude budget per run; the board fills across runs. Not suppressed by
  *  the global active count — empty categories fill even when others are full. */
-export const RADAR_PROMOTIONS_PER_RUN = 6;
+export const RADAR_PROMOTIONS_PER_RUN = 10;
 
 // ── Weekday energy limits ─────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ export const HOLDING_STALE_DAYS = 45;
 // ── Source volume caps ────────────────────────────────────────────────────────
 
 /** Hard cap on total candidates per gather run across all lanes. */
-export const MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH = 60;
+export const MAX_TOTAL_SOURCE_CANDIDATES_PER_REFRESH = 90;
 
 /** Number of LocalRadar query groups to run per refresh. */
 export const LOCAL_RADAR_MAX_QUERIES_PER_REFRESH = 6;
@@ -104,4 +104,4 @@ export const LOCAL_RADAR_MAX_EXTRACTED_LEADS = 15;
 // ── Refresh throttle ─────────────────────────────────────────────────────────
 
 /** Minimum minutes between Radar refresh runs (cooldown). */
-export const RADAR_REFRESH_COOLDOWN_MINUTES = 30;
+export const RADAR_REFRESH_COOLDOWN_MINUTES = 18;

@@ -72,9 +72,10 @@ export default async function DynamicPlanPage({
       brief.sectionCount === 0 &&
       (isBuilding || isFailed),
   );
-  // The hero CTA shows on every ready/live plan now (not only day-of). For an
-  // unscheduled plan it "confirms" the brain's suggested time, then begins.
+  // The hero CTA shows on every ready/live plan. It only says "Begin Evening"
+  // on the actual day — otherwise it's "Add to Calendar" (future plans).
   const showPrimary = Boolean(brief.planId) && !shouldBuildOnTap;
+  const dayOf = isTodayLocal(brief.targetStart);
 
   return (
     <PlanShell>
@@ -96,6 +97,7 @@ export default async function DynamicPlanPage({
               planId={brief.planId}
               suggestedStart={brief.targetStart}
               scheduled={Boolean(brief.scheduledDate)}
+              dayOf={dayOf}
             />
           ) : undefined
         }
@@ -142,6 +144,19 @@ export default async function DynamicPlanPage({
         <PlanDispositionBar itemId={brief.sourceId} planSlug={slug} />
       ) : null}
     </PlanShell>
+  );
+}
+
+/** True when an ISO datetime falls on today's local calendar date. */
+function isTodayLocal(iso?: string): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const n = new Date();
+  return (
+    d.getFullYear() === n.getFullYear() &&
+    d.getMonth() === n.getMonth() &&
+    d.getDate() === n.getDate()
   );
 }
 

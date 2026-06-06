@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRightIcon } from "./icons";
+import { DatePickerSheet } from "./DatePickerSheet";
 import type { PlanState } from "@/lib/plans/planBrief";
 
 /**
@@ -23,30 +24,35 @@ export function PlanPrimaryButton({
   labelOverride,
   suggestedStart,
   scheduled,
+  dayOf,
 }: {
   state: PlanState;
   planId?: string;
   /** Optional label override (used on the Move page). */
   labelOverride?: string;
-  /** Brain-suggested ISO start — committed before activating when not scheduled. */
+  /** Brain-suggested ISO start — prefills the date picker for "Add to Calendar". */
   suggestedStart?: string;
   /** True when the plan already has a committed schedule. */
   scheduled?: boolean;
+  /** True only when the plan's target date is today — the only time we "begin". */
+  dayOf?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const config = configFor(state);
-  const label = labelOverride ?? config.label;
+  // On a future/undated plan the move is to put it on the calendar, not start it
+  // tonight. "Begin Evening" only appears on the actual day.
+  const isSchedulable = (state === "ready" || state === "holding") && !dayOf;
+  const label =
+    labelOverride ??
+    (isSchedulable ? (scheduled ? "Reschedule" : "Add to Calendar") : config.label);
   const disabled = config.disabled || (!planId && state !== "ready");
 
-  async function post(path: string, body?: unknown): Promise<void> {
-    const res = await fetch(`/api/plans/${planId}/${path}`, {
-      method: "POST",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+  async function post(path: string): Promise<void> {
+    const res = await fetch(`/api/plans/${planId}/${path}`, { method: "POST" });
     const json = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
   }
@@ -56,17 +62,6 @@ export function PlanPrimaryButton({
     setError(null);
     startTransition(async () => {
       try {
-        // "Suggest a time, then begin": commit the brain's suggested slot before
-        // activating, so the plan lands on the calendar with a real date/time.
-        if (action === "activate" && !scheduled) {
-          const slot = scheduleSlotFromIso(suggestedStart);
-          if (slot) {
-            await post("schedule", {
-              scheduled_date: slot.date,
-              scheduled_time: slot.time,
-            }).catch(() => undefined);
-          }
-        }
         await post(action);
         router.refresh();
       } catch (err) {
@@ -75,14 +70,20 @@ export function PlanPrimaryButton({
     });
   }
 
+  function handlePrimary() {
+    if (isSchedulable) {
+      setPickerOpen(true);
+      return;
+    }
+    if (state === "ready" || state === "holding") run("activate");
+    else if (state === "live") run("complete");
+  }
+
   return (
     <div className="flex flex-col items-stretch">
       <button
         type="button"
-        onClick={() => {
-          if (state === "ready" || state === "holding") run("activate");
-          else if (state === "live") run("complete");
-        }}
+        onClick={handlePrimary}
         disabled={disabled || pending}
         className="flex w-full items-center justify-center gap-3 rounded-md py-4 text-[11px] uppercase tracking-[0.22em] transition-opacity duration-300 ease-atmospheric active:translate-y-px disabled:opacity-70"
         style={{
@@ -112,22 +113,21 @@ export function PlanPrimaryButton({
           {error}
         </span>
       ) : null}
+
+      {planId ? (
+        <DatePickerSheet
+          planId={planId}
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onConfirmed={() => {
+            setPickerOpen(false);
+            router.refresh();
+          }}
+          initialFromIso={suggestedStart}
+        />
+      ) : null}
     </div>
   );
-}
-
-/** Parse an ISO datetime into a local { date: YYYY-MM-DD, time: HH:MM } slot. */
-function scheduleSlotFromIso(
-  iso?: string,
-): { date: string; time: string } | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  };
 }
 
 function configFor(state: PlanState): {

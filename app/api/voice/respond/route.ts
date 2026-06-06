@@ -1,4 +1,5 @@
 import { requireOwner } from "@/lib/auth";
+import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { hasAnthropic, getAnthropicClient, DEFAULT_MODEL } from "@/lib/ai/anthropic";
 import { buildChatContext } from "@/lib/chat/context/buildChatContext";
 import { renderChatSystemPrompt } from "@/lib/chat/context/renderChatSystemPrompt";
@@ -18,6 +19,26 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** The live week_shape note the radar synthesis stored (kind='week_shape'). */
+async function readWeekShape(userId: string): Promise<string | null> {
+  try {
+    const supabase = await getServerSupabase();
+    const { data } = await supabase
+      .from("session_context")
+      .select("content")
+      .eq("user_id", userId)
+      .eq("kind", "week_shape")
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const content = (data as { content?: string | null } | null)?.content;
+    return typeof content === "string" && content.trim() ? content.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeAttachments(value: unknown): ChatAttachment[] {
   if (!Array.isArray(value)) return [];
@@ -227,9 +248,20 @@ export async function POST(req: Request) {
 
     const client = getAnthropicClient();
 
+    // Give the mic the live week narrative (the same week_shape the radar
+    // synthesis stored) so it speaks to what's actually going on right now,
+    // not just the permanent profile.
+    const weekShape = await readWeekShape(owner.id);
+    const liveContext = [
+      weekShape ? `This week: ${weekShape}` : null,
+      sheetContext || null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
     const systemPrompt = renderChatSystemPrompt(context, {
       intent: routed.intent,
-      sheetContext: sheetContext || undefined,
+      sheetContext: liveContext || undefined,
       intakeSummary: intakeResult?.contextBlock,
     });
     const messages = buildChatMessages({

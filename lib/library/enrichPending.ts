@@ -3,9 +3,9 @@ import "server-only";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { enrichPlace, type EnrichmentStatus } from "@/lib/library/enrichPlace";
 
-const DEFAULT_LIMIT = 15;
-const MIN_STRENGTH = 0.7;
-const DELAY_MS = 400;
+const DEFAULT_LIMIT = 24;
+const MIN_STRENGTH = 0.6;
+const DELAY_MS = 350;
 
 export type EnrichPendingResult = {
   scanned: number;
@@ -33,8 +33,10 @@ export async function enrichPending(
     .select("id")
     .eq("user_id", userId)
     .gte("verdict_strength", MIN_STRENGTH)
-    .or("address.is.null,lat.is.null,hours_summary.is.null")
-    .order("verdict_strength", { ascending: false, nullsFirst: false })
+    .or("address.is.null,lat.is.null,hours_summary.is.null,image_url.is.null")
+    // Process never-tried places first so prior no_place_match rows don't get
+    // retried forever and starve the rest of the queue.
+    .order("last_researched_at", { ascending: true, nullsFirst: true })
     .limit(limit);
 
   if (error) {

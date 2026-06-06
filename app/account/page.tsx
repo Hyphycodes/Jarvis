@@ -127,12 +127,9 @@ export default async function AccountPage() {
           <Lock size={12} />
           <span>All data is private and encrypted.</span>
         </div>
-        <Link
-          href="/settings/library"
-          className="text-[10px] uppercase tracking-[0.22em] text-warm-ivory/30 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/55"
-        >
-          · Control room ·
-        </Link>
+        {/* The Control Room (autopilot internals / diagnostics) is intentionally
+            not linked from the user surface — it stays reachable only by direct
+            URL for the owner. Settings stays calm and non-technical. */}
       </footer>
       </MotionPage>
     </main>

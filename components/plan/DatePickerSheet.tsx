@@ -12,16 +12,20 @@ export function DatePickerSheet({
   open,
   onClose,
   onConfirmed,
+  initialFromIso,
 }: {
   planId: string;
   open: boolean;
   onClose: () => void;
   onConfirmed: () => void;
+  /** Prefill date + time from the brain's suggested ISO start. */
+  initialFromIso?: string;
 }) {
-  const [selectedKey, setSelectedKey] = useState<string>("");
-  const [hour, setHour] = useState(7);
-  const [minute, setMinute] = useState("00");
-  const [meridiem, setMeridiem] = useState<"AM" | "PM">("PM");
+  const initial = parseInitial(initialFromIso);
+  const [selectedKey, setSelectedKey] = useState<string>(initial?.key ?? "");
+  const [hour, setHour] = useState(initial?.hour ?? 7);
+  const [minute, setMinute] = useState(initial?.minute ?? "00");
+  const [meridiem, setMeridiem] = useState<"AM" | "PM">(initial?.meridiem ?? "PM");
   const [pending, setPending] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +160,25 @@ export function DatePickerSheet({
       </div>
     </>
   );
+}
+
+/** Parse an ISO start into the picker's initial date + 15-min-rounded time. */
+function parseInitial(
+  iso?: string,
+): { key: string; hour: number; minute: string; meridiem: "AM" | "PM" } | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const meridiem: "AM" | "PM" = d.getHours() >= 12 ? "PM" : "AM";
+  const hour12 = d.getHours() % 12 === 0 ? 12 : d.getHours() % 12;
+  const slots = [0, 15, 30, 45];
+  const nearest = slots.reduce(
+    (a, b) => (Math.abs(b - d.getMinutes()) < Math.abs(a - d.getMinutes()) ? b : a),
+    0,
+  );
+  return { key, hour: hour12, minute: pad(nearest), meridiem };
 }
 
 function TimeSelect({

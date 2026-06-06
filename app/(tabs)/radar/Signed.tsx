@@ -49,8 +49,8 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
   // A real area to show — but never the venue name again (it's already the
   // title). This kills the "THE PROMONTORY / THE PROMONTORY" stacking.
   const area = distinctFromTitle(item.neighborhood ?? item.locationLabel, title);
-  // Meta line is for time-bound signal (events). Places don't repeat the venue.
-  const meta = [formatMeta(item.datetime)].filter(
+  // WHEN line: a committed event time, or the brain's suggested time to go.
+  const meta = [formatWhen(item.datetime, item.whenConfirmed)].filter(
     (value): value is string => Boolean(value),
   );
   // Footer reads like the brief: where + what it costs, deduped, no internals.
@@ -169,18 +169,29 @@ function mapCategoryToBadge(category: string): Card["category"] {
   }
 }
 
-function formatMeta(iso?: string): string {
+/**
+ * The card's "when" line. A committed time reads as a date ("Fri, Jun 7 ·
+ * 8:00 PM"); a brain-suggested time is prefixed and kept tight ("Suggested ·
+ * Fri 8:00 PM"). Rendered uppercase by the card.
+ */
+function formatWhen(iso?: string, confirmed?: boolean): string {
   if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return date
-    .toLocaleString("en-US", {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (confirmed) {
+    const date = d.toLocaleDateString("en-US", {
+      weekday: "short",
       month: "short",
       day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    })
-    .toUpperCase();
+    });
+    return `${date} · ${time}`;
+  }
+  const weekday = d.toLocaleDateString("en-US", { weekday: "short" });
+  return `Suggested · ${weekday} ${time}`;
 }
 
 function formatToday(): string {

@@ -4,10 +4,11 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   hasGooglePlaces,
   searchPlaceForEnrichment,
+  getPlacePhotoUrl,
   type GooglePlace,
 } from "@/lib/sources/googlePlaces";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
-import { getDefaultLocation } from "@/lib/env";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlacesLibraryRow } from "@/lib/types/database";
 
 export type EnrichmentStatus =
@@ -33,6 +34,26 @@ const VIBE_LEXICON = [
   "dim", "bustling", "quiet", "seasonal", "riverside", "waterfront",
   "rooftop", "patio", "garden", "industrial", "lush", "nautical",
 ];
+
+/** The founder's city, trimmed to the primary token (e.g. "Chicago"). */
+async function readHomeCity(
+  supabase: SupabaseClient,
+  userId: string | null | undefined,
+): Promise<string | null> {
+  if (!userId) return null;
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("home_city")
+      .eq("id", userId)
+      .maybeSingle();
+    const raw = (data as { home_city?: string | null } | null)?.home_city;
+    if (typeof raw !== "string" || !raw.trim()) return null;
+    return raw.split(/[/,]/)[0]?.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 function isEmpty(value: unknown): boolean {
   if (value == null) return true;
@@ -116,10 +137,9 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
   const updates: Record<string, unknown> = {};
   const filled: string[] = [];
 
-  const home = (() => {
-    try { return getDefaultLocation(); }
-    catch { return null; }
-  })();
+  // Use the founder's real city (e.g. "Chicago") to disambiguate the lookup.
+  // The old env default could be a suburb, which made Chicago venues miss.
+  const homeCity = await readHomeCity(supabase, row.user_id);
 
   // ── Google Places: canonical location data ──────────────────────────────────
   if (!hasGooglePlaces()) {
@@ -130,18 +150,21 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
     return { placeId, status: "skipped_no_google", filled: [] };
   }
 
-  const needsLocation = isEmpty(row.address) || row.lat == null || row.lng == null || isEmpty(row.hours_summary);
+  const needsLocation =
+    isEmpty(row.address) ||
+    row.lat == null ||
+    row.lng == null ||
+    isEmpty(row.hours_summary) ||
+    isEmpty(row.image_url);
 
   let googleMatched = false;
   if (needsLocation) {
-    const queryParts = [row.name, row.neighborhood ?? home?.city ?? "Chicago"].filter(Boolean);
+    // Name + neighborhood + city is the most reliable disambiguating query
+    // (text search; no coordinate bias that could pull to the wrong suburb).
+    const queryParts = [row.name, row.neighborhood, homeCity].filter(Boolean);
     let match: GooglePlace | null = null;
     try {
-      match = await searchPlaceForEnrichment({
-        query: queryParts.join(" "),
-        lat: home?.lat,
-        lng: home?.lng,
-      });
+      match = await searchPlaceForEnrichment({ query: queryParts.join(", ") });
     } catch (err) {
       console.warn("[enrichPlace] Google Places failed", { placeId, name: row.name, err });
     }
@@ -174,6 +197,15 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
           filled.push("price_level");
         }
       }
+      // A real venue photo — Google Places photos are venue-accurate (no stock
+      // mismatch risk), so use the first directly.
+      if (isEmpty(row.image_url)) {
+        const photoName = match.photos?.[0]?.name;
+        if (photoName) {
+          updates.image_url = getPlacePhotoUrl({ photoName, maxWidthPx: 1200 });
+          filled.push("image_url");
+        }
+      }
     }
   }
 
@@ -182,7 +214,7 @@ export async function enrichPlace(placeId: string): Promise<EnrichPlaceResult> {
   const needsVibe = (row.vibe_keywords?.length ?? 0) < 2;
   if (hasTavily() && (needsWhyNow || needsVibe)) {
     try {
-      const where = row.neighborhood ?? home?.city ?? "Chicago";
+      const where = row.neighborhood ?? homeCity ?? "Chicago";
       const res = await searchWeb({
         query: `"${row.name}" ${where} restaurant atmosphere recent`,
         maxResults: 5,
