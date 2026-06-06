@@ -202,6 +202,8 @@ export type RadarCard = {
   title: string;
   summary: string;
   displayCategory?: string;
+  /** For Finds: which internal specialist surfaced it (style|gear|home|travel|hosting|fitness). */
+  sourceBrain?: string;
   purposeLabel?: string;
   vibe?: string;
   diversityGroup?: string;

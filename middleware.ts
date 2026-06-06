@@ -15,6 +15,7 @@ export const CRON_API_PATHS = [
   "/api/events/process",
   "/api/wardrobe/process-imports",
   "/api/finds/scout",
+  "/api/finds/process-jobs",
   "/api/tastemakers/sweep",
   "/api/push/evening",
 ] as const;
