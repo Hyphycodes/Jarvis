@@ -14,6 +14,7 @@ import { processCandidates } from "@/lib/intelligence/libraryWorker";
 import { processEventCandidates } from "@/lib/intelligence/eventWorker";
 import { cleanupRadar } from "@/lib/intelligence/radarCleanup";
 import { processRefresh } from "@/lib/brain/refresher";
+import { enrichPending } from "@/lib/library/enrichPending";
 import { runAmbientIntelligence } from "@/lib/intelligence/ambientRuns";
 import { buildJarvisContext } from "@/lib/intelligence/context";
 import { enrichRadarItem } from "@/lib/intelligence/core";
@@ -783,19 +784,31 @@ async function executeOperation(input: {
         const processed = isSprint || input.runBudget.shouldStopSoon()
           ? { researched: 0, rejected: 0, errors: [] as string[] }
           : await processCandidates(input.userId);
+        // Fill location/hours/photo on freshly-researched Library rows and flip
+        // them to enrichment_status="enriched" so the materializer can surface
+        // them. Without this step researched rows never become Radar-eligible.
+        const enriched = input.runBudget.shouldStopSoon()
+          ? { enriched: 0, scanned: 0 }
+          : await enrichPending(input.userId, 12).catch((err) => {
+              result.errors = [
+                ...(result.errors ?? []),
+                `enrichPending failed: ${err instanceof Error ? err.message : String(err)}`,
+              ];
+              return { enriched: 0, scanned: 0 };
+            });
         const inbox = input.runBudget.shouldStopSoon()
           ? { created: 0, updated: 0 }
           : await syncCandidateInboxFromExistingPipelines({ userId: input.userId, supabase: input.supabase });
         result.candidatesDiscovered += scout.candidates_added + inbox.created;
         result.sourcesCreated += scout.sources_added ?? 0;
-        result.libraryItemsCreated += processed.researched + conversion.placesCreated + conversion.placesUpdated;
+        result.libraryItemsCreated += processed.researched + conversion.placesCreated + conversion.placesUpdated + conversion.styleSurfaced;
         result.eventsCreated = (result.eventsCreated ?? 0) + conversion.eventsCreated + conversion.eventsUpdated;
         result.sourcesCreated += conversion.sourcesCreated;
         result.candidatesRejected += processed.rejected + conversion.rejected;
         result.timeBudgetReached = conversion.timeBudgetReached || input.runBudget.shouldStopSoon();
         result.summary = result.timeBudgetReached
-          ? `Library conversion saved partial progress: converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s). Continuing next run.`
-          : `Library build ran ${scout.candidates_added} category-agent candidate(s)${scout.nothing_categories.length ? ` (quiet: ${scout.nothing_categories.join(", ")})` : ""}, converted ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated + conversion.eventsUpdated} event(s), and processed ${processed.researched} place candidate(s).${scout.week_shape ? ` Week shape: ${scout.week_shape}` : ""}`;
+          ? `Library conversion saved partial progress: researched ${conversion.placesCreated + conversion.placesUpdated} place(s), ${conversion.eventsCreated} event(s), surfaced ${conversion.styleSurfaced} style item(s). Continuing next run.`
+          : `Library build ran ${scout.candidates_added} category-agent candidate(s)${scout.nothing_categories.length ? ` (quiet: ${scout.nothing_categories.join(", ")})` : ""}, researched ${conversion.placesCreated + conversion.placesUpdated} place(s), queued ${conversion.eventsCreated} event(s), surfaced ${conversion.styleSurfaced} style item(s), enriched ${enriched.enriched}/${enriched.scanned}, and processed ${processed.researched} place candidate(s).${scout.week_shape ? ` Week shape: ${scout.week_shape}` : ""}`;
         result.errors = [...(processed.errors ?? []), ...conversion.errors];
         break;
       }

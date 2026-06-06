@@ -1,12 +1,26 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hasAnthropic } from "@/lib/ai/anthropic";
+import { generateStructured } from "@/lib/ai/structured";
+import { researchPlace } from "@/lib/brain/researcher";
+import { writeVerdict } from "@/lib/brain/verdictWriter";
+import type { BrainContextPacket } from "@/lib/brain/types";
 import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { assessResultQuality } from "@/lib/sources/resultQuality";
-import { resolveItemImage, isHttpUrl } from "@/lib/sources/images";
+import { hasTavily, searchWeb } from "@/lib/sources/tavily";
+import { type RadarCategory } from "@/lib/radar/category";
+import {
+  selectFairly,
+  tags,
+  readRaw,
+  stringValue,
+  arrayValue,
+} from "@/lib/radar/candidateSelection";
+import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
 import type { RunBudget } from "@/lib/radar/foundationSprint";
-import type { Json, RadarCandidateInboxRow } from "@/lib/types/database";
+import type { FounderProfileRow, Json, RadarCandidateInboxRow } from "@/lib/types/database";
 
 export type CandidateConversionResult = {
   reviewed: number;
@@ -14,6 +28,7 @@ export type CandidateConversionResult = {
   placesUpdated: number;
   eventsCreated: number;
   eventsUpdated: number;
+  styleSurfaced: number;
   sourcesCreated: number;
   rejected: number;
   duplicates: number;
@@ -21,6 +36,20 @@ export type CandidateConversionResult = {
   errors: string[];
   timeBudgetReached: boolean;
 };
+
+// Categories that live in places_library and surface through the materializer.
+const PLACE_LIKE: ReadonlySet<RadarCategory> = new Set<RadarCategory>([
+  "dining",
+  "places",
+  "moves",
+  "culture",
+]);
+// Below this dossier confidence we don't even store a Library row — same bar the
+// proven place pipeline (libraryWorker.processCandidates) uses.
+const REJECT_CONFIDENCE = 0.3;
+// Real research costs Google/Tavily/Claude calls, so cap how many candidates we
+// research per run. Cron repeats; per-category fairness drains every lane.
+const DEFAULT_RESEARCH_BUDGET = 12;
 
 export async function convertCandidateInboxToLibrary(input: {
   userId: string;
@@ -34,6 +63,7 @@ export async function convertCandidateInboxToLibrary(input: {
     placesUpdated: 0,
     eventsCreated: 0,
     eventsUpdated: 0,
+    styleSurfaced: 0,
     sourcesCreated: 0,
     rejected: 0,
     duplicates: 0,
@@ -41,16 +71,22 @@ export async function convertCandidateInboxToLibrary(input: {
     errors: [],
     timeBudgetReached: false,
   };
-  const limit = input.limit ?? 30;
-  const { data: founder } = await input.supabase
+  const researchBudget = Math.min(input.limit ?? 30, DEFAULT_RESEARCH_BUDGET);
+
+  const { data: founderRow } = await input.supabase
     .from("founder_profile")
-    .select("avoid_keywords,dealbreakers")
+    .select("avoid_keywords,dealbreakers,vibe_keywords,pinned_principles")
     .eq("user_id", input.userId)
     .maybeSingle();
+  const founder = founderRow as Partial<FounderProfileRow> | null;
   const avoid = [
-    ...arrayValue((founder as { avoid_keywords?: unknown } | null)?.avoid_keywords),
-    ...arrayValue((founder as { dealbreakers?: unknown } | null)?.dealbreakers),
+    ...arrayValue(founder?.avoid_keywords),
+    ...arrayValue(founder?.dealbreakers),
   ];
+  const context = buildMinimalContext(founder);
+
+  // Pull a wide pool so we can fairly distribute the research budget across every
+  // category instead of letting whichever lane scored highest consume the run.
   const { data, error } = await input.supabase
     .from("radar_candidate_inbox")
     .select("*")
@@ -58,13 +94,16 @@ export async function convertCandidateInboxToLibrary(input: {
     .in("status", ["new", "evaluated"])
     .order("score", { ascending: false, nullsFirst: false })
     .order("discovered_at", { ascending: true })
-    .limit(limit);
+    .limit(120);
   if (error) {
     result.errors.push(`candidate inbox read failed: ${error.message}`);
     return result;
   }
 
-  for (const row of (data ?? []) as RadarCandidateInboxRow[]) {
+  const rows = (data ?? []) as RadarCandidateInboxRow[];
+  const queue = selectFairly(rows, researchBudget);
+
+  for (const { row, category, userIntent } of queue) {
     if (input.budget?.shouldStopSoon()) {
       result.timeBudgetReached = true;
       result.errors.push("Time budget reached during Candidate Inbox conversion. Partial progress saved.");
@@ -72,12 +111,13 @@ export async function convertCandidateInboxToLibrary(input: {
     }
     result.reviewed++;
     try {
+      // ── Cheap negative + junk filters before spending any research $ ──────────
       const penalty = negativeFilter(row, avoid);
       if (penalty) {
         await markCandidate(input.supabase, input.userId, row.id, {
           status: "rejected",
           rejection_reason: penalty,
-          reason: { summary: penalty, source: "foundation_sprint" },
+          reason: { summary: penalty, source: "candidate_conversion" },
         });
         result.rejected++;
         continue;
@@ -94,52 +134,26 @@ export async function convertCandidateInboxToLibrary(input: {
         await markCandidate(input.supabase, input.userId, row.id, {
           status: "rejected",
           rejection_reason: reason,
-          reason: {
-            summary: reason,
-            quality_flags: quality.flags,
-            source: "foundation_sprint_quality_filter",
-          },
+          reason: { summary: reason, quality_flags: quality.flags, source: "candidate_conversion_quality_filter" },
         });
         result.rejected++;
         continue;
       }
-      const entityType = classifyCandidate(row);
-      // Enrich the inbox row with a real photo so promoted items already carry it.
-      if ((entityType === "place" || entityType === "event") && !isHttpUrl(row.image_url)) {
-        const resolved = await resolveItemImage({
-          name: row.title,
-          city: readNeighborhood(row),
-          category: entityType === "place" ? "places" : "events",
-          url: row.url,
-          existingImageUrl: stringValue(readRaw(row, ["image_url"])) ?? stringValue(readRaw(row, ["images", "0", "url"])),
-        });
-        if (resolved) {
-          await input.supabase
-            .from("radar_candidate_inbox")
-            .update({ image_url: resolved.url, updated_at: new Date().toISOString() })
-            .eq("id", row.id)
-            .eq("user_id", input.userId);
-          row.image_url = resolved.url;
-        }
-      }
-      if (entityType === "place") {
-        const conversion = await convertPlace(input.supabase, input.userId, row);
-        result.placesCreated += conversion.created ? 1 : 0;
-        result.placesUpdated += conversion.updated ? 1 : 0;
-        result.duplicates += conversion.duplicate ? 1 : 0;
-        result.sourcesCreated += conversion.sourceCreated ? 1 : 0;
+
+      // ── Route by category into the real research/verdict pipelines ────────────
+      if (category && PLACE_LIKE.has(category)) {
+        await researchAndStorePlace(input.supabase, input.userId, row, category, context, result, userIntent);
         continue;
       }
-      if (entityType === "event") {
-        const conversion = await convertEvent(input.supabase, input.userId, row);
-        result.eventsCreated += conversion.created ? 1 : 0;
-        result.eventsUpdated += conversion.updated ? 1 : 0;
-        result.duplicates += conversion.duplicate ? 1 : 0;
-        result.sourcesCreated += conversion.sourceCreated ? 1 : 0;
-        result.needsEnrichment += conversion.needsEnrichment ? 1 : 0;
+      if (category === "events") {
+        await tryQueueEvent(input.supabase, input.userId, row, result);
         continue;
       }
-      if (entityType === "source") {
+      if (category === "style") {
+        await researchAndSurfaceStyle(input.supabase, input.userId, row, context, result, userIntent);
+        continue;
+      }
+      if (classifyCandidate(row) === "source") {
         const sourceId = await upsertSourceFromLibraryEntity({
           userId: input.userId,
           title: row.title,
@@ -160,9 +174,11 @@ export async function convertCandidateInboxToLibrary(input: {
         else result.needsEnrichment++;
         continue;
       }
+
+      // Uncategorizable — keep it for context, don't surface a stub.
       await markCandidate(input.supabase, input.userId, row.id, {
         status: "evaluated",
-        reason: { summary: "Candidate reviewed; kept for context/enrichment, not surfaced." },
+        reason: { summary: "Candidate reviewed; no confident category, kept for context." },
       });
       result.needsEnrichment++;
     } catch (err) {
@@ -172,64 +188,82 @@ export async function convertCandidateInboxToLibrary(input: {
   return result;
 }
 
-async function convertPlace(
+// ── Place-like research → real, non-stub places_library row ─────────────────────
+async function researchAndStorePlace(
   supabase: SupabaseClient,
   userId: string,
   row: RadarCandidateInboxRow,
-): Promise<{ created: boolean; updated: boolean; duplicate: boolean; sourceCreated: boolean }> {
+  category: RadarCategory,
+  context: BrainContextPacket,
+  result: CandidateConversionResult,
+  userIntent: boolean,
+): Promise<void> {
+  const dossier = await researchPlace(row.title, {
+    discoveredUrl: row.url ?? undefined,
+    snippet: typeof row.description === "string" ? row.description : undefined,
+    category,
+  });
+  if (dossier.confidence < REJECT_CONFIDENCE) {
+    await markCandidate(supabase, userId, row.id, {
+      status: "rejected",
+      rejection_reason: `Low research confidence (${dossier.confidence.toFixed(2)}).`,
+      reason: { summary: "Researcher could not build a confident dossier.", category, source: "candidate_research" },
+    });
+    result.rejected++;
+    return;
+  }
+
+  const verdict = await writeVerdict(dossier, context);
+  const score = clamp01(verdict.verdict_strength);
+  const placeSlug = dossier.slug || slug(row.title);
   const now = new Date().toISOString();
-  const placeSlug = slug(row.title);
+
   const { data: existing } = await supabase
     .from("places_library")
     .select("id")
     .eq("user_id", userId)
     .eq("slug", placeSlug)
     .maybeSingle();
-  const score = normalizedScore(row);
+
   const sourceId = await upsertSourceFromLibraryEntity({
     userId,
-    title: row.title,
+    title: dossier.canonical_name,
     url: row.url,
     entityType: "place",
     qualityScore: score,
-    topics: tags(row),
+    topics: dossier.vibe_keywords,
     supabase,
   });
+
   const { data: upserted, error } = await supabase
     .from("places_library")
     .upsert({
       user_id: userId,
-      name: row.title,
+      name: dossier.canonical_name,
       slug: placeSlug,
-      place_type: inferPlaceType(row),
-      neighborhood: readNeighborhood(row),
-      address: stringValue(readRaw(row, ["formattedAddress"])) ?? stringValue(readRaw(row, ["address"])) ?? null,
-      cuisine_or_focus: readCuisine(row),
-      vibe_keywords: tags(row),
-      sources_cited: [{
-        source: "candidate_inbox_conversion",
-        candidate_id: row.id,
-        url: row.url,
-        converted_at: now,
-      }] as Json,
-      verdict: [
-        row.description,
-        "Converted from Candidate Inbox for Library enrichment; not automatically surfaced to Radar.",
-      ].filter(Boolean).join(" "),
+      place_type: dossier.place_type,
+      neighborhood: dossier.neighborhood ?? readNeighborhood(row),
+      cuisine_or_focus: dossier.cuisine_or_focus,
+      price_level: dossier.price_level === "unknown" ? null : dossier.price_level,
+      hours_summary: dossier.hours_summary === "unknown" ? null : dossier.hours_summary,
+      vibe_keywords: dossier.vibe_keywords,
+      sources_cited: dossier.sources_cited as unknown as Json,
+      // Real verdict — NOT the old "Converted from Candidate Inbox" stub marker,
+      // so the materializer's stub guard no longer excludes it.
+      verdict: verdict.verdict,
       verdict_strength: score,
       quality_score: score,
       quality_tier: qualityTierFromScore(score),
-      image_url: typeof row.image_url === "string" && row.image_url.startsWith("http")
-        ? row.image_url
-        : null,
-      best_for: tags(row).slice(0, 4),
-      not_for: [],
-      events_observed: [{
-        candidate_id: row.id,
-        raw_payload: row.raw_payload,
-        needs_enrichment: true,
-      }] as Json,
+      best_for: verdict.best_for,
+      not_for: verdict.not_for,
+      compared_to: verdict.compared_to,
+      events_observed: dossier.events_observed as unknown as Json,
+      seasonal_notes: dossier.seasonal_notes,
+      image_url: httpOrNull(row.image_url),
       source_id: sourceId,
+      // enrichment_status intentionally left unset → enrichPending fills
+      // address/lat/lng/hours/photo and flips it to "enriched" so the
+      // materializer can surface it.
       last_researched_at: now,
       last_refreshed_at: now,
       next_refresh_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
@@ -238,68 +272,68 @@ async function convertPlace(
     .select("id")
     .single();
   if (error) throw new Error(`places_library upsert failed: ${error.message}`);
+
   await markCandidate(supabase, userId, row.id, {
     status: "library",
     reason: {
-      summary: "Converted to Places Library for enrichment. Active Radar remains gated.",
+      summary: `Researched into ${category} Library with a real verdict (${score.toFixed(2)}). Awaiting enrichment + materialization.`,
       library_id: (upserted as { id?: string } | null)?.id ?? null,
+      category,
       quality_score: score,
+      surface_priority: verdict.surface_priority,
+      user_intent: userIntent,
+      source: "candidate_research",
     },
   });
-  return {
-    created: !(existing as { id?: string } | null)?.id,
-    updated: Boolean((existing as { id?: string } | null)?.id),
-    duplicate: false,
-    sourceCreated: Boolean(sourceId),
-  };
+  if ((existing as { id?: string } | null)?.id) result.placesUpdated++;
+  else result.placesCreated++;
+  if (sourceId) result.sourcesCreated++;
 }
 
-async function convertEvent(
+// ── Events → current_events(pending), only with a real future date ──────────────
+async function tryQueueEvent(
   supabase: SupabaseClient,
   userId: string,
   row: RadarCandidateInboxRow,
-): Promise<{ created: boolean; updated: boolean; duplicate: boolean; sourceCreated: boolean; needsEnrichment: boolean }> {
-  const startsAt = readStartsAt(row);
-  if (!startsAt) {
+  result: CandidateConversionResult,
+): Promise<void> {
+  const resolved = readStartsAt(row)
+    ? { startsAt: readStartsAt(row) as string, venue: readVenue(row) }
+    : await resolveEventDate(row);
+  if (!resolved) {
+    // No confident date — hold it. We never fabricate event times.
     await markCandidate(supabase, userId, row.id, {
       status: "evaluated",
       reason: {
-        summary: "Event-like candidate needs enrichment; no exact starts_at was available, so no fake event date was created.",
+        summary: "Event candidate held: no confident date found, so no fake event date was created.",
         needs_enrichment: true,
+        category: "events",
+        source: "candidate_research",
       },
     });
-    return { created: false, updated: false, duplicate: false, sourceCreated: false, needsEnrichment: true };
+    result.needsEnrichment++;
+    return;
   }
-  const now = new Date().toISOString();
-  const venue = stringValue(readRaw(row, ["_embedded", "venues", "0", "name"])) ??
-    stringValue(readRaw(row, ["venueName"])) ??
-    row.description?.slice(0, 80) ??
-    "Needs venue enrichment";
+
+  const venue = resolved.venue ?? (typeof row.description === "string" ? row.description.slice(0, 80) : null) ?? "Needs venue enrichment";
   const { data: existing } = await supabase
     .from("current_events")
     .select("id")
     .eq("user_id", userId)
     .eq("title", row.title)
-    .eq("starts_at", startsAt)
+    .eq("starts_at", resolved.startsAt)
     .maybeSingle();
   if ((existing as { id?: string } | null)?.id) {
     await markCandidate(supabase, userId, row.id, {
       status: "duplicate",
-      rejection_reason: "Duplicate event already exists in Event Pulse.",
+      rejection_reason: "Duplicate event already in Event Pulse.",
     });
-    return { created: false, updated: false, duplicate: true, sourceCreated: false, needsEnrichment: false };
+    result.duplicates++;
+    return;
   }
-  const score = normalizedScore(row);
-  const sourceId = await upsertSourceFromLibraryEntity({
-    userId,
-    title: venue,
-    url: row.url,
-    entityType: "event",
-    qualityScore: score,
-    topics: tags(row),
-    supabase,
-  });
-  const { data: inserted, error } = await supabase
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
     .from("current_events")
     .insert({
       user_id: userId,
@@ -308,48 +342,237 @@ async function convertEvent(
       event_type: "other",
       venue_name: venue,
       named_entities: [],
-      starts_at: startsAt,
-      ends_at: stringValue(readRaw(row, ["dates", "end", "dateTime"])) ?? null,
+      starts_at: resolved.startsAt,
+      ends_at: null,
       ticket_url: row.url,
       vibe_keywords: tags(row),
-      description: row.description,
-      sources_cited: [{
-        source: "candidate_inbox_conversion",
-        candidate_id: row.id,
-        converted_at: now,
-      }] as Json,
-      verdict: "Converted from Candidate Inbox into Event Pulse for later verdicting; not automatically surfaced.",
-      verdict_strength: score,
-      quality_score: score,
-      quality_tier: qualityTierFromScore(score),
-      source_id: sourceId,
-      discovered_via: row.url ?? "candidate_inbox",
+      description: typeof row.description === "string" ? row.description : null,
+      sources_cited: [{ source: "candidate_conversion", candidate_id: row.id, converted_at: now }] as unknown as Json,
       status: "pending",
+      discovered_via: row.url ?? "candidate_inbox",
       updated_at: now,
-    })
-    .select("id")
-    .single();
+    });
   if (error) throw new Error(`current_events insert failed: ${error.message}`);
+
   await markCandidate(supabase, userId, row.id, {
     status: "library",
     reason: {
-      summary: "Converted to Event Pulse for verification. Active Radar remains gated.",
-      event_id: (inserted as { id?: string } | null)?.id ?? null,
-      quality_score: score,
+      summary: "Queued into Event Pulse with a real date. Awaiting event verdict + surfacing.",
+      starts_at: resolved.startsAt,
+      category: "events",
+      source: "candidate_research",
     },
   });
-  return { created: true, updated: false, duplicate: false, sourceCreated: Boolean(sourceId), needsEnrichment: false };
+  result.eventsCreated++;
+}
+
+type ResolvedEventDate = { startsAt: string; venue: string | null };
+
+async function resolveEventDate(row: RadarCandidateInboxRow): Promise<ResolvedEventDate | null> {
+  if (!hasAnthropic() || !hasTavily()) return null;
+  const where = readNeighborhood(row) ?? "";
+  const searchQuery = stringValue(readRaw(row, ["search_query"])) ?? "";
+  try {
+    const res = await searchWeb({
+      query: `${row.title} ${where} ${searchQuery} date time tickets`.trim(),
+      maxResults: 5,
+    });
+    const sources = res.results.map((r) => ({ url: r.url, title: r.title, snippet: r.content.slice(0, 400) }));
+    if (sources.length === 0 && !res.answer) return null;
+    const out = await generateStructured<{ starts_at: string | null; venue: string | null; confidence: number }>({
+      system:
+        "You extract the single NEXT upcoming start date+time for an event from web sources. " +
+        "Return strict JSON. starts_at must be ISO-8601 with timezone if and only if you are confident it is the real, official upcoming date; otherwise null. " +
+        "Never guess a date. confidence is 0..1.",
+      prompt: JSON.stringify({ event: row.title, answer: res.answer ?? null, sources }, null, 2),
+      schemaName: "EventDateExtraction",
+      temperature: 0,
+      maxTokens: 500,
+    });
+    if (!out.starts_at || out.confidence < 0.6) return null;
+    const date = new Date(out.starts_at);
+    if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return null;
+    return { startsAt: date.toISOString(), venue: stringValue(out.venue) };
+  } catch {
+    return null;
+  }
+}
+
+// ── Style → researched, verdicted surfaced_items card (no place table) ──────────
+type StyleVerdict = { verdict: string; strength: number; why: string; where_to_buy: string | null; price: string | null };
+
+async function researchAndSurfaceStyle(
+  supabase: SupabaseClient,
+  userId: string,
+  row: RadarCandidateInboxRow,
+  context: BrainContextPacket,
+  result: CandidateConversionResult,
+  userIntent: boolean,
+): Promise<void> {
+  const dossier = await researchStyle(row, context);
+  if (!dossier || dossier.strength < RADAR_UNDERFILLED_PROMOTION_FLOOR) {
+    await markCandidate(supabase, userId, row.id, {
+      status: "evaluated",
+      reason: {
+        summary: dossier
+          ? `Style candidate held below the surfacing bar (${dossier.strength.toFixed(2)}).`
+          : "Style candidate needs enrichment before surfacing.",
+        category: "style",
+        source: "candidate_research",
+      },
+    });
+    result.needsEnrichment++;
+    return;
+  }
+
+  // Dedup against an existing style card with the same title.
+  const { data: existing } = await supabase
+    .from("surfaced_items")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("category", "style")
+    .ilike("title", row.title)
+    .not("status", "in", "(archived,passed)")
+    .limit(1);
+  if (((existing ?? []) as Array<{ id: string }>)[0]?.id) {
+    await markCandidate(supabase, userId, row.id, {
+      status: "duplicate",
+      rejection_reason: "Style item already surfaced.",
+    });
+    result.duplicates++;
+    return;
+  }
+
+  const url = dossier.where_to_buy ?? row.url ?? null;
+  const { error } = await supabase
+    .from("surfaced_items")
+    .insert({
+      user_id: userId,
+      destination: "radar",
+      status: "discovered",
+      source: userIntent ? "user_intent" : "category_agent",
+      source_id: row.id,
+      type: "style",
+      category: "style",
+      title: row.title,
+      subtitle: dossier.price,
+      description: dossier.verdict,
+      url,
+      image_url: httpOrNull(row.image_url),
+      score: dossier.strength,
+      reasons: [dossier.why].filter(Boolean),
+      tags: tags(row),
+      payload: {
+        source_layer: "style_research",
+        where_to_buy: dossier.where_to_buy,
+        price: dossier.price,
+        user_intent: userIntent,
+      } as unknown as Json,
+    });
+  if (error) throw new Error(`style surfaced_items insert failed: ${error.message}`);
+
+  await markCandidate(supabase, userId, row.id, {
+    status: "library",
+    reason: {
+      summary: `Researched and surfaced style item (${dossier.strength.toFixed(2)}).`,
+      category: "style",
+      quality_score: dossier.strength,
+      user_intent: userIntent,
+      source: "candidate_research",
+    },
+  });
+  result.styleSurfaced++;
+}
+
+const STYLE_VERDICT_PROMPT = `You are Jarvis's STYLE editor. You take a product/drop and form the owner's take on whether it belongs in his rotation.
+
+Voice: the owner's chief of staff — confident, concise, refined. No hype, no hedging.
+
+RULES
+- verdict: 2-4 sentences. What it is and whether it's worth the buy.
+- strength: 0..1 conviction it belongs in his rotation. 0.85+ = clearly worth it; 0.58-0.84 = solid; below 0.52 = skip / not worth surfacing.
+- why: one sentence on why now / why him.
+- where_to_buy: a real purchase URL if present in sources, else null. Never invent a URL.
+- price: a short price string ("$$", "$420") if grounded in sources, else null.
+- Honor the Taste Constitution: loud-logo, fast-fashion, hype-coded items skew low.
+Return strict JSON: { "verdict": string, "strength": number, "why": string, "where_to_buy": string|null, "price": string|null }`;
+
+async function researchStyle(row: RadarCandidateInboxRow, context: BrainContextPacket): Promise<StyleVerdict | null> {
+  if (!hasAnthropic()) return null;
+  const searchQuery = stringValue(readRaw(row, ["search_query"])) ?? "";
+  let sources: Array<{ url: string; title: string; snippet: string }> = [];
+  let answer: string | null = null;
+  let fallbackUrl: string | null = null;
+  if (hasTavily()) {
+    try {
+      const res = await searchWeb({
+        query: `${row.title} ${searchQuery} review where to buy price`.trim(),
+        maxResults: 5,
+      });
+      answer = res.answer ?? null;
+      sources = res.results.map((r) => ({ url: r.url, title: r.title, snippet: r.content.slice(0, 400) }));
+      fallbackUrl = res.results[0]?.url ?? null;
+    } catch {
+      // best-effort
+    }
+  }
+  try {
+    const out = await generateStructured<StyleVerdict>({
+      system: STYLE_VERDICT_PROMPT,
+      prompt: JSON.stringify(
+        {
+          product: row.title,
+          brief: typeof row.description === "string" ? row.description : null,
+          answer,
+          sources,
+          founder_vibe: context.founder.vibeKeywords,
+          founder_avoid: context.founder.avoidKeywords,
+          taste_principles: context.founder.pinnedPrinciples,
+        },
+        null,
+        2,
+      ),
+      schemaName: "StyleVerdict",
+      temperature: 0.3,
+      maxTokens: 1200,
+    });
+    return {
+      verdict: out.verdict ?? row.description ?? row.title,
+      strength: clamp01(out.strength ?? 0),
+      why: out.why ?? "",
+      where_to_buy: stringValue(out.where_to_buy) ?? fallbackUrl,
+      price: stringValue(out.price),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── Shared helpers ──────────────────────────────────────────────────────────────
+
+function buildMinimalContext(founder: Partial<FounderProfileRow> | null): BrainContextPacket {
+  return {
+    now: new Date().toISOString(),
+    founder: {
+      vibeKeywords: arrayValue(founder?.vibe_keywords),
+      avoidKeywords: arrayValue(founder?.avoid_keywords),
+      dealbreakers: arrayValue(founder?.dealbreakers),
+      pinnedPrinciples: arrayValue(founder?.pinned_principles),
+    },
+    memory: [],
+    recentSignals: [],
+    recentActions: [],
+    northTags: [],
+    northPillars: [],
+    people: [],
+  };
 }
 
 async function markCandidate(
   supabase: SupabaseClient,
   userId: string,
   id: string,
-  patch: {
-    status: string;
-    reason?: Json | null;
-    rejection_reason?: string | null;
-  },
+  patch: { status: string; reason?: Json | null; rejection_reason?: string | null },
 ) {
   await supabase
     .from("radar_candidate_inbox")
@@ -365,9 +588,9 @@ async function markCandidate(
 function classifyCandidate(row: RadarCandidateInboxRow): "place" | "event" | "source" | "other" {
   if (row.entity_type === "place" || row.entity_type === "event" || row.entity_type === "source") return row.entity_type;
   const text = [row.title, row.description, ...tags(row)].join(" ").toLowerCase();
+  if (/source|newsletter|publication|calendar|blog|instagram/.test(text)) return "source";
   if (/event|concert|game|show|festival|ticket|tonight|weekend/.test(text)) return "event";
   if (/restaurant|bar|cafe|place|park|gym|lounge|venue|dining|food/.test(text)) return "place";
-  if (/source|newsletter|publication|calendar|blog|instagram/.test(text)) return "source";
   return "other";
 }
 
@@ -388,18 +611,6 @@ function normalizedScore(row: RadarCandidateInboxRow): number {
   return 0.55;
 }
 
-function tags(row: RadarCandidateInboxRow): string[] {
-  const reasonTags = isRecord(row.reason) && Array.isArray(row.reason.tags) ? row.reason.tags : [];
-  const rawTags = readRaw(row, ["tags"]);
-  const payloadTags = readRaw(row, ["payload", "tags"]);
-  return unique([
-    ...arrayValue(rawTags),
-    ...arrayValue(payloadTags),
-    ...arrayValue(reasonTags),
-    row.entity_type,
-  ]);
-}
-
 function readStartsAt(row: RadarCandidateInboxRow): string | null {
   const startsAt =
     stringValue(readRaw(row, ["startsAt"])) ??
@@ -414,53 +625,21 @@ function readStartsAt(row: RadarCandidateInboxRow): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function readVenue(row: RadarCandidateInboxRow): string | null {
+  return (
+    stringValue(readRaw(row, ["_embedded", "venues", "0", "name"])) ??
+    stringValue(readRaw(row, ["venueName"])) ??
+    null
+  );
+}
+
 function readNeighborhood(row: RadarCandidateInboxRow): string | null {
-  return stringValue(readRaw(row, ["neighborhood"])) ??
+  return (
+    stringValue(readRaw(row, ["neighborhood"])) ??
     stringValue(readRaw(row, ["payload", "shortFormattedAddress"])) ??
     stringValue(readRaw(row, ["payload", "formattedAddress"])) ??
-    null;
-}
-
-function readCuisine(row: RadarCandidateInboxRow): string | null {
-  const tagList = tags(row).join(" ").toLowerCase();
-  if (/mexican/.test(tagList)) return "Mexican";
-  if (/japanese/.test(tagList)) return "Japanese";
-  if (/mediterranean|middle eastern|greek/.test(tagList)) return "Mediterranean";
-  if (/steak|restaurant|dining|food/.test(tagList)) return "Dining";
-  return null;
-}
-
-function inferPlaceType(row: RadarCandidateInboxRow): string | null {
-  const signal = [
-    readCuisine(row) ?? "",
-    ...(tags(row) ?? []),
-    row.title ?? "",
-    typeof row.description === "string" ? row.description : "",
-  ]
-    .join(" ")
-    .toLowerCase();
-  // Map to a coarse place_type the category normalizer understands. Default to
-  // null instead of "restaurant" so unknown places are not silently mislabeled.
-  if (/\b(bar|lounge|cocktail|listening|speakeasy)\b/.test(signal)) return "bar";
-  if (/\b(museum|gallery|theater|theatre|building|exhibit|cultural|arts?)\b/.test(signal)) return "culture";
-  if (/\b(park|trail|garden|court|range|gym|studio|outdoor)\b/.test(signal)) return "activity";
-  if (/\b(restaurant|dining|kitchen|eatery|bistro|cuisine|omakase|steakhouse|cafe)\b/.test(signal)) return "restaurant";
-  return null;
-}
-
-function readRaw(row: RadarCandidateInboxRow, path: string[]): unknown {
-  let current: unknown = row.raw_payload;
-  for (const part of path) {
-    if (Array.isArray(current)) {
-      const index = Number(part);
-      if (!Number.isInteger(index)) return undefined;
-      current = current[index];
-      continue;
-    }
-    if (!isRecord(current)) return undefined;
-    current = current[part];
-  }
-  return current;
+    null
+  );
 }
 
 function dateWithTime(date: string | null, time: string | null): string | null {
@@ -468,20 +647,8 @@ function dateWithTime(date: string | null, time: string | null): string | null {
   return `${date}T${time}`;
 }
 
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function arrayValue(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0) : [];
-}
-
-function unique(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function httpOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.startsWith("http") ? value : null;
 }
 
 function slug(value: string): string {

@@ -975,7 +975,7 @@ function testQualityFiltersReachCandidateConversionAndPreviews() {
   assert.match(conversion, /assessResultQuality/);
   assert.match(conversion, /Rejected by discovery quality filter/);
   assert.match(conversion, /quality_flags/);
-  assert.match(conversion, /foundation_sprint_quality_filter/);
+  assert.match(conversion, /candidate_conversion_quality_filter/);
 
   const preview = readFileSync("app/settings/library/page.tsx", "utf8");
   assert.match(preview, /Later \/ Watch \/ Better Version/);
@@ -1053,7 +1053,15 @@ function testCandidateInboxConversionContract() {
   assert.match(source, /budget\?: RunBudget/);
   assert.match(source, /shouldStopSoon\(\)/);
   assert.match(source, /Time budget reached during Candidate Inbox conversion/);
-  assert.doesNotMatch(source, /from\("surfaced_items"\)\.insert/);
+  // Candidates are routed through the real researcher + verdict writer (no stubs)
+  // and distributed fairly across categories — not whichever lane scored highest.
+  assert.match(source, /researchPlace/);
+  assert.match(source, /writeVerdict/);
+  assert.match(source, /selectFairly/);
+  // Style has no library table, so it surfaces directly — but only after research
+  // and only above the surfacing quality floor (never a raw, unresearched stub).
+  assert.match(source, /RADAR_UNDERFILLED_PROMOTION_FLOOR/);
+  assert.match(source, /from\("surfaced_items"\)\s*\n\s*\.insert/);
 }
 
 function testTimeoutSafeAutopilotContract() {
