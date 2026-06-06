@@ -3,7 +3,7 @@
  * Scans context + closet gaps and surfaces 5-7 quiet, useful Finds.
  */
 import { NextResponse } from "next/server";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { runNeedScout } from "@/lib/brain/needScout";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ async function validateCronSecret(req: Request): Promise<boolean> {
 
 async function findOwnerUserId(): Promise<string | null> {
   try {
-    const supabase = await getServerSupabase();
+    const supabase = getSupabaseServiceClient();
     const { data } = await supabase.from("founder_profile").select("user_id").limit(1).maybeSingle();
     return data?.user_id ?? null;
   } catch {

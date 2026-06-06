@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAmbientIntelligence } from "@/lib/intelligence/ambientRuns";
 import { parseAmbientRunType } from "@/lib/intelligence/runTypes";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ async function validateCronSecret(req: Request): Promise<boolean> {
 
 async function findOwnerUserId(): Promise<string | null> {
   try {
-    const supabase = await getServerSupabase();
+    const supabase = getSupabaseServiceClient();
     const { data } = await supabase
       .from("founder_profile")
       .select("user_id")

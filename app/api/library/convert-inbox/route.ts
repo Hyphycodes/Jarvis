@@ -10,7 +10,6 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { convertCandidateInboxToLibrary } from "@/lib/radar/candidateConversion";
 import { enrichPending } from "@/lib/library/enrichPending";
@@ -32,7 +31,7 @@ async function validateCronSecret(req: Request): Promise<boolean> {
 
 async function findOwnerUserId(): Promise<string | null> {
   try {
-    const supabase = await getServerSupabase();
+    const supabase = getSupabaseServiceClient();
     const { data } = await supabase
       .from("founder_profile")
       .select("user_id")

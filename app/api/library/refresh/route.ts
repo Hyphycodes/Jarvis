@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { processRefresh } from "@/lib/brain/refresher";
-import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const supabase = await getServerSupabase();
+    const supabase = getSupabaseServiceClient();
     const result = await processRefresh(5, supabase);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const supabase = await getServerSupabase();
+    const supabase = getSupabaseServiceClient();
     const result = await processRefresh(5, supabase);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
