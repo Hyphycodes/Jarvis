@@ -15,12 +15,35 @@ import { WeeklyRhythmForm } from "./client-bits";
 export const metadata = { title: "Settings · Jarvis" };
 export const dynamic = "force-dynamic";
 
+/**
+ * Settings — intentionally minimal.
+ *
+ * The brain manages memory, integrations, context feeds, source connections,
+ * weather, and Radar intelligence in the background automatically; none of
+ * that belongs in user-facing Settings unless an explicit action is needed.
+ *
+ * Visible:
+ *   1. Profile          (identity)
+ *   2. Weekly Rhythm    (owner only — real user-editable schedule)
+ *   3. Tastemakers      (manage page)
+ *   4. Places           (manage page)
+ *   5. Sign out
+ *
+ * Removed from the visible list (data + processes preserved, just not shown):
+ *   - Connections / Integrations / "Queued" cards
+ *   - Data & Memory / Memory proposals
+ *   - Control Room / QA / intelligence diagnostics
+ *   - Account status field rows ("Role / Session / Active")
+ *
+ * /settings/integrations remains reachable by direct URL for owner/debug
+ * but is intentionally not linked here.
+ */
 export default async function SettingsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=/settings");
 
-  const status = await loadAccountStatus(user.id);
   const owner = user.role === "owner";
+  const status = await loadAccountStatus(user.id);
 
   return (
     <main
@@ -31,121 +54,60 @@ export default async function SettingsPage() {
       }}
     >
       <MotionPage>
-      <header>
-        <div className="flex items-center gap-1">
-          <BackButton fallbackHref="/account" />
-          <span className="lux-label">
-            Settings
-          </span>
-        </div>
-        <h1 className="mt-6 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
-          Settings.
-        </h1>
-        <p className="mt-3 max-w-[38ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
-          Account preferences and the rhythm Jarvis should respect.
-        </p>
-        <div className="mt-5 h-px w-10 bg-muted-gold/50" />
-      </header>
-
-      <SettingsSection label="Account">
-        <div className="lux-surface-quiet rounded-[var(--radius-card)] px-4 py-4">
-          <Field label="Signed in as" value={user.email ?? "Account active"} />
-          <Field label="Role" value={<RoleChip role={user.role} />} />
-          <Field label="Session" value={<StatusValue label="Active" />} />
-          <p className="mt-4 border-t border-divider/45 pt-4 font-serif text-[15px] italic leading-[1.5] text-warm-ivory/75">
-            {owner ? "Private owner access." : "Read-only demo access."}
-          </p>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection label="Profile">
-        <div className="grid gap-2">
-          <ProfileMetric
-            label="Founder Profile"
-            value={status.hasFounderProfile ? "Active" : "Not set"}
-            active={status.hasFounderProfile}
-          />
-          <ProfileMetric
-            label="Memory"
-            value={`${status.memoryCount} active`}
-            active={status.memoryCount > 0}
-          />
-          <ProfileMetric
-            label="Taste Signals"
-            value={`${status.signalCount} total`}
-            active={status.signalCount > 0}
-          />
-        </div>
-        {owner && !status.hasFounderProfile ? (
-          <div className="lux-surface mt-4 rounded-[var(--radius-card)] px-4 py-4">
-            <h2 className="font-serif text-[20px] italic leading-tight text-warm-ivory">
-              Founder profile not set yet.
-            </h2>
-            <p className="mt-2 text-[13px] leading-[1.55] text-warm-ivory/60">
-              Your owner access is active. Add the founder layer when you are
-              ready to teach Jarvis your taste, principles, and memory.
-            </p>
-            <Link
-              href="/profile"
-              className="mt-4 inline-flex min-h-10 items-center gap-2 border border-muted-gold/45 px-4 text-[11px] uppercase tracking-editorial text-muted-gold transition duration-300 ease-atmospheric hover:border-muted-gold active:translate-y-px"
-            >
-              Seed Founder Profile
-              <Chevron direction="right" size={13} />
-            </Link>
+        <header>
+          <div className="flex items-center gap-1">
+            <BackButton fallbackHref="/account" />
+            <span className="lux-label">Settings</span>
           </div>
-        ) : null}
-        <Link
-          href="/profile"
-          className="mt-5 flex min-h-12 items-center justify-between border-t border-divider/60 pt-4 text-[11px] uppercase tracking-editorial text-warm-ivory/70 transition duration-300 ease-atmospheric hover:text-warm-ivory active:translate-y-px"
-        >
-          <span>Open Profile</span>
-          <Chevron direction="right" size={14} className="text-warm-ivory/45" />
-        </Link>
-      </SettingsSection>
+          <h1 className="mt-6 font-serif text-[42px] italic leading-[1.02] text-warm-ivory">
+            Settings.
+          </h1>
+          <p className="mt-3 max-w-[38ch] font-serif text-[16px] italic leading-[1.45] text-warm-ivory/65">
+            A few things you can adjust. Everything else runs quietly in the
+            background.
+          </p>
+          <div className="mt-5 h-px w-10 bg-muted-gold/50" />
+        </header>
 
-      <SettingsSection label="Connections">
-        <div className="grid gap-3">
-          <SettingsCard
-            href="/settings/integrations"
-            title="Integrations"
-            copy="Control which accounts and outside services Jarvis can access."
+        {/* 1. Profile — single link to the simplified profile page. */}
+        <SettingsList>
+          <SettingsRow
+            href="/profile"
+            label="Profile"
+            hint={user.email ?? undefined}
           />
-          <SettingsCard
-            title="Preferences"
-            copy="Adjust how Jarvis presents itself."
-            status="Queued"
-          />
-          <SettingsCard
-            title="Data & Memory"
-            copy="Review saved context, taste signals, and personal memory."
-            status="Queued"
-          />
-        </div>
-      </SettingsSection>
 
-      {owner ? (
-        <SettingsSection label="Weekly Rhythm">
-          <WeeklyRhythmForm
-            rhythm={status.weeklyRhythm}
-            lastSavedAt={status.weeklyRhythmSavedAt}
-          />
-        </SettingsSection>
-      ) : null}
+          {/* 2. Weekly Rhythm — owner only, real user-editable schedule. */}
+          {owner ? (
+            <SettingsExpander label="Weekly Rhythm" hint="Workdays, commute">
+              <WeeklyRhythmForm
+                rhythm={status.weeklyRhythm}
+                lastSavedAt={status.weeklyRhythmSavedAt}
+              />
+            </SettingsExpander>
+          ) : null}
 
-      <section className="mt-14 border-t border-divider/60 pt-8">
-        <p className="max-w-[34ch] text-[12px] leading-[1.55] text-warm-ivory/45">
-          Sign out only when this device should stop carrying your private
-          session.
-        </p>
-        <form action={signOut} className="mt-5">
-          <button
-            type="submit"
-            className="min-h-11 border border-divider px-5 text-[11px] uppercase tracking-editorial text-warm-ivory/55 transition duration-300 ease-atmospheric hover:border-muted-gold/45 hover:text-muted-gold active:translate-y-px"
-          >
-            Sign out
-          </button>
-        </form>
-      </section>
+          {/* 3. Tastemakers — manage real user-editable source list. */}
+          <SettingsRow href="/account/tastemakers" label="Tastemakers" />
+
+          {/* 4. Places — manage saved places. */}
+          <SettingsRow href="/account/library" label="Places" />
+        </SettingsList>
+
+        <section className="mt-14 border-t border-divider/60 pt-8">
+          <p className="max-w-[34ch] text-[12px] leading-[1.55] text-warm-ivory/45">
+            Sign out only when this device should stop carrying your private
+            session.
+          </p>
+          <form action={signOut} className="mt-5">
+            <button
+              type="submit"
+              className="min-h-11 border border-divider px-5 text-[11px] uppercase tracking-editorial text-warm-ivory/55 transition duration-300 ease-atmospheric hover:border-muted-gold/45 hover:text-muted-gold active:translate-y-px"
+            >
+              Sign out
+            </button>
+          </form>
+        </section>
       </MotionPage>
     </main>
   );
@@ -153,196 +115,87 @@ export default async function SettingsPage() {
 
 async function loadAccountStatus(userId: string) {
   const supabase = await getServerSupabase();
+  const { data, error } = await supabase
+    .from("founder_profile")
+    .select("weekly_rhythm, updated_at")
+    .eq("user_id", userId)
+    .maybeSingle();
 
-  const [profileRes, founderRes, memoryRes, signalRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, app_role")
-      .eq("id", userId)
-      .maybeSingle(),
-    supabase
-      .from("founder_profile")
-      .select("id, weekly_rhythm, updated_at")
-      .eq("user_id", userId)
-      .maybeSingle(),
-    supabase
-      .from("memory_items")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("status", "active"),
-    supabase
-      .from("taste_signals")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId),
-  ]);
-  let founderData = founderRes.data;
-  if (founderRes.error && /weekly_rhythm|schema cache|column/i.test(founderRes.error.message)) {
-    const fallbackFounder = await supabase
-      .from("founder_profile")
-      .select("id")
-      .eq("user_id", userId)
-      .maybeSingle();
-    founderData = fallbackFounder.data
-      ? { ...fallbackFounder.data, weekly_rhythm: DEFAULT_WEEKLY_RHYTHM, updated_at: null }
-      : null;
+  // Older schema may not carry weekly_rhythm yet — fall back gracefully.
+  if (error && /weekly_rhythm|schema cache|column/i.test(error.message)) {
+    return {
+      weeklyRhythm: normalizeWeeklyRhythm(DEFAULT_WEEKLY_RHYTHM),
+      weeklyRhythmSavedAt: null,
+    };
   }
 
   return {
-    hasProfile: !!profileRes.data,
-    profileRole: profileRes.data?.app_role ?? null,
-    hasFounderProfile: !!founderData,
     weeklyRhythm: normalizeWeeklyRhythm(
-      founderData?.weekly_rhythm ?? DEFAULT_WEEKLY_RHYTHM,
+      data?.weekly_rhythm ?? DEFAULT_WEEKLY_RHYTHM,
     ),
     weeklyRhythmSavedAt:
-      typeof founderData?.updated_at === "string" ? founderData.updated_at : null,
-    memoryCount: memoryRes.count ?? 0,
-    signalCount: signalRes.count ?? 0,
+      typeof data?.updated_at === "string" ? data.updated_at : null,
   };
 }
 
-function SettingsSection({
+function SettingsList({ children }: { children: ReactNode }) {
+  return <ul className="mt-10 flex flex-col">{children}</ul>;
+}
+
+function SettingsRow({
+  href,
   label,
+  hint,
+}: {
+  href: string;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <li>
+      <Link
+        href={href}
+        className="flex items-center justify-between gap-4 border-b border-divider/40 py-4 text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
+      >
+        <div className="flex flex-col">
+          <span className="text-[15px]">{label}</span>
+          {hint ? (
+            <span className="mt-0.5 text-[11px] text-warm-ivory/40">{hint}</span>
+          ) : null}
+        </div>
+        <Chevron direction="right" size={14} className="text-warm-ivory/35" />
+      </Link>
+    </li>
+  );
+}
+
+function SettingsExpander({
+  label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="motion-card mt-10 border-t border-divider/60 pt-6">
-      <div className="lux-label">
-        {label}
-      </div>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[118px_1fr] items-start gap-4 border-b border-divider/35 py-3 last:border-0">
-      <div className="text-[10px] uppercase tracking-editorial text-warm-ivory/45">
-        {label}
-      </div>
-      <div className="min-w-0 text-[14px] leading-[1.5] text-warm-ivory/85">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function ProfileMetric({
-  label,
-  value,
-  active,
-}: {
-  label: string;
-  value: string;
-  active: boolean;
-}) {
-  return (
-    <div className="lux-surface-quiet flex min-h-12 items-center justify-between gap-4 rounded-[var(--radius-soft)] px-4">
-      <span className="text-[13px] text-warm-ivory/75">{label}</span>
-      <StatusValue label={value} muted={!active} />
-    </div>
-  );
-}
-
-function SettingsCard({
-  href,
-  title,
-  copy,
-  status,
-}: {
-  href?: string;
-  title: string;
-  copy: string;
-  status?: string;
-}) {
-  const content = (
-    <>
-      <div>
-        <div className="font-serif text-[20px] italic leading-tight text-warm-ivory">
-          {title}
-        </div>
-        <p className="mt-2 max-w-[36ch] text-[13px] leading-[1.55] text-warm-ivory/58">
-          {copy}
-        </p>
-      </div>
-      <span className="shrink-0 text-[10px] uppercase tracking-editorial text-muted-gold/70">
-        {status ?? (
-          <Chevron
-            direction="right"
-            size={14}
-            className="text-warm-ivory/45"
-          />
-        )}
-      </span>
-    </>
-  );
-
-  const className =
-    "lux-surface-quiet flex min-h-[104px] items-center justify-between gap-5 rounded-[var(--radius-card)] px-4 py-4 text-left transition duration-300 ease-atmospheric hover:border-muted-gold/35 active:translate-y-px";
-
-  if (href) {
-    return (
-      <Link href={href} className={className}>
-        {content}
-      </Link>
-    );
-  }
-
-  return (
-    <button type="button" className={className}>
-      {content}
-    </button>
-  );
-}
-
-function RoleChip({ role }: { role: "owner" | "viewer" }) {
-  return (
-    <span
-      className={
-        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] uppercase tracking-editorial " +
-        (role === "owner"
-          ? "border-muted-gold/45 text-muted-gold"
-          : "border-divider text-warm-ivory/58")
-      }
-    >
-      <span
-        aria-hidden
-        className={
-          "h-1.5 w-1.5 rounded-full " +
-          (role === "owner" ? "bg-muted-gold" : "bg-warm-ivory/40")
-        }
-      />
-      {role === "owner" ? "Owner" : "Viewer"}
-    </span>
-  );
-}
-
-function StatusValue({
-  label,
-  muted = false,
-}: {
-  label: string;
-  muted?: boolean;
-}) {
-  return (
-    <span
-      className={
-        "inline-flex items-center gap-2 text-[13px] " +
-        (muted ? "text-warm-ivory/45" : "text-warm-ivory/85")
-      }
-    >
-      <span
-        aria-hidden
-        className={
-          "h-1.5 w-1.5 rounded-full " +
-          (muted ? "bg-warm-ivory/30" : "bg-muted-gold")
-        }
-      />
-      {label}
-    </span>
+    <li className="border-b border-divider/40">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-warm-ivory/85 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory">
+          <div className="flex flex-col">
+            <span className="text-[15px]">{label}</span>
+            {hint ? (
+              <span className="mt-0.5 text-[11px] text-warm-ivory/40">
+                {hint}
+              </span>
+            ) : null}
+          </div>
+          <span className="transition-transform duration-300 ease-atmospheric group-open:rotate-90 text-warm-ivory/35">
+            <Chevron direction="right" size={14} />
+          </span>
+        </summary>
+        <div className="pb-5">{children}</div>
+      </details>
+    </li>
   );
 }
