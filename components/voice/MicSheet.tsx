@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Mic } from "@/components/icons";
 import type { IntentResult } from "@/lib/brain/intentClassifier";
+import { MAX_CHAT_IMAGE_ATTACHMENTS } from "@/lib/chat/attachmentLimits";
 import type { ChatAttachment, ChatChip } from "@/lib/chat/types";
 import { buildClosetChips } from "@/lib/wardrobe/closetChips";
 import { useRealtimeVoice } from "@/lib/voice/useRealtimeVoice";
@@ -171,7 +172,6 @@ function attachmentForApi(attachment: AttachmentContext): ChatAttachment {
       label: attachment.label,
       image_base64: attachment.imageBase64,
       image_media_type: attachment.imageMediaType,
-      preview_url: attachment.imageDataUrl,
     };
   }
   if (attachment.type === "image") {
@@ -428,7 +428,13 @@ export function MicSheet({
         }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Brain request failed");
+      if (!res.ok || !res.body) {
+        throw new Error(
+          res.status === 413
+            ? `Too many photos at once. Send up to ${MAX_CHAT_IMAGE_ATTACHMENTS}, then add the rest.`
+            : "Jarvis hit a request limit. Try again with fewer photos.",
+        );
+      }
 
       setState("responding");
       const reader = res.body.getReader();
@@ -801,10 +807,22 @@ export function MicSheet({
 
   const handlePhotoAttach = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
+    const imageCount = attachments.filter((a) => a.type === "image").length;
+    const remaining = MAX_CHAT_IMAGE_ATTACHMENTS - imageCount;
+    if (remaining <= 0) {
+      setError(`Send these ${MAX_CHAT_IMAGE_ATTACHMENTS} photos first, then add the rest.`);
+      return;
+    }
+    const filesToAttach = files.slice(0, remaining);
+    if (files.length > remaining) {
+      setError(`I attached ${remaining} photo${remaining === 1 ? "" : "s"}. Send those first, then add the rest.`);
+    } else {
+      setError(null);
+    }
     setPhotoLoading(true);
     try {
       const newAttachments = await Promise.all(
-        files.map(async (file) => {
+        filesToAttach.map(async (file) => {
           const { dataUrl, base64, mediaType } = await compressImageFile(file);
           return {
             type: "image" as const,
@@ -816,9 +834,11 @@ export function MicSheet({
         }),
       );
       setAttachments((prev) => [...prev, ...newAttachments]);
-    } catch { /* noop */ }
+    } catch {
+      setError("I couldn't attach that photo. Try a different image.");
+    }
     setPhotoLoading(false);
-  }, []);
+  }, [attachments]);
 
   // ── Status ──────────────────────────────────────────────────────────────────
 

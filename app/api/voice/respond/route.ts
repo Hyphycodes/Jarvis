@@ -17,6 +17,7 @@ import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation
 import { saveItem, passItem } from "@/lib/actions/items";
 import { createCanonicalMemory } from "@/lib/memory/memoryStore";
 import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
+import { MAX_CHAT_IMAGE_ATTACHMENTS } from "@/lib/chat/attachmentLimits";
 import type { ConversationMessage } from "@/lib/brain/intentClassifier";
 import type { ChatAttachment, ChatChip, ChatIntakeResult } from "@/lib/chat/types";
 
@@ -49,9 +50,12 @@ async function readWeekShape(userId: string): Promise<string | null> {
 function normalizeAttachments(value: unknown): ChatAttachment[] {
   if (!Array.isArray(value)) return [];
   const attachments: ChatAttachment[] = [];
+  let imageCount = 0;
   for (const entry of value) {
     if (!isRecord(entry) || typeof entry.type !== "string") continue;
     if (entry.type === "image" && typeof entry.image_base64 === "string") {
+      if (imageCount >= MAX_CHAT_IMAGE_ATTACHMENTS) continue;
+      imageCount += 1;
       attachments.push({
         type: "image" as const,
         label: typeof entry.label === "string" ? entry.label : undefined,

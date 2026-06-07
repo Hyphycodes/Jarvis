@@ -1,0 +1,1 @@
+export const MAX_CHAT_IMAGE_ATTACHMENTS = 4;
