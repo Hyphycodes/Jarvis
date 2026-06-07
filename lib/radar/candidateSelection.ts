@@ -25,6 +25,33 @@ export type QueueEntry = {
  *   and starve culture/events/places/moves/style.
  * - Leftover budget backfills with uncategorized rows (sources/legacy).
  */
+/**
+ * Take up to `perCategoryCap` items per category from a pre-sorted list,
+ * preserving order. Guarantees thin lanes are represented in a bounded window
+ * instead of being crowded out by a global score-ordered LIMIT (which let
+ * high-score dining/finds/uncategorized items starve moves/places/culture from
+ * the promotion challenger set entirely). Input should already be in priority
+ * order (e.g. score desc); `getCategory` buckets each row, null → its own bucket.
+ */
+export function pickFairByCategory<T>(
+  rows: T[],
+  getCategory: (row: T) => string | null,
+  perCategoryCap: number,
+  totalCap: number,
+): T[] {
+  const counts = new Map<string, number>();
+  const out: T[] = [];
+  for (const row of rows) {
+    if (out.length >= totalCap) break;
+    const key = getCategory(row) ?? "__uncategorized__";
+    const seen = counts.get(key) ?? 0;
+    if (seen >= perCategoryCap) continue;
+    counts.set(key, seen + 1);
+    out.push(row);
+  }
+  return out;
+}
+
 export function selectFairly(rows: RadarCandidateInboxRow[], budget: number): QueueEntry[] {
   const entries: QueueEntry[] = rows.map((row) => ({
     row,

@@ -67,6 +67,8 @@ export async function GET(req: Request) {
     const supabase = getSupabaseServiceClient();
     const budget = createRunBudget(RUN_BUDGET_MS);
     const errors: string[] = [];
+    const startedAt = Date.now();
+    const inventoryBefore = await readCategoryInventory(ownerUserId, supabase);
 
     // 1. Drain Library → surfaced "discovered" until the ready pool is empty.
     let materialized = 0;
@@ -105,9 +107,29 @@ export async function GET(req: Request) {
       if (pb.errors.length) errors.push(...pb.errors);
     }
 
-    // Per-category snapshot of the board after promoting — lets the owner see at
-    // a glance which lanes are full vs thin (SQL-free observability).
-    const inventory = await readCategoryInventory(ownerUserId, supabase);
+    // Per-category snapshot of the board after promoting.
+    const inventoryAfter = await readCategoryInventory(ownerUserId, supabase);
+    const durationMs = Date.now() - startedAt;
+    const shownByCategory = (
+      inv: Record<string, { category: string; shown: number }>,
+    ) => Object.fromEntries(Object.values(inv).map((e) => [e.category, e.shown]));
+
+    // Structured run summary → visible in Vercel runtime logs. The worker is
+    // CRON_SECRET-gated, so logs are how each cycle is observed.
+    console.log(
+      "[api/radar/promote] run " +
+        JSON.stringify({
+          materialized,
+          promoted,
+          reviewed,
+          plansBuilt,
+          durationMs,
+          timeBudgetReached: budget.shouldStopSoon(),
+          shownBefore: shownByCategory(inventoryBefore),
+          shownAfter: shownByCategory(inventoryAfter),
+          errors: errors.slice(0, 5),
+        }),
+    );
 
     return NextResponse.json({
       ok: true,
@@ -115,7 +137,9 @@ export async function GET(req: Request) {
       promoted,
       reviewed,
       plansBuilt,
-      inventory,
+      durationMs,
+      inventoryBefore,
+      inventoryAfter,
       timeBudgetReached: budget.shouldStopSoon(),
       errors,
     });

@@ -29,6 +29,7 @@ import {
   RADAR_CATEGORIES,
   type RadarCategory,
 } from "@/lib/radar/category";
+import { pickFairByCategory } from "@/lib/radar/candidateSelection";
 import { categoryDataReady, scoreCategoryCouncil, type HoldReason } from "@/lib/brain/categoryCouncils";
 import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 import { runExecutiveCouncil, type ExecutiveCandidate, type ExecutiveDecision } from "@/lib/brain/executiveCouncil";
@@ -1090,7 +1091,7 @@ export async function promoteHoldingWithService(input: {
     .in("status", ["discovered", "shown", "opened"])
     .order("score", { ascending: false, nullsFirst: false })
     .order("updated_at", { ascending: false })
-    .limit(80);
+    .limit(250);
   const activeRowList = ((activeRows ?? []) as SurfacedItemRow[]).filter((row) =>
     isActiveRadarInventoryItem(rowToIndexedItem(row)),
   );
@@ -1122,13 +1123,20 @@ export async function promoteHoldingWithService(input: {
   }
 
   // ── Challengers: eligible Holding / discovered candidates ────────────────────
-  const reviewedRows = ((backlogRows ?? []) as SurfacedItemRow[])
-    .filter((row) => {
+  // Per-category fair challenger window. A global score-ordered slice let
+  // high-score dining/finds/uncategorized items crowd out moves/places/culture
+  // entirely (moves got 0 of its 14 candidates considered), so thin lanes could
+  // never promote. Take up to 15 per category from the score-ordered backlog.
+  const reviewedRows = pickFairByCategory(
+    ((backlogRows ?? []) as SurfacedItemRow[]).filter((row) => {
       if (row.destination === "radar" && (row.status === "shown" || row.status === "opened")) return false;
       if (row.status === "discovered") return true;
       return row.destination === "holding";
-    })
-    .slice(0, 40);
+    }),
+    (row) => normalizeRadarCategory(row.category),
+    15,
+    90,
+  );
   const candidateIds = reviewedRows.map((row) => row.id);
   const candidateMembers: LivingFiveMember[] = [];
   const candidateMeta = new Map<string, { row: SurfacedItemRow; radar: ReturnType<typeof enrichRadarItem>; composite: number }>();

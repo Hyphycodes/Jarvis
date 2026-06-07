@@ -61,8 +61,14 @@ export async function materializeEligibleLibraryItems(
       .in("enrichment_status", MATERIALIZE_ENRICHMENT_STATES)
       .in("quality_tier", ["A", "B"])
       .gte("quality_score", RADAR_UNDERFILLED_PROMOTION_FLOOR)
+      // Never-surfaced first (last_surfaced_at NULL), then least-recently
+      // surfaced, then by quality. A plain quality_score DESC + small limit let
+      // the already-surfaced top-scorers fill the window every run, so the
+      // unsurfaced tail never got fetched. Limit comfortably exceeds the
+      // eligible pool so nothing is stranded below the cut.
+      .order("last_surfaced_at", { ascending: true, nullsFirst: true })
       .order("quality_score", { ascending: false })
-      .limit(40),
+      .limit(120),
     supabase
       .from("current_events")
       .select("id, title, event_type, venue_name, starts_at, ends_at, ticket_url, price_level, vibe_keywords, description, verdict, verdict_strength, library_place_id")

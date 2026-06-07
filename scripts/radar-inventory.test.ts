@@ -9,6 +9,7 @@ import {
   thinSurfaceLanes,
   type SurfaceInventoryRow,
 } from "../lib/radar/inventoryHealth";
+import { pickFairByCategory } from "../lib/radar/candidateSelection";
 import { RADAR_CATEGORIES } from "../lib/radar/category";
 
 let failures = 0;
@@ -84,6 +85,32 @@ check("thinSurfaceLanes returns under-target lanes, thinnest first", () => {
   assert.ok(!thin.includes("dining"), "dining is full, should not be thin");
   // culture (gap 7) before places (gap 3)
   assert.ok(thin.indexOf("culture") < thin.indexOf("places"), "thinnest lane should rank first");
+});
+
+// ── fair per-category challenger window (the thin-lane starvation fix) ────────
+check("pickFairByCategory keeps thin lanes that a global slice would drop", () => {
+  // Simulate the prod bug: 80 high-score dining rows ahead of 3 moves rows.
+  const rows = [
+    ...Array.from({ length: 80 }, (_, i) => ({ category: "dining", score: 0.9 - i * 0.001 })),
+    { category: "moves", score: 0.55 },
+    { category: "moves", score: 0.54 },
+    { category: "moves", score: 0.53 },
+  ];
+  // Old behavior (.slice(0, 40)) would include 0 moves. Fair take must keep them.
+  const picked = pickFairByCategory(rows, (r) => r.category, 15, 90);
+  const moves = picked.filter((r) => r.category === "moves").length;
+  const dining = picked.filter((r) => r.category === "dining").length;
+  assert.equal(moves, 3, "all 3 moves candidates must survive");
+  assert.equal(dining, 15, "dining capped at perCategoryCap");
+});
+
+check("pickFairByCategory buckets null separately and respects totalCap", () => {
+  const rows = [
+    ...Array.from({ length: 10 }, () => ({ category: null as string | null, score: 0.8 })),
+    ...Array.from({ length: 10 }, () => ({ category: "places", score: 0.7 })),
+  ];
+  const picked = pickFairByCategory(rows, (r) => r.category, 5, 7);
+  assert.equal(picked.length, 7, "totalCap honored");
 });
 
 if (failures > 0) {
