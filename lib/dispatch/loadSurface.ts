@@ -45,7 +45,6 @@ import type {
   PlanRow,
   PlanSectionRow,
   SurfacedItemRow,
-  TodayTimelineItemRow,
 } from "@/lib/types/database";
 import type {
   CirclePerson,
@@ -73,7 +72,6 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
 
     const supabase = await getServerSupabase();
     const [
-      timelineRes,
       primaryPlanRes,
       todayItemsRes,
       upcomingItemsRes,
@@ -81,14 +79,8 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       dayOf,
       rhythmRes,
       tonightEventsRes,
-      circleUpdatesRes,
     ] =
       await Promise.all([
-        supabase
-          .from("today_timeline_items")
-          .select("*")
-          .eq("user_id", id)
-          .order("sort_order", { ascending: true }),
         supabase
           .from("plans")
           .select("*")
@@ -137,20 +129,12 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           .lte("starts_at", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
           .order("starts_at", { ascending: true })
           .limit(5),
-        supabase
-          .from("circle_updates")
-          .select("*")
-          .eq("user_id", id)
-          .order("created_at", { ascending: false })
-          .limit(8),
       ]);
 
-    logQueryError("today.timeline", timelineRes.error);
     logQueryError("today.plan", primaryPlanRes.error);
     logQueryError("today.items", todayItemsRes.error);
     logQueryError("today.rhythm", rhythmRes.error);
     logQueryError("today.tonightEvents", tonightEventsRes.error);
-    logQueryError("today.circleUpdates", circleUpdatesRes.error);
 
     // Fetch source_ids of current_events rows the user has committed to.
     // A surfaced_item with source_id = current_events.id and status saved/planned
@@ -188,12 +172,6 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         locationName: ev.venue_name,
         reason: ev.verdict ?? undefined,
       }));
-    const circleTodayItems = ((circleUpdatesRes.data ?? []) as CircleUpdateRow[])
-      .filter(shouldSurfaceCircleMoment)
-      .slice(0, 3)
-      .map(rowToCircleTodayItem);
-
-    const timelineRows = (timelineRes.data ?? []) as TodayTimelineItemRow[];
     const planRow = (primaryPlanRes.data?.[0] ?? null) as PlanRow | null;
     const planKeyStats = isRecord(planRow?.key_stats) ? planRow.key_stats : {};
     const weeklyRhythm = rhythmRes.data?.weekly_rhythm
@@ -205,56 +183,22 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const activePlanSourceRow = activePlanId
       ? todayRows.find((row) => readPlanId(row.payload) === activePlanId)
       : undefined;
-    const activePlanDisplay = planRow
-      ? buildPlanDisplay(planRow, planKeyStats, activePlanSourceRow)
+    const shouldShowActivePlan = Boolean(activePlanSourceRow);
+    const visiblePlanRow = shouldShowActivePlan ? planRow : null;
+    const activePlanDisplay = visiblePlanRow
+      ? buildPlanDisplay(visiblePlanRow, planKeyStats, activePlanSourceRow)
       : null;
     const todayItems = todayRows
-      .map(rowToTodayCommandItem)
-      .filter((item) => !isLinkedToPlan(item, activePlanId));
+      .map(rowToTodayCommandItem);
     const upcomingItems = upcomingItemsRes.filter(
       (item) => !isLinkedToPlan(item, activePlanId),
     );
 
-    const planTimelineRows = planRow
-      ? timelineRows.filter((row) => row.plan_id === planRow.id)
-      : timelineRows;
-    const timeline: TodayTimelineItem[] = planTimelineRows.map((row) => ({
-      id: row.id,
-      time: row.time,
-      title: cleanDisplayText(row.title) || activePlanDisplay?.title || "Plan",
-      status: row.status as TodayTimelineItem["status"],
-      planId: row.plan_id ?? undefined,
-      planSlug: row.plan_id === planRow?.id ? planSlug : undefined,
-      expandable: row.expandable || Boolean(row.details) || row.plan_id === planRow?.id,
-      details: cleanDisplayText(row.details ?? undefined) ?? undefined,
-      locationLine: row.plan_id === planRow?.id
-        ? planRow.location_line ?? undefined
-        : undefined,
-      timingNote: row.plan_id === planRow?.id
-        ? formatTimeWindow(
-            typeof planKeyStats.starts_at === "string"
-              ? planKeyStats.starts_at
-              : undefined,
-            typeof planKeyStats.ends_at === "string"
-              ? planKeyStats.ends_at
-              : undefined,
-          ) ?? cleanDisplayText(
-            typeof planKeyStats.best_window === "string"
-              ? planKeyStats.best_window
-              : undefined,
-          )
-        : undefined,
-      prepNote: row.plan_id === planRow?.id
-        ? cleanDisplayText(readFirstGrabListLabel(planKeyStats))
-        : undefined,
-      canPersistStatus: true,
-    }));
-    const planTimeline = planRow && timeline.length === 0
-      ? [fallbackTimelineForPlan(planRow, planKeyStats, planSlug, activePlanDisplay)]
-      : timeline;
+    const committedTimeline = todayItems.map((item) =>
+      todayCommandItemToTimelineItem(item, visiblePlanRow, planKeyStats),
+    );
     const { rows: rhythmRowPlans, hiddenReasons: rhythmHiddenReasons, state: rhythmState } =
       planWeeklyRhythmTodayRows(weeklyRhythm);
-    const rhythmTimeline = buildRhythmTimelineRows(weeklyRhythm);
     console.info("[today.weekly_rhythm.load]", {
       userId: id,
       viewerEmail: viewer.email,
@@ -267,16 +211,9 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       rowsAdded: rhythmRowPlans.map((row) => row.key),
       hiddenReasons: rhythmHiddenReasons,
     });
-    const activeTimeline = [...rhythmTimeline, ...planTimeline];
+    const activeTimeline = committedTimeline;
 
-    const grabList: GrabListItem[] = planRow
-      ? readPlanGrabList(planKeyStats).map((entry, idx) => ({
-          id: `${planRow.id}-grab-${idx}`,
-          label: entry,
-          checked: false,
-          sourcePlanId: planRow.id,
-        }))
-      : [];
+    const grabList: GrabListItem[] = [];
 
     // Build on-deck list (max 3, no flood). Excludes items already in
     // the timeline (matched by title — best-effort dedupe).
@@ -296,17 +233,12 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         category: it.category ?? it.type,
         planId: readPlanId(it.rawPayload),
       }));
-    const nextPlanTimelineItem = planRow
-      ? activeTimeline.find((item) => item.planId === planRow.id && item.status !== "done")
+    const nextPlanTimelineItem = visiblePlanRow
+      ? activeTimeline.find((item) => item.planId === visiblePlanRow.id && item.status !== "done")
       : undefined;
     const topTodayItem = todayItems[0];
-    const firstUpcomingWithTime = upcomingItems.find((item) => item.startsAt);
-    const nextMove = topTodayItem ?? (!planRow ? firstUpcomingWithTime : undefined);
-    const todayStack = [
-      ...circleTodayItems,
-      ...todayItems.filter((item) => item.id !== nextMove?.id),
-    ].slice(0, 6);
-    const hero = buildTodayHero(planRow, planKeyStats, activePlanDisplay, weeklyRhythm);
+    const nextMove = topTodayItem;
+    const hero = buildTodayHero(visiblePlanRow, planKeyStats, activePlanDisplay, weeklyRhythm);
 
     return {
       hero: {
@@ -314,25 +246,25 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
         date: formatToday(),
         greeting: hero.greeting,
         summary: hero.summary,
-        primaryPlanId: planRow?.id,
+        primaryPlanId: visiblePlanRow?.id,
         leaveBy:
-          isRecord(planRow?.key_stats) &&
-          typeof planRow.key_stats.leave_by === "string"
-            ? (planRow.key_stats.leave_by as string)
+          isRecord(visiblePlanRow?.key_stats) &&
+          typeof visiblePlanRow.key_stats.leave_by === "string"
+            ? (visiblePlanRow.key_stats.leave_by as string)
             : undefined,
       },
       timeline: activeTimeline,
       grabList,
-      livePlan: planRow
+      livePlan: visiblePlanRow
         ? {
-            planId: planRow.id,
-            label: planRow.live_label as "LIVE" | "BEGIN" | "UPCOMING",
-            enabled: planRow.live_enabled,
-            title: activePlanDisplay?.title ?? cleanDisplayText(planRow.title) ?? "Active plan",
+            planId: visiblePlanRow.id,
+            label: visiblePlanRow.live_label as "LIVE" | "BEGIN" | "UPCOMING",
+            enabled: visiblePlanRow.live_enabled,
+            title: activePlanDisplay?.title ?? cleanDisplayText(visiblePlanRow.title) ?? "Active plan",
             slug: planSlug,
-            status: planRow.status,
+            status: visiblePlanRow.status,
             summary: activePlanDisplay?.summary,
-            locationLine: planRow.location_line ?? undefined,
+            locationLine: visiblePlanRow.location_line ?? undefined,
             timeWindow: formatTimeWindow(
               typeof planKeyStats.starts_at === "string"
                 ? planKeyStats.starts_at
@@ -357,7 +289,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
       onDeck: onDeck.length > 0 ? onDeck : undefined,
       upcomingCount: upcomingItems.length > 0 ? upcomingCountRes : 0,
       nextMove,
-      todayStack: todayStack.length > 0 ? todayStack : undefined,
+      todayStack: undefined,
       upcoming: upcomingItems.slice(0, 3),
       tonightEvents: tonightEvents.length > 0 ? tonightEvents : undefined,
     };
@@ -1069,6 +1001,57 @@ function rowToTodayCommandItem(row: SurfacedItemRow): TodayCommandItem {
     intelligenceReason,
     score: row.score ?? undefined,
   };
+}
+
+function todayCommandItemToTimelineItem(
+  item: TodayCommandItem,
+  plan: PlanRow | null,
+  keyStats: Record<string, unknown>,
+): TodayTimelineItem {
+  const timeWindow =
+    item.startsAt
+      ? formatEventTime(item.startsAt)
+      : plan && item.planId === plan.id
+        ? formatTimeWindow(
+            typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined,
+            typeof keyStats.ends_at === "string" ? keyStats.ends_at : undefined,
+          )
+        : undefined;
+  return {
+    id: item.id,
+    time: timeWindow ?? "-",
+    title: cleanDisplayText(item.title) ?? "Plan",
+    status: "pending",
+    planId: item.planId,
+    planSlug: item.planSlug,
+    expandable: Boolean(
+      item.summary ||
+        item.reason ||
+        item.locationName ||
+        item.planSlug,
+    ),
+    details: cleanDisplayText(item.reason ?? item.summary) ?? undefined,
+    locationLine: item.locationName ?? undefined,
+    timingNote:
+      plan && item.planId === plan.id
+        ? formatTimeWindow(
+            typeof keyStats.starts_at === "string" ? keyStats.starts_at : undefined,
+            typeof keyStats.ends_at === "string" ? keyStats.ends_at : undefined,
+          ) ?? cleanDisplayText(
+            typeof keyStats.best_window === "string" ? keyStats.best_window : undefined,
+          )
+        : undefined,
+    canPersistStatus: false,
+  };
+}
+
+function formatEventTime(iso: string): string | undefined {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function shouldSurfaceCircleMoment(row: CircleUpdateRow): boolean {
