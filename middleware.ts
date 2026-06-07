@@ -5,6 +5,7 @@ import { updateSupabaseSession } from "@/lib/supabase/middleware";
 export const CRON_API_PATHS = [
   "/api/radar/autopilot",
   "/api/radar/promote",
+  "/api/radar/engine",
   "/api/intelligence/run",
   "/api/library/scout",
   "/api/library/process-candidates",
