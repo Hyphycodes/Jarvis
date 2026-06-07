@@ -26,6 +26,7 @@ import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import {
   normalizeRadarCategory,
   normalizeRadarClassification,
+  RADAR_CATEGORIES,
   type RadarCategory,
 } from "@/lib/radar/category";
 import { categoryDataReady, scoreCategoryCouncil, type HoldReason } from "@/lib/brain/categoryCouncils";
@@ -483,12 +484,20 @@ async function readAutopilotHealth(input: {
     ? Math.floor((Date.now() - new Date(discoveredAt).getTime()) / (24 * 60 * 60 * 1000))
     : null;
   const activeRows = (activeRes.data ?? []) as SurfacedItemRow[];
-  const visibleActiveCount = activeRows
+  const visibleActiveItems = activeRows
     .map(rowToIndexedItem)
-    .filter(isActiveRadarInventoryItem)
-    .length;
+    .filter(isActiveRadarInventoryItem);
+  const perCategoryActive = RADAR_CATEGORIES.reduce((acc, category) => {
+    acc[category] = 0;
+    return acc;
+  }, {} as Record<RadarCategory, number>);
+  for (const item of visibleActiveItems) {
+    const category = normalizedRadarCategoryForItem(item);
+    if (category) perCategoryActive[category] += 1;
+  }
   return {
-    activeCount: visibleActiveCount,
+    activeCount: visibleActiveItems.length,
+    perCategoryActive,
     holdingCount: holdingRes.count ?? 0,
     discoveredBacklogCount: discoveredRes.count ?? 0,
     candidateInboxCount: inboxRes.count ?? 0,

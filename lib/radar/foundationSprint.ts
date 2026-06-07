@@ -1,5 +1,7 @@
 import type { RadarAutopilotHealth, RadarAutopilotOperation } from "@/lib/radar/autopilotPolicy";
 import { RADAR_MIN_ACTIVE_ITEM_TARGET } from "@/lib/brain/constants";
+import { RADAR_CATEGORIES, type RadarCategory } from "@/lib/radar/category";
+import { surfaceTargetFor } from "@/lib/radar/inventoryTargets";
 import type { SourceHealth } from "@/lib/sources/types";
 
 export const FOUNDATION_SPRINT_TARGETS = {
@@ -186,10 +188,40 @@ export function foundationWorkDone(input: {
   return Object.values(input).some((value) => value > 0);
 }
 
+/**
+ * The discovery mission that best feeds each visible Radar lane. Used to steer
+ * discovery toward thin lanes (culture/moves/events) instead of letting the
+ * neighborhood/place missions keep over-filling dining. Finds flow through a
+ * separate product pipeline (need_scout / finds/scout), so it has no feeder.
+ */
+const CATEGORY_FEEDER_MISSION: Partial<Record<RadarCategory, FoundationMissionType>> = {
+  culture: "music_culture_creative_fuel",
+  moves: "sports_activity",
+  events: "events_next_7_days",
+  dining: "new_restaurant_openings",
+  places: "gold_coast_drift",
+};
+
+/** Feeder missions for visible lanes below their surface target, thinnest first. */
+function thinLaneMissions(health: RadarAutopilotHealth): FoundationMission[] {
+  const perCategory = health.perCategoryActive;
+  if (!perCategory) return [];
+  return RADAR_CATEGORIES
+    .map((category) => ({ category, gap: surfaceTargetFor(category) - (perCategory[category] ?? 0) }))
+    .filter((entry) => entry.gap > 0)
+    .sort((a, b) => b.gap - a.gap)
+    .map((entry) => CATEGORY_FEEDER_MISSION[entry.category])
+    .filter((type): type is FoundationMissionType => Boolean(type))
+    .map((type) => mission(type));
+}
+
 function prioritizedMissions(health: RadarAutopilotHealth): FoundationMission[] {
   const missions: FoundationMission[] = [];
   missions.push(mission("holding_promotion_review"));
   if (health.candidateInboxCount > 0) missions.push(mission("library_conversion"));
+  // Feed thin visible lanes before the generic place/event builders so culture,
+  // moves, and events catch up instead of dining/places running away.
+  missions.push(...thinLaneMissions(health));
   if (health.library.places < FOUNDATION_SPRINT_TARGETS.places && !isCandidateInboxNearTarget(health)) missions.push(mission("new_restaurant_openings"));
   if (health.library.events < FOUNDATION_SPRINT_TARGETS.activeEvents && !isCandidateInboxNearTarget(health)) missions.push(mission("events_next_7_days"));
   if (health.sourceCount < FOUNDATION_SPRINT_TARGETS.sources) missions.push(mission("source_building"));

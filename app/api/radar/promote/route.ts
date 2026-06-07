@@ -21,6 +21,7 @@ import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer
 import { promoteHoldingWithService } from "@/lib/radar/autopilot";
 import { preBuildPlansForShownItems } from "@/lib/radar/planPreBuilder";
 import { createRunBudget } from "@/lib/radar/foundationSprint";
+import { readCategoryInventory } from "@/lib/radar/inventoryHealth";
 import { RADAR_PROMOTIONS_PER_RUN } from "@/lib/brain/constants";
 
 export const dynamic = "force-dynamic";
@@ -104,12 +105,17 @@ export async function GET(req: Request) {
       if (pb.errors.length) errors.push(...pb.errors);
     }
 
+    // Per-category snapshot of the board after promoting — lets the owner see at
+    // a glance which lanes are full vs thin (SQL-free observability).
+    const inventory = await readCategoryInventory(ownerUserId, supabase);
+
     return NextResponse.json({
       ok: true,
       materialized,
       promoted,
       reviewed,
       plansBuilt,
+      inventory,
       timeBudgetReached: budget.shouldStopSoon(),
       errors,
     });

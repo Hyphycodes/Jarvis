@@ -4,6 +4,7 @@ import {
 } from "@/lib/brain/constants";
 import type { LibraryHealth } from "@/lib/library/types";
 import type { RadarCampaign } from "@/lib/radar/campaigns";
+import type { RadarCategory } from "@/lib/radar/category";
 import { assessBootstrapNeed } from "@/lib/radar/bootstrapPolicy";
 
 export type RadarAutopilotOperation =
@@ -46,6 +47,13 @@ export type RadarAutopilotHealth = {
   afterWorkReady: boolean;
   circleReady: boolean;
   northReady: boolean;
+  /**
+   * Visible (shown/opened) count per Radar category. Optional: real autopilot
+   * runs populate it (from the active board) to steer discovery toward thin
+   * lanes; mocks/legacy callers may omit it, in which case routing falls back
+   * to the existing global signals.
+   */
+  perCategoryActive?: Record<RadarCategory, number>;
 };
 
 export function chooseRadarAutopilotOperation(input: {
