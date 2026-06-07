@@ -24,13 +24,25 @@ type MaterializerResult = {
 };
 
 const MATERIALIZER_SOURCE = "library_materializer";
-const MAX_INSERTIONS_PER_CALL = 16;
+const DEFAULT_MAX_INSERTIONS_PER_CALL = 16;
+/**
+ * Enrichment states we treat as "done enriching, safe to surface". `enriched`
+ * is the happy path; `nothing_to_fill` (the row already had everything) and
+ * `no_place_match` (Google had no match, but the taste verdict still stands)
+ * are terminal-OK — excluding them stranded ~40 good A/B items forever. The
+ * shown-gate (categoryDataReady, in promoteHoldingWithService) is the real
+ * quality control, so widening here only deepens the discovered pool, never
+ * the visible board.
+ */
+const MATERIALIZE_ENRICHMENT_STATES = ["enriched", "nothing_to_fill", "no_place_match"];
 const STUB_VERDICT_MARKER = "Converted from Candidate Inbox";
 
 export async function materializeEligibleLibraryItems(
   userId: string,
+  opts: { maxInsertions?: number } = {},
 ): Promise<MaterializerResult> {
   const supabase = getSupabaseServiceClient();
+  const maxInsertions = opts.maxInsertions ?? DEFAULT_MAX_INSERTIONS_PER_CALL;
   const result: MaterializerResult = {
     materialized: 0,
     skipped: 0,
@@ -46,7 +58,7 @@ export async function materializeEligibleLibraryItems(
       .from("places_library")
       .select("id, name, slug, place_type, neighborhood, address, lat, lng, cuisine_or_focus, price_level, hours_summary, vibe_keywords, best_for, verdict, verdict_strength, quality_tier, quality_score, seasonal_notes, last_surfaced_at, times_surfaced, image_url")
       .eq("user_id", userId)
-      .eq("enrichment_status", "enriched")
+      .in("enrichment_status", MATERIALIZE_ENRICHMENT_STATES)
       .in("quality_tier", ["A", "B"])
       .gte("quality_score", RADAR_UNDERFILLED_PROMOTION_FLOOR)
       .order("quality_score", { ascending: false })
@@ -94,7 +106,7 @@ export async function materializeEligibleLibraryItems(
       result.skipped++;
       return;
     }
-    if (rows.length >= MAX_INSERTIONS_PER_CALL) {
+    if (rows.length >= maxInsertions) {
       result.skipped++;
       return;
     }
@@ -102,7 +114,12 @@ export async function materializeEligibleLibraryItems(
     rows.push(row);
   };
 
+  // Remember each place's prior surface count so we can stamp lifecycle fields
+  // (last_surfaced_at / times_surfaced) back onto the rows we actually surface.
+  // Without this, rotation/dedup can't tell fresh from stale and re-runs churn.
+  const placeTimesById = new Map<string, number>();
   for (const place of places) {
+    placeTimesById.set(place.id, place.times_surfaced ?? 0);
     maybeQueue(place.id, buildPlaceSurfaceRow(userId, place));
   }
 
@@ -115,6 +132,7 @@ export async function materializeEligibleLibraryItems(
     }
   }
 
+  const surfacedPlaceIds: string[] = [];
   for (const row of rows) {
     try {
       const { error } = await supabase
@@ -124,11 +142,28 @@ export async function materializeEligibleLibraryItems(
         result.errors.push(`${row.title ?? row.source_id ?? "library item"}: ${error.message}`);
       } else {
         result.materialized++;
+        if (typeof row.source_id === "string" && placeTimesById.has(row.source_id)) {
+          surfacedPlaceIds.push(row.source_id);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`${row.title ?? row.source_id ?? "library item"}: ${message}`);
     }
+  }
+
+  // Stamp lifecycle fields on the library places we just surfaced (events live
+  // in current_events, which has no such columns — places only).
+  const surfacedAt = new Date().toISOString();
+  for (const placeId of surfacedPlaceIds) {
+    await supabase
+      .from("places_library")
+      .update({
+        last_surfaced_at: surfacedAt,
+        times_surfaced: (placeTimesById.get(placeId) ?? 0) + 1,
+      })
+      .eq("id", placeId)
+      .eq("user_id", userId);
   }
 
   // Back-fill enrichment data (image, address, coords) into already-surfaced rows

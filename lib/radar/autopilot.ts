@@ -1059,7 +1059,7 @@ async function executeOperation(input: {
  * arbiter of eligibility — the category planner only chooses *which* eligible
  * items occupy each lane's slots. Never empty (if real fits exist), never padded.
  */
-async function promoteHoldingWithService(input: {
+export async function promoteHoldingWithService(input: {
   userId: string;
   supabase: SupabaseClient;
   slots: number;
