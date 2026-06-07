@@ -126,6 +126,26 @@ export const planGrabItemSchema = z.object({
 
 export type PlanGrabItem = z.infer<typeof planGrabItemSchema>;
 
+/**
+ * The LLM frequently emits grab-list items as bare strings, or objects missing
+ * `label` (using `name`/`item`/`reason` instead). Coerce every shape into a
+ * valid grab item and drop ones with no usable label — never hard-fail the
+ * whole plan over a grab list.
+ */
+function coerceGrabItem(value: unknown): { label: string; reason?: string } {
+  if (typeof value === "string") return { label: value.trim().slice(0, 60) };
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    const labelSrc =
+      [o.label, o.name, o.item, o.title, o.reason].find(
+        (v) => typeof v === "string" && v.trim().length > 0,
+      ) ?? "";
+    const reason = typeof o.reason === "string" ? o.reason.slice(0, 160) : undefined;
+    return { label: String(labelSrc).trim().slice(0, 60), reason };
+  }
+  return { label: "" };
+}
+
 // ── Venue facts ─────────────────────────────────────────────────────────────
 // Real, known facts about the venue that power the plan page tiles + links
 // (hero photo, weather target, parking, reservation, clickable maps). The
@@ -165,7 +185,7 @@ export const generatedPlanSchema = z.object({
     .min(1)
     .max(80)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be lowercase-kebab"),
-  plan_type: z.enum(PLAN_TYPES),
+  plan_type: z.enum(PLAN_TYPES).catch("general"),
   is_sequential: z.boolean().optional().default(false),
   status: z.literal("draft").optional().default("draft"),
   starts_at: optionalDatetime,
@@ -180,11 +200,23 @@ export const generatedPlanSchema = z.object({
   best_window: optionalString(180),
   effort_level: z.enum(EFFORT_LEVELS).optional().default("medium"),
   spending_posture: z.enum(SPENDING_POSTURES).optional().default("unknown"),
-  confidence: z.number().min(0).max(1),
+  confidence: z.coerce
+    .number()
+    .catch(0.6)
+    .transform((n) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0.6)),
   primary_move: z.string().min(1).max(220),
   sections: z.array(planSectionSchema).min(2).max(11),
   timeline: z.array(planTimelineEntrySchema).max(8).default([]),
-  grab_list: z.array(planGrabItemSchema).max(8).default([]),
+  grab_list: z
+    .preprocess(
+      (v) =>
+        Array.isArray(v)
+          ? v.map(coerceGrabItem).filter((it) => it.label.length > 0).slice(0, 8)
+          : [],
+      z.array(planGrabItemSchema).max(8),
+    )
+    .catch([])
+    .default([]),
   menu_highlights: z
     .array(
       z.object({

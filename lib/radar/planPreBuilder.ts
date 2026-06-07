@@ -2,12 +2,14 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createStubPlan, fillPlan } from "@/lib/actions/plans";
+import { normalizeRadarCategory } from "@/lib/radar/category";
 
 /** Give up pre-building a plan after this many failed/fallback attempts. */
 const MAX_PLAN_BUILD_ATTEMPTS = 4;
 
 type PreBuildRow = {
   id: string;
+  category: string | null;
   payload: unknown;
 };
 
@@ -16,13 +18,13 @@ export async function preBuildPlansForShownItems(
   supabase: SupabaseClient,
   opts: { maxItems?: number } = {},
 ): Promise<{ built: number; errors: string[] }> {
-  const max = opts.maxItems ?? 2;
+  const max = opts.maxItems ?? 8;
   const errors: string[] = [];
   let built = 0;
 
   const { data: rows, error: queryError } = await supabase
     .from("surfaced_items")
-    .select("id, payload")
+    .select("id, category, payload")
     .eq("user_id", userId)
     .eq("status", "shown")
     .eq("destination", "radar")
@@ -36,6 +38,10 @@ export async function preBuildPlansForShownItems(
 
   const needsPlan = ((rows ?? []) as PreBuildRow[])
     .filter((row) => {
+      // Finds/Style are products — they open the /find buyer-research dossier,
+      // not an outing plan. Building plan_sections for a watch or a jacket only
+      // fails the outing-plan schema and jams the queue. Skip them.
+      if (normalizeRadarCategory(row.category) === "finds") return false;
       const payload = isRecord(row.payload) ? row.payload : null;
       if (payload?.plan_build_exhausted) return false;
       // Skip items the intelligence layer marked as not ready for a plan.
@@ -69,7 +75,10 @@ export async function preBuildPlansForShownItems(
         userId,
         itemId: row.id,
         preserveItemSurface: true,
-        persistFallback: false,
+        // Persist the deterministic plan when the LLM falls back, so a card NEVER
+        // taps into a sectionless plan. A real fallback plan (why/timing/move/
+        // route/cost + per-type sections) beats an empty "building" forever.
+        persistFallback: true,
       });
 
       if (filled.fallbackUsed) {
