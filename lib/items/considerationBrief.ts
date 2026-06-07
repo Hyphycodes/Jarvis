@@ -3,6 +3,7 @@ import "server-only";
 import type { ItemBriefing } from "@/lib/brain/briefingTypes";
 import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
 import type { IndexedItem } from "@/lib/index/types";
+import { labelForRadarCategory, normalizeRadarClassification } from "@/lib/radar/category";
 
 export type ConsiderationVerdict = "move" | "hold" | "watch" | "pass" | "plan";
 export type ConsiderationTone = "positive" | "neutral" | "caution" | "negative";
@@ -101,6 +102,21 @@ export function buildConsiderationBrief(item: IndexedItem): ConsiderationBriefVi
   const bestMove = bestMoveCopy(verdict, briefing, payload);
   const valueSignal = buildValueSignal(item, briefing, indicators);
   const purposeLabel = stringValue(payload.purpose_label) ?? purposeLabelForItem(item);
+  const categoryLabel =
+    labelForRadarCategory(
+      normalizeRadarClassification({
+        category: item.category,
+        type: item.type,
+        title: item.title,
+        subtitle: item.subtitle,
+        description: item.description,
+        locationName: item.locationName,
+        startsAt: item.startsAt,
+        tags: item.tags,
+        reasons: item.reasons,
+        sourcePayload: item.rawPayload,
+      }).category,
+    ) ?? cleanLabel(briefing.display_category || item.category || item.type);
   const briefDisplayDepth =
     readRadarDisplayDepth(payload) ?? displayDepthFor(item, briefing, verdict);
   const facts = buildFacts(item, briefing, location, sourceEvidence, purposeLabel);
@@ -112,7 +128,7 @@ export function buildConsiderationBrief(item: IndexedItem): ConsiderationBriefVi
     verdict,
     verdictLabel: verdict.toUpperCase(),
     verdictTone: toneForVerdict(verdict),
-    categoryLabel: cleanLabel(briefing.display_category || item.category || item.type),
+    categoryLabel,
     typeLabel: item.type ? cleanLabel(item.type) : undefined,
     oneLine: cleanText(briefing.one_line),
     jarvisTake: cleanText(briefing.jarvis_take),

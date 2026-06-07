@@ -14,9 +14,10 @@ function mkRow(opts: {
   entity_type?: string;
   title?: string;
   description?: string | null;
+  raw?: Record<string, unknown>;
 }): RadarCandidateInboxRow {
   idCounter += 1;
-  const raw_payload: Record<string, unknown> = {};
+  const raw_payload: Record<string, unknown> = { ...(opts.raw ?? {}) };
   if (opts.category) raw_payload.category = opts.category;
   if (opts.source) raw_payload.source = opts.source;
   return {
@@ -56,7 +57,7 @@ function countByCategory(entries: QueueEntry[]): Record<string, number> {
   // round-robin across the 3 present lanes → 2 each, dining never dominates
   assert.equal(counts.dining, 2, "dining gets a fair slice, not the whole run");
   assert.equal(counts.culture, 2, "culture advances");
-  assert.equal(counts.style, 2, "style advances");
+  assert.equal(counts.finds, 2, "style/finding advances under Finds");
 }
 
 // ── 2. User intent always leads and is never starved ────────────────────────────
@@ -104,6 +105,36 @@ function countByCategory(entries: QueueEntry[]): Record<string, number> {
     rowCategory(mkRow({ entity_type: "place", title: "Tiny omakase sushi counter" })),
     "dining",
     "keyword derivation routes sushi → dining",
+  );
+  assert.equal(
+    rowCategory(mkRow({
+      category: "moves",
+      entity_type: "place",
+      title: "Bronzeville Winery",
+      raw: { place_type: "restaurant" },
+    })),
+    "dining",
+    "restaurants/wineries do not become moves just because the agent said moves",
+  );
+  assert.equal(
+    rowCategory(mkRow({
+      category: "moves",
+      entity_type: "place",
+      title: "L7 Chicago hotel",
+      raw: { place_type: "hotel", move_kind: "bookable" },
+    })),
+    "places",
+    "hotels stay Places even with a bookable/timing hint",
+  );
+  assert.equal(
+    rowCategory(mkRow({
+      category: "places",
+      entity_type: "place",
+      title: "Lakefront Trail sunrise walk",
+      raw: { sequence: "Start at Oak Street, walk south, finish near North Avenue." },
+    })),
+    "moves",
+    "route/sequence behavior upgrades a trail into a Move",
   );
   assert.equal(
     rowCategory(mkRow({ entity_type: "source", title: "A newsletter" })),

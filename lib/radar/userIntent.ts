@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { convertSingleCandidate, type CandidateConversionResult } from "@/lib/radar/candidateConversion";
 import { preBuildPlansForShownItems } from "@/lib/radar/planPreBuilder";
-import { normalizeRadarCategory, type RadarCategory } from "@/lib/radar/category";
+import { normalizeRadarClassification, type RadarCategory } from "@/lib/radar/category";
 import type { Json } from "@/lib/types/database";
 
 export type UserIntentInput = {
@@ -186,9 +186,13 @@ export async function resolveUserIntentItem(
 
 function resolveCategory(input: UserIntentInput): RadarCategory {
   return (
-    normalizeRadarCategory(input.category) ??
-    normalizeRadarCategory(input.kind) ??
-    normalizeRadarCategory([input.title, input.note].filter(Boolean).join(" ")) ??
+    normalizeRadarClassification({
+      category: input.category,
+      type: input.kind,
+      title: input.title,
+      description: input.note,
+      entityType: input.kind,
+    }).category ??
     "places"
   );
 }

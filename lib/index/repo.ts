@@ -3,7 +3,7 @@ import "server-only";
 import { getViewableProfileId, requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import { normalizeRadarCategory, normalizeRadarClassification } from "@/lib/radar/category";
 import type {
   IndexItemStatus,
   SurfacedItemRow,
@@ -28,12 +28,24 @@ const ALL_DESTINATIONS = new Set<IndexDestination>([
 
 export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
   const payload = isRecord(row.payload) ? row.payload : {};
+  const classification = normalizeRadarClassification({
+    category: row.category,
+    type: row.type,
+    title: row.title,
+    subtitle: row.subtitle,
+    description: row.description,
+    locationName: row.location_name,
+    startsAt: row.starts_at,
+    tags: row.tags,
+    reasons: row.reasons,
+    sourcePayload: payload,
+  });
   return {
     id: row.id,
     source: (row.source ?? "system") as IndexedItem["source"],
     sourceId: row.source_id ?? undefined,
-    type: (row.type ?? "recommendation") as IndexItemType,
-    category: row.category ?? undefined,
+    type: (classification.type ?? row.type ?? "recommendation") as IndexItemType,
+    category: classification.category ?? row.category ?? undefined,
     title: row.title ?? "Untitled",
     subtitle: row.subtitle ?? undefined,
     description: row.description ?? undefined,
@@ -206,6 +218,18 @@ export async function createIndexItem(
 ): Promise<IndexedItem> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
+  const classification = normalizeRadarClassification({
+    category: input.category,
+    type: input.type,
+    title: input.title,
+    subtitle: input.subtitle,
+    description: input.description,
+    locationName: input.locationName,
+    startsAt: input.startsAt,
+    tags: input.tags,
+    reasons: input.reasons,
+    sourcePayload: input.rawPayload,
+  });
   const { data, error } = await supabase
     .from("surfaced_items")
     .insert({
@@ -213,8 +237,8 @@ export async function createIndexItem(
       destination: input.destination,
       source: input.source ?? "system",
       source_id: input.sourceId ?? null,
-      type: input.type,
-      category: normalizeRadarCategory(input.category),
+      type: classification.type ?? input.type,
+      category: classification.category ?? normalizeRadarCategory(input.category),
       title: input.title,
       subtitle: input.subtitle ?? null,
       description: input.description ?? null,

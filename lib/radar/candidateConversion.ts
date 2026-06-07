@@ -10,7 +10,11 @@ import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { assessResultQuality } from "@/lib/sources/resultQuality";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
-import { type RadarCategory } from "@/lib/radar/category";
+import {
+  normalizeRadarClassification,
+  type RadarCategory,
+  typeForRadarCategory,
+} from "@/lib/radar/category";
 import {
   selectFairly,
   rowCategory,
@@ -186,6 +190,7 @@ async function processEntry(
   result: CandidateConversionResult,
 ): Promise<void> {
   const { row, category, userIntent } = entry;
+  const routedCategory = classifyCandidateForRadar(row, category).category;
   result.reviewed++;
   try {
     // ── Cheap negative + junk filters before spending any research $ ──────────
@@ -218,19 +223,19 @@ async function processEntry(
     }
 
     // ── Route by category into the real research/verdict pipelines ────────────
-    if (category === "moves") {
+    if (routedCategory === "moves") {
       await researchAndRouteMove(supabase, userId, row, context, result, userIntent);
       return;
     }
-    if (category && PLACE_LIKE.has(category)) {
-      await researchAndStorePlace(supabase, userId, row, category, context, result, userIntent);
+    if (routedCategory && PLACE_LIKE.has(routedCategory)) {
+      await researchAndStorePlace(supabase, userId, row, routedCategory, context, result, userIntent);
       return;
     }
-    if (category === "events") {
+    if (routedCategory === "events") {
       await tryQueueEvent(supabase, userId, row, result, userIntent);
       return;
     }
-    if (category === "finds") {
+    if (routedCategory === "finds") {
       await researchAndSurfaceStyle(supabase, userId, row, context, result, userIntent);
       return;
     }
@@ -296,6 +301,20 @@ async function researchAndStorePlace(
   const score = clamp01(verdict.verdict_strength);
   const placeSlug = dossier.slug || slug(row.title);
   const now = new Date().toISOString();
+  const normalized = normalizeRadarClassification({
+    category,
+    type: "place",
+    title: dossier.canonical_name,
+    description: dossier.cuisine_or_focus,
+    placeType: dossier.place_type,
+    tags: dossier.vibe_keywords,
+    sourcePayload: {
+      place_type: dossier.place_type,
+      cuisine_or_focus: dossier.cuisine_or_focus,
+      vibe_keywords: dossier.vibe_keywords,
+    },
+  });
+  const libraryCategory = normalized.category ?? category;
 
   const { data: existing } = await supabase
     .from("places_library")
@@ -358,7 +377,7 @@ async function researchAndStorePlace(
     reason: {
       summary: `Researched into ${category} Library with a real verdict (${score.toFixed(2)}). Awaiting enrichment + materialization.`,
       library_id: libraryId,
-      category,
+      category: libraryCategory,
       quality_score: score,
       surface_priority: verdict.surface_priority,
       user_intent: userIntent,
@@ -373,7 +392,7 @@ async function researchAndStorePlace(
   // instead of leaving it in the discovered → promotion queue, but only once it
   // carries a real verdict above the surfacing floor (never an unresearched stub).
   if (userIntent && libraryId && score >= RADAR_UNDERFILLED_PROMOTION_FLOOR) {
-    await surfaceUserIntentPlace(supabase, userId, libraryId, category, score);
+    await surfaceUserIntentPlace(supabase, userId, libraryId, libraryCategory, score);
   }
 }
 
@@ -399,6 +418,20 @@ async function surfaceUserIntentPlace(
     .maybeSingle();
   if (!lib) return;
   const place = lib as Record<string, unknown>;
+  const classification = normalizeRadarClassification({
+    category,
+    type: "place",
+    title: stringValue(place.name),
+    subtitle: stringValue(place.neighborhood),
+    description:
+      stringValue(place.cuisine_or_focus) ??
+      stringValue(place.verdict),
+    placeType: stringValue(place.cuisine_or_focus),
+    tags: arrayValue(place.vibe_keywords),
+    sourcePayload: place,
+  });
+  const surfacedCategory = classification.category ?? category;
+  const surfacedType = classification.type ?? typeForRadarCategory(surfacedCategory);
   const now = new Date().toISOString();
   const { data: existing } = await supabase
     .from("surfaced_items")
@@ -412,7 +445,15 @@ async function surfaceUserIntentPlace(
   if (existingId) {
     await supabase
       .from("surfaced_items")
-      .update({ destination: "radar", status: "shown", score: surfaceScore, planning_state: "saved_to_radar", updated_at: now })
+      .update({
+        destination: "radar",
+        status: "shown",
+        type: surfacedType,
+        category: surfacedCategory,
+        score: surfaceScore,
+        planning_state: "saved_to_radar",
+        updated_at: now,
+      })
       .eq("id", existingId)
       .eq("user_id", userId);
     return;
@@ -423,8 +464,8 @@ async function surfaceUserIntentPlace(
     status: "shown",
     source: "user_intent",
     source_id: libraryId,
-    type: "place",
-    category,
+    type: surfacedType,
+    category: surfacedCategory,
     title: stringValue(place.name) ?? "Saved place",
     subtitle: stringValue(place.neighborhood),
     description: stringValue(place.verdict),
@@ -457,6 +498,21 @@ async function researchAndRouteMove(
   result: CandidateConversionResult,
   userIntent: boolean,
 ): Promise<void> {
+  const corrected = classifyCandidateForRadar(row, "moves");
+  if (corrected.category && corrected.category !== "moves") {
+    if (PLACE_LIKE.has(corrected.category)) {
+      await researchAndStorePlace(supabase, userId, row, corrected.category, context, result, userIntent);
+      return;
+    }
+    if (corrected.category === "events") {
+      await tryQueueEvent(supabase, userId, row, result, userIntent);
+      return;
+    }
+    if (corrected.category === "finds") {
+      await researchAndSurfaceStyle(supabase, userId, row, context, result, userIntent);
+      return;
+    }
+  }
   const moveKindRaw = stringValue(readRaw(row, ["move_kind"]));
   const sequence = stringValue(readRaw(row, ["sequence"]));
   const bestTime = stringValue(readRaw(row, ["best_time"]));
@@ -733,7 +789,7 @@ async function researchAndSurfaceStyle(
         summary: dossier
           ? `Style candidate held below the surfacing bar (${dossier.strength.toFixed(2)}).`
           : "Style candidate needs enrichment before surfacing.",
-        category: "style",
+        category: "finds",
         source: "candidate_research",
       },
     });
@@ -746,7 +802,7 @@ async function researchAndSurfaceStyle(
     .from("surfaced_items")
     .select("id")
     .eq("user_id", userId)
-    .eq("category", "style")
+    .eq("category", "finds")
     .ilike("title", row.title)
     .not("status", "in", "(archived,passed)")
     .limit(1);
@@ -770,8 +826,8 @@ async function researchAndSurfaceStyle(
       status: userIntent ? "shown" : "discovered",
       source: userIntent ? "user_intent" : "category_agent",
       source_id: row.id,
-      type: "style",
-      category: "style",
+      type: "product",
+      category: "finds",
       title: row.title,
       subtitle: dossier.price,
       description: dossier.verdict,
@@ -794,7 +850,7 @@ async function researchAndSurfaceStyle(
     status: "library",
     reason: {
       summary: `Researched and surfaced style item (${dossier.strength.toFixed(2)}).`,
-      category: "style",
+      category: "finds",
       quality_score: dossier.strength,
       user_intent: userIntent,
       source: "candidate_research",
@@ -885,6 +941,30 @@ function buildMinimalContext(founder: Partial<FounderProfileRow> | null): BrainC
     northPillars: [],
     people: [],
   };
+}
+
+function classifyCandidateForRadar(
+  row: RadarCandidateInboxRow,
+  category: RadarCategory | null,
+) {
+  return normalizeRadarClassification({
+    category,
+    type: stringValue(readRaw(row, ["type"])) ?? row.entity_type,
+    title: row.title,
+    description: row.description,
+    entityType: row.entity_type,
+    placeType:
+      stringValue(readRaw(row, ["place_type"])) ??
+      stringValue(readRaw(row, ["quick_classification"])),
+    venueType:
+      stringValue(readRaw(row, ["venue_type"])) ??
+      stringValue(readRaw(row, ["event_type"])),
+    moveKind: stringValue(readRaw(row, ["move_kind"])),
+    sequence: stringValue(readRaw(row, ["sequence"])),
+    startsAt: readStartsAt(row),
+    tags: tags(row),
+    sourcePayload: row.raw_payload,
+  });
 }
 
 async function markCandidate(

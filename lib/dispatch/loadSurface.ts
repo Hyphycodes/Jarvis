@@ -19,7 +19,12 @@ import {
   RADAR_PER_CATEGORY_ACTIVE_TARGET,
 } from "@/lib/brain/constants";
 import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
-import { normalizeRadarCategory, type RadarCategory } from "@/lib/radar/category";
+import {
+  labelForRadarCategory,
+  normalizeRadarCategory,
+  normalizeRadarClassification,
+  type RadarCategory,
+} from "@/lib/radar/category";
 import {
   buildConsiderationBrief,
   heroImageForItem,
@@ -729,7 +734,8 @@ function toRadarCard(
   planRef: RadarPlanRef,
   libraryImage?: string,
 ): RadarCard {
-  const category = mapCategory(item.type, item.category);
+  const normalizedCategory = visibleRadarCategory(item);
+  const category = mapCategory(item.type, normalizedCategory ?? item.category);
   const planSlug = planRef.slug;
   const briefing = item.briefing;
   const consideration = buildConsiderationBrief(item);
@@ -777,7 +783,7 @@ function toRadarCard(
     category,
     title: actionTitle || briefing?.display_title || item.title,
     summary: editorialLine ?? "",
-    displayCategory: briefing?.display_category,
+    displayCategory: labelForRadarCategory(normalizedCategory) ?? briefing?.display_category,
     sourceLabel: item.sourceLabel ?? stringValue(payload.source_label),
     sourceBrain: stringValue(payload.source_brain),
     budgetTier: visibleRadarCategory(item) === "finds" ? readFindBudgetTier(item) : undefined,
@@ -858,7 +864,18 @@ function selectBalancedRadarInventory(items: IndexedItem[]): IndexedItem[] {
 }
 
 function visibleRadarCategory(item: IndexedItem): RadarCategory | null {
-  return normalizeRadarCategory(item.category ?? item.type);
+  return normalizeRadarClassification({
+    category: item.category,
+    type: item.type,
+    title: item.title,
+    subtitle: item.subtitle,
+    description: item.description,
+    locationName: item.locationName,
+    startsAt: item.startsAt,
+    tags: item.tags,
+    reasons: item.reasons,
+    sourcePayload: item.rawPayload,
+  }).category;
 }
 
 function isVisibleRadarItem(item: IndexedItem, category: RadarCategory): boolean {
@@ -1355,6 +1372,13 @@ function mapCategory(
   category: IndexedItem["category"],
 ): RadarCard["category"] {
   const normalized = category?.toLowerCase();
+  const canonical = normalizeRadarCategory(category);
+  if (canonical === "moves") return "move";
+  if (canonical === "dining") return "dining";
+  if (canonical === "events") return "events";
+  if (canonical === "culture") return "culture";
+  if (canonical === "places") return "place";
+  if (canonical === "finds") return "finds";
   if (normalized === "move" || normalized === "health") return "move";
   if (normalized === "dining") return "dining";
   if (normalized === "event" || normalized === "events") return "events";
@@ -1391,7 +1415,7 @@ function mapCategory(
     case "health":
       return "health";
     case "recommendation":
-      return "move";
+      return "opportunity";
     case "real_estate":
       return "idea";
     default:

@@ -3,6 +3,7 @@
 // exercised directly with tsx.
 
 import {
+  normalizeRadarClassification,
   normalizeRadarCategory,
   RADAR_CATEGORIES,
   type RadarCategory,
@@ -68,10 +69,27 @@ export function selectFairly(rows: RadarCandidateInboxRow[], budget: number): Qu
 
 /** The candidate's Radar category: explicit agent tag first, then derived. */
 export function rowCategory(row: RadarCandidateInboxRow): RadarCategory | null {
-  const explicit = normalizeRadarCategory(
-    stringValue(readRaw(row, ["category"])) ?? reasonCategory(row),
-  );
-  if (explicit) return explicit;
+  const normalized = normalizeRadarClassification({
+    category: stringValue(readRaw(row, ["category"])) ?? reasonCategory(row),
+    type: stringValue(readRaw(row, ["type"])) ?? row.entity_type,
+    title: row.title,
+    description: row.description,
+    entityType: row.entity_type,
+    placeType:
+      stringValue(readRaw(row, ["place_type"])) ??
+      stringValue(readRaw(row, ["quick_classification"])),
+    venueType:
+      stringValue(readRaw(row, ["venue_type"])) ??
+      stringValue(readRaw(row, ["event_type"])),
+    moveKind: stringValue(readRaw(row, ["move_kind"])),
+    sequence: stringValue(readRaw(row, ["sequence"])),
+    startsAt:
+      stringValue(readRaw(row, ["startsAt"])) ??
+      stringValue(readRaw(row, ["starts_at"])),
+    tags: tags(row),
+    sourcePayload: row.raw_payload,
+  });
+  if (normalized.category) return normalized.category;
   if (row.entity_type === "event") return "events";
   if (row.entity_type === "source") return null;
   const derived = normalizeRadarCategory(

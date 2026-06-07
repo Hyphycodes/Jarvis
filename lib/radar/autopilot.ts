@@ -23,7 +23,11 @@ import {
   mergeRadarIntelligencePayload,
 } from "@/lib/intelligence/radarCurator";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import {
+  normalizeRadarCategory,
+  normalizeRadarClassification,
+  type RadarCategory,
+} from "@/lib/radar/category";
 import { categoryDataReady, scoreCategoryCouncil, type HoldReason } from "@/lib/brain/categoryCouncils";
 import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 import { runExecutiveCouncil, type ExecutiveCandidate, type ExecutiveDecision } from "@/lib/brain/executiveCouncil";
@@ -1097,7 +1101,7 @@ async function promoteHoldingWithService(input: {
   for (const row of activeRowList) {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
-    const category = normalizeRadarCategory(item.category ?? radar.category);
+    const category = normalizedRadarCategoryForItem(item, radar.category);
     if (!category) continue; // uncategorized legacy item — not in any category lane
     activeMembers.push({
       id: row.id,
@@ -1124,7 +1128,7 @@ async function promoteHoldingWithService(input: {
   for (const row of reviewedRows) {
     const item = rowToIndexedItem(row);
     const radar = enrichRadarItem({ item, context });
-    const category = normalizeRadarCategory(item.category ?? radar.category);
+    const category = normalizedRadarCategoryForItem(item, radar.category);
     if (!category || !isPromotableWhenUnderfilled(radar)) {
       reasons.push(`${item.title}: ${radar.radarDisposition} · score ${radar.score.toFixed(2)} · confidence ${radar.confidence.toFixed(2)}.`);
       gateRejectedIds.push(row.id);
@@ -1225,9 +1229,10 @@ async function promoteHoldingWithService(input: {
       meta.row.payload ?? meta.radar.item.rawPayload,
       meta.radar,
     );
-    const category = normalizeRadarCategory(meta.row.category ?? meta.radar.category);
+    const item = rowToIndexedItem(meta.row);
+    const category = normalizedRadarCategoryForItem(item, meta.radar.category);
     const categoryCouncil = category
-      ? scoreCategoryCouncil(rowToIndexedItem(meta.row), category)
+      ? scoreCategoryCouncil(item, category)
       : null;
     const exec = execMeta.get(id);
     const payload = {
@@ -1266,7 +1271,7 @@ async function promoteHoldingWithService(input: {
     }
     await markSourceProducedForPromotion({
       row: meta.row,
-      item: rowToIndexedItem(meta.row),
+      item,
       supabase: input.supabase,
       userId: input.userId,
       producedAt: new Date().toISOString(),
@@ -1330,7 +1335,7 @@ async function promoteHoldingWithService(input: {
 }
 
 function isActiveRadarInventoryItem(item: ReturnType<typeof rowToIndexedItem>): boolean {
-  const category = normalizeRadarCategory(item.category ?? item.type);
+  const category = normalizedRadarCategoryForItem(item);
   if (category === "finds") {
     const dossier = readFindsDossier(item.rawPayload);
     if (!dossier || !findIsReady(dossier)) return false;
@@ -1338,6 +1343,26 @@ function isActiveRadarInventoryItem(item: ReturnType<typeof rowToIndexedItem>): 
     return userRequested || readFindBudgetTier(dossier) !== "hold";
   }
   return evaluateActiveRadarItem(item).allowed;
+}
+
+function normalizedRadarCategoryForItem(
+  item: ReturnType<typeof rowToIndexedItem>,
+  fallbackCategory?: string | null,
+): RadarCategory | null {
+  return (
+    normalizeRadarClassification({
+      category: item.category ?? fallbackCategory,
+      type: item.type,
+      title: item.title,
+      subtitle: item.subtitle,
+      description: item.description,
+      locationName: item.locationName,
+      startsAt: item.startsAt,
+      tags: item.tags,
+      reasons: item.reasons,
+      sourcePayload: item.rawPayload,
+    }).category ?? normalizeRadarCategory(fallbackCategory ?? item.category ?? item.type)
+  );
 }
 
 function readFindsDossier(payload: unknown): ProductDossier | null {

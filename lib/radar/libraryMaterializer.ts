@@ -2,7 +2,11 @@ import "server-only";
 
 import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
 import { scoreCategoryCouncil } from "@/lib/brain/categoryCouncils";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import {
+  normalizeRadarClassification,
+  type RadarCategory,
+  typeForRadarCategory,
+} from "@/lib/radar/category";
 import { attributePillar } from "@/lib/north/attributionMap";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import type { IndexedItem } from "@/lib/index/types";
@@ -171,6 +175,7 @@ export async function materializeEligibleLibraryItems(
 
 function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): SurfacedItemInsert {
   const category = deriveCategory(place);
+  const type = category ? typeForRadarCategory(category) : "place";
   const pillarTags = attributePillar({
     category,
     tags: place.vibe_keywords ?? [],
@@ -182,7 +187,7 @@ function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): Surfaced
     status: "discovered",
     source: MATERIALIZER_SOURCE,
     source_id: place.id,
-    type: "place",
+    type,
     category,
     title: place.name,
     subtitle: place.neighborhood ?? null,
@@ -217,20 +222,20 @@ function deriveCategory(place: {
   cuisine_or_focus?: string | null;
   vibe_keywords?: string[] | null;
   name: string;
-}): string | null {
-  // place_type is unreliable because bulk conversion historically defaulted it
-  // to "restaurant", so only trust explicit non-default values.
-  if (place.place_type && place.place_type !== "restaurant") {
-    return normalizeRadarCategory(place.place_type);
-  }
-  const signal = [
-    place.cuisine_or_focus ?? "",
-    ...(place.vibe_keywords ?? []),
-    place.name,
-  ]
-    .join(" ")
-    .toLowerCase();
-  return normalizeRadarCategory(signal);
+}): RadarCategory | null {
+  return normalizeRadarClassification({
+    category: place.place_type,
+    type: place.place_type,
+    title: place.name,
+    placeType: place.place_type,
+    description: place.cuisine_or_focus,
+    tags: place.vibe_keywords ?? [],
+    sourcePayload: {
+      place_type: place.place_type,
+      cuisine_or_focus: place.cuisine_or_focus,
+      vibe_keywords: place.vibe_keywords,
+    },
+  }).category;
 }
 
 function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedItemInsert | null {

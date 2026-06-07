@@ -174,8 +174,10 @@ function mapCategoryToBadge(category: string): Card["category"] {
       return "SOURCE LEAD";
     case "finds":
       return "FINDS";
+    case "opportunity":
+      return "OPPORTUNITY";
     default:
-      return "MOVE";
+      return "ITEM";
   }
 }
 

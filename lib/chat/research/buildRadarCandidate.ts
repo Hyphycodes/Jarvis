@@ -2,7 +2,7 @@ import "server-only";
 
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { recordAiAction } from "@/lib/chat/aiActions";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import { normalizeRadarClassification } from "@/lib/radar/category";
 import type { Json } from "@/lib/types/database";
 import type {
   ImageAnalysisResult,
@@ -65,6 +65,16 @@ export async function buildRadarCandidate(input: {
     taste_fit: input.taste,
     planning_state: "saved_to_radar",
   } as Json;
+  const fallbackType = itemType(input.analysis, input.research);
+  const classification = normalizeRadarClassification({
+    category: input.analysis?.extracted.cuisine_or_category ?? input.research?.subjectType,
+    type: fallbackType,
+    title,
+    subtitle: subtitle(input.analysis, input.research),
+    description: description(input.analysis, input.research, input.taste),
+    locationName: input.research?.location ?? input.analysis?.extracted.location,
+    sourcePayload: payload,
+  });
 
   const { data, error } = await supabase
     .from("surfaced_items")
@@ -74,8 +84,8 @@ export async function buildRadarCandidate(input: {
       source: "ai",
       source_id: input.observationId,
       source_observation_id: input.observationId,
-      type: itemType(input.analysis, input.research),
-      category: normalizeRadarCategory(input.analysis?.extracted.cuisine_or_category ?? input.research?.subjectType),
+      type: classification.type ?? fallbackType,
+      category: classification.category,
       title,
       subtitle: subtitle(input.analysis, input.research),
       description: description(input.analysis, input.research, input.taste),

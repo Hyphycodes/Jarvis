@@ -7,7 +7,7 @@ import {
 } from "@/lib/brain/tasteConstitution";
 import { scoreSourceTrust, safeDomain } from "@/lib/intelligence/sourceTrust";
 import { scoreCategoryCouncil } from "@/lib/brain/categoryCouncils";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import { normalizeRadarClassification } from "@/lib/radar/category";
 import type { BrainContextPacket } from "@/lib/brain/types";
 import type { ItemBriefing } from "@/lib/brain/briefingTypes";
 import type { IndexedItem } from "@/lib/index/types";
@@ -215,7 +215,18 @@ export function evaluateCandidateForRadar(
   // Phase 2: lane-specialized council. Adds its concerns to the flag set BEFORE
   // the critic scores them (so e.g. a generic dining room is penalized), and
   // contributes a category-aware score to the confidence blend.
-  const radarCategory = normalizeRadarCategory(candidate.category);
+  const radarCategory = normalizeRadarClassification({
+    category: candidate.category,
+    type: candidate.type,
+    title: candidate.title,
+    subtitle: candidate.subtitle,
+    description: candidate.description,
+    locationName: candidate.locationName,
+    startsAt: candidate.startsAt,
+    tags: candidate.tags,
+    reasons: candidate.reasons,
+    sourcePayload: candidate.rawPayload,
+  }).category;
   const categoryCouncil = radarCategory
     ? scoreCategoryCouncil(candidate, radarCategory, context.brainContext)
     : null;

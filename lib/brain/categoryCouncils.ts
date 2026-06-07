@@ -2,7 +2,7 @@ import "server-only";
 
 import type { IndexedItem } from "@/lib/index/types";
 import type { BrainContextPacket } from "@/lib/brain/types";
-import { normalizeRadarCategory, type RadarCategory } from "@/lib/radar/category";
+import { normalizeRadarClassification, normalizeRadarCategory, type RadarCategory } from "@/lib/radar/category";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 
@@ -323,7 +323,19 @@ export function scoreCategoryCouncil(
  * hold reasons so holds are debuggable.
  */
 export function categoryDataReady(item: IndexedItem, categoryInput?: string | null): CategoryDataReadiness {
-  const category = normalizeRadarCategory(categoryInput ?? item.category) ?? normalizeRadarCategory(item.category);
+  const category =
+    normalizeRadarClassification({
+      category: categoryInput ?? item.category,
+      type: item.type,
+      title: item.title,
+      subtitle: item.subtitle,
+      description: item.description,
+      locationName: item.locationName,
+      startsAt: item.startsAt,
+      tags: item.tags,
+      reasons: item.reasons,
+      sourcePayload: item.rawPayload,
+    }).category ?? normalizeRadarCategory(item.category);
   const holdReasons: HoldReason[] = [];
 
   if (!category) {

@@ -5,7 +5,7 @@ import { upsertSourceFromCandidate } from "@/lib/library/sourceGraph";
 import { upsertCandidateInboxFromIndexedCandidate } from "@/lib/radar/candidateInbox";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { rowToIndexedItem } from "@/lib/index/repo";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import { normalizeRadarClassification } from "@/lib/radar/category";
 import { resolveItemImage, isHttpUrl } from "@/lib/sources/images";
 import type {
   CreateIndexedItemInput,
@@ -59,10 +59,22 @@ export async function ingestCandidates(input: {
   await Promise.all(
     input.candidates.map(async (candidate) => {
       if (isHttpUrl(candidate.imageUrl)) return;
+      const classification = normalizeRadarClassification({
+        category: candidate.category,
+        type: candidate.type,
+        title: candidate.title,
+        subtitle: candidate.subtitle,
+        description: candidate.description,
+        locationName: candidate.locationName,
+        startsAt: candidate.startsAt,
+        tags: candidate.tags,
+        reasons: candidate.reasons,
+        sourcePayload: candidate.rawPayload,
+      });
       const resolved = await resolveItemImage({
         name: candidate.title,
         city: candidate.locationName ?? null,
-        category: normalizeRadarCategory(candidate.category),
+        category: classification.category,
         url: candidate.url ?? null,
         lat: candidate.lat ?? null,
         lng: candidate.lng ?? null,
@@ -231,13 +243,25 @@ async function upsertOne(
     return "skipped";
   }
 
+  const classification = normalizeRadarClassification({
+    category: candidate.category,
+    type: candidate.type,
+    title: candidate.title,
+    subtitle: candidate.subtitle,
+    description: candidate.description,
+    locationName: candidate.locationName,
+    startsAt: candidate.startsAt,
+    tags: candidate.tags,
+    reasons: candidate.reasons,
+    sourcePayload: candidate.rawPayload,
+  });
   const base: SurfacedItemInsert = {
     user_id: userId,
     destination,
     source,
     source_id: candidate.sourceId ?? null,
-    type: candidate.type,
-    category: normalizeRadarCategory(candidate.category),
+    type: classification.type ?? candidate.type,
+    category: classification.category,
     title: candidate.title,
     subtitle: candidate.subtitle ?? null,
     description: candidate.description ?? null,

@@ -9,7 +9,10 @@ import {
 import { buildJarvisContext } from "@/lib/intelligence/context";
 import { enrichRadarItem } from "@/lib/intelligence/core";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
-import { normalizeRadarCategory } from "@/lib/radar/category";
+import {
+  normalizeRadarCategory,
+  normalizeRadarClassification,
+} from "@/lib/radar/category";
 import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 import { isPromotableWhenUnderfilled } from "@/lib/intelligence/radarCurator";
 import { readItemIntent } from "@/lib/items/intents";
@@ -175,7 +178,19 @@ export async function readRadarPromotionDiagnostics(input: {
 }
 
 function isActiveRadarInventoryItem(item: IndexedItem): boolean {
-  const category = normalizeRadarCategory(item.category ?? item.type);
+  const category =
+    normalizeRadarClassification({
+      category: item.category,
+      type: item.type,
+      title: item.title,
+      subtitle: item.subtitle,
+      description: item.description,
+      locationName: item.locationName,
+      startsAt: item.startsAt,
+      tags: item.tags,
+      reasons: item.reasons,
+      sourcePayload: item.rawPayload,
+    }).category ?? normalizeRadarCategory(item.category ?? item.type);
   if (category === "finds") {
     const dossier = readFindsDossier(item.rawPayload);
     if (!dossier || !findIsReady(dossier)) return false;

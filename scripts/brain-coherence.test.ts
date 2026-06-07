@@ -59,6 +59,7 @@ import { sourceKeyFromUrl } from "../lib/library/sourceIdentity";
 import { scoreSourceQuality } from "../lib/library/sourceScoring";
 import type { ExplorationLane } from "../lib/brain/tasteStrategist";
 import { RADAR_MIN_ACTIVE_ITEM_TARGET } from "../lib/brain/constants";
+import { normalizeRadarClassification } from "../lib/radar/category";
 import type { IndexedItem } from "../lib/index/types";
 import type { RadarItem } from "../lib/intelligence/types";
 
@@ -159,6 +160,49 @@ function testPassPatternsReduceScore() {
   const alreadyPassed = scoreIndexedItem(item({ status: "passed" })).total;
   assert.ok(penalized < base);
   assert.ok(alreadyPassed < penalized);
+}
+
+function testRadarCategoryNormalizerRespectsPlacesAndMoves() {
+  assert.deepEqual(
+    normalizeRadarClassification({
+      category: "moves",
+      type: "move",
+      title: "Bronzeville Winery",
+      placeType: "restaurant",
+      startsAt: "2026-06-06T20:00:00.000Z",
+    }),
+    { category: "dining", type: "restaurant" },
+  );
+  assert.deepEqual(
+    normalizeRadarClassification({
+      category: "moves",
+      type: "move",
+      title: "L7 Chicago hotel",
+      placeType: "hotel",
+      moveKind: "bookable",
+      startsAt: "2026-06-06T18:00:00.000Z",
+    }),
+    { category: "places", type: "place" },
+  );
+  assert.deepEqual(
+    normalizeRadarClassification({
+      category: "places",
+      type: "place",
+      title: "Lakefront Trail",
+      placeType: "trail",
+    }),
+    { category: "places", type: "place" },
+  );
+  assert.deepEqual(
+    normalizeRadarClassification({
+      category: "places",
+      type: "place",
+      title: "Lakefront Trail sunrise walk",
+      placeType: "trail",
+      sequence: "Start at Oak Street, walk south, finish near North Avenue.",
+    }),
+    { category: "moves", type: "move" },
+  );
 }
 
 function testCircleAndPlansFlowIntoChatContext() {
@@ -1390,6 +1434,7 @@ async function main() {
   testBehaviorPatterns();
   testNorthAlignmentInfluencesScore();
   testPassPatternsReduceScore();
+  testRadarCategoryNormalizerRespectsPlacesAndMoves();
   testCircleAndPlansFlowIntoChatContext();
   testVoiceCommandActionChips();
   testContextTraceSummarySurvivesEmptyContext();
