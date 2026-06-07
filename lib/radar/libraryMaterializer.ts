@@ -1,9 +1,11 @@
 import "server-only";
 
 import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
+import { scoreCategoryCouncil } from "@/lib/brain/categoryCouncils";
 import { normalizeRadarCategory } from "@/lib/radar/category";
 import { attributePillar } from "@/lib/north/attributionMap";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import type { IndexedItem } from "@/lib/index/types";
 import type {
   CurrentEventRow,
   Json,
@@ -49,9 +51,10 @@ export async function materializeEligibleLibraryItems(
       .from("current_events")
       .select("id, title, event_type, venue_name, starts_at, ends_at, ticket_url, price_level, vibe_keywords, description, verdict, verdict_strength, library_place_id")
       .eq("user_id", userId)
-      .eq("status", "pending")
+      .eq("status", "verified")
       .gt("starts_at", new Date().toISOString())
       .lt("starts_at", new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString())
+      .not("ticket_url", "is", null)
       .gte("verdict_strength", RADAR_UNDERFILLED_PROMOTION_FLOOR)
       .order("starts_at", { ascending: true })
       .limit(20),
@@ -100,7 +103,12 @@ export async function materializeEligibleLibraryItems(
   }
 
   for (const event of events) {
-    maybeQueue(event.id, buildEventSurfaceRow(userId, event));
+    const row = buildEventSurfaceRow(userId, event);
+    if (row) {
+      maybeQueue(event.id, row);
+    } else {
+      result.skipped++;
+    }
   }
 
   for (const row of rows) {
@@ -225,7 +233,11 @@ function deriveCategory(place: {
   return normalizeRadarCategory(signal);
 }
 
-function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedItemInsert {
+function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedItemInsert | null {
+  if (!hasOfficialEventTime(event.starts_at) || !event.venue_name?.trim() || !isHttpUrl(event.ticket_url)) {
+    return null;
+  }
+  const council = scoreCategoryCouncil(eventIndexedItem(event), "events");
   return {
     user_id: userId,
     destination: "radar",
@@ -246,12 +258,22 @@ function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedI
     url: event.ticket_url ?? null,
     image_url: null,
     score: event.verdict_strength ?? null,
+    source_label: council.sourceLabel ?? null,
     reasons: event.vibe_keywords ?? [],
     tags: event.vibe_keywords ?? [],
     payload: {
       source_layer: "current_events",
       event_type: event.event_type,
       ticket_url: event.ticket_url,
+      source_label: council.sourceLabel ?? null,
+      category_council: {
+        category: council.category,
+        score: council.score,
+        signals: council.signals,
+        flags: council.flags,
+      },
+      official_starts_at: event.starts_at,
+      event_time_locked: true,
       price_level: event.price_level,
       library_place_id: event.library_place_id,
       pillar_tags: attributePillar({
@@ -261,4 +283,45 @@ function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedI
       }),
     } satisfies Json,
   };
+}
+
+function eventIndexedItem(event: CurrentEventRow): IndexedItem {
+  const now = new Date().toISOString();
+  return {
+    id: event.id,
+    source: "events",
+    sourceId: event.id,
+    type: "event",
+    category: "events",
+    title: event.title,
+    subtitle: event.venue_name,
+    description: event.verdict ?? event.description ?? undefined,
+    locationName: event.venue_name,
+    startsAt: event.starts_at,
+    endsAt: event.ends_at ?? undefined,
+    url: event.ticket_url ?? undefined,
+    rawPayload: {
+      source_layer: "current_events",
+      ticket_url: event.ticket_url,
+      event_type: event.event_type,
+    } satisfies Json,
+    status: "discovered",
+    destination: "radar",
+    score: event.verdict_strength ?? undefined,
+    reasons: event.vibe_keywords ?? [],
+    tags: event.vibe_keywords ?? [],
+    createdAt: event.created_at ?? now,
+    updatedAt: event.updated_at ?? now,
+  };
+}
+
+function hasOfficialEventTime(value: string | null | undefined): value is string {
+  if (!value) return false;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(value);
+}
+
+function isHttpUrl(value: unknown): value is string {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
 }

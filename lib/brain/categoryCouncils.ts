@@ -103,93 +103,189 @@ function weatherFavorsOutdoor(ctx?: BrainContextPacket): boolean | null {
 
 // ── Per-category rubrics (data-driven config) ────────────────────────────────
 
+type SubJudgeResult = {
+  name: string;
+  delta: number;
+  signal?: string;
+  flag?: string;
+  order?: number;
+};
+
+type SubJudge = (item: IndexedItem, ctx?: BrainContextPacket) => SubJudgeResult;
+
 type RubricFn = (item: IndexedItem, ctx?: BrainContextPacket) => Omit<CategoryCouncilResult, "category" | "sourceLabel"> & { label?: string };
 
-const RUBRICS: Record<RadarCategory, RubricFn> = {
-  dining: (item) => {
-    const briefing = readBriefingFromPayload(item.rawPayload);
-    const signals: string[] = [];
-    const flags: string[] = [];
-    let s = baseConfidence(item);
-    const occasion = briefing?.occasion_type ?? "";
-    if (/dinner|date|food|big_night/.test(occasion)) { s += 0.05; signals.push("occasion-fit"); }
-    if (hasLocation(item)) { s += 0.04; signals.push("located"); }
+function named(name: string, delta: number, detail?: { signal?: string; flag?: string }): SubJudgeResult {
+  return { name, delta, ...detail };
+}
+
+function runSubJudges(
+  item: IndexedItem,
+  judges: SubJudge[],
+  ctx?: BrainContextPacket,
+): Omit<CategoryCouncilResult, "category" | "sourceLabel"> & { label?: string } {
+  const results = judges.map((judge, order) => ({ ...judge(item, ctx), order }));
+  const signals = results
+    .filter((result) => result.delta > 0 || result.signal)
+    .map(formatJudgeSignal);
+  const flags = results
+    .filter((result) => result.delta < 0 || result.flag)
+    .flatMap(formatJudgeFlag);
+  const winner = results
+    .filter((result) => result.delta > 0)
+    .sort((a, b) => b.delta - a.delta || a.order - b.order)[0];
+
+  return {
+    score: clamp01(baseConfidence(item) + results.reduce((sum, result) => sum + result.delta, 0)),
+    signals,
+    flags,
+    label: winner ? labelForJudge(winner.name) : undefined,
+  };
+}
+
+function formatJudgeSignal(result: SubJudgeResult): string {
+  const score = result.delta >= 0 ? `+${result.delta.toFixed(2)}` : result.delta.toFixed(2);
+  return result.signal ? `${result.name}:${score}:${result.signal}` : `${result.name}:${score}`;
+}
+
+function formatJudgeFlag(result: SubJudgeResult): string[] {
+  const score = result.delta >= 0 ? `+${result.delta.toFixed(2)}` : result.delta.toFixed(2);
+  const namedFlag = result.flag ? `${result.name}:${score}:${result.flag}` : `${result.name}:${score}`;
+  return result.flag ? [namedFlag, result.flag] : [namedFlag];
+}
+
+function labelForJudge(name: string): string {
+  return name
+    .split("/")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("/");
+}
+
+function hasPayloadValue(item: IndexedItem, keys: string[]): boolean {
+  const p = payloadRecord(item);
+  return keys.some((key) => Boolean(p[key]));
+}
+
+function hasProductUrl(item: IndexedItem): boolean {
+  const p = payloadRecord(item);
+  return Boolean(item.url || p.product_url || p.retailer_url || p.purchase_url || p.url);
+}
+
+function hasPriceSignal(item: IndexedItem): boolean {
+  const p = payloadRecord(item);
+  return Boolean(p.price || p.priceEstimate || p.price_estimate || p.extracted_price || /[$]\d+/.test(textBlob(item)));
+}
+
+function hasImageSignal(item: IndexedItem): boolean {
+  const p = payloadRecord(item);
+  return Boolean(item.imageUrl || p.image_url || p.thumbnail_url || p.hero_image_url);
+}
+
+function hasOfficialStartTime(item: IndexedItem): boolean {
+  if (!item.startsAt) return false;
+  const d = new Date(item.startsAt);
+  if (Number.isNaN(d.getTime())) return false;
+  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(item.startsAt);
+}
+
+function daysUntil(iso?: string): number | null {
+  if (!iso) return null;
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return null;
+  return (time - Date.now()) / 86_400_000;
+}
+
+const DINING_JUDGES: SubJudge[] = [
+  (item) => named("food-credibility", hasSource(item) || verdictStrength(item) ? 0.04 : -0.04, hasSource(item) ? { signal: "credible-source" } : { flag: "weak_evidence" }),
+  (item) => named("room/atmosphere", /room|atmosphere|intimate|booth|bar|patio|lounge|lighting|grown-up|date/i.test(textBlob(item)) ? 0.04 : 0),
+  (item) => {
+    const occasion = readBriefingFromPayload(item.rawPayload)?.occasion_type ?? "";
+    return named("occasion-fit", /dinner|date|food|big_night|celebration/i.test(occasion) || /dinner|date night|celebration/i.test(textBlob(item)) ? 0.05 : 0);
+  },
+  (item) => named("reservation-reality", /reservation|resy|opentable|book|walk.?in|hours/i.test(textBlob(item)) || hasPayloadValue(item, ["reservation_url", "hours"]) ? 0.03 : 0),
+  (item) => named("second-stop", hasPayloadValue(item, ["second_stop"]) || /cigar|dessert|nightcap|after/i.test(textBlob(item)) ? 0.03 : 0),
+  (item) => named("logistics", hasLocation(item) ? 0.04 : -0.05, hasLocation(item) ? { signal: "located" } : { flag: "missing_location" }),
+  (item) => named("anti-generic", GENERIC_RE.test(textBlob(item)) ? -0.18 : 0.02, GENERIC_RE.test(textBlob(item)) ? { flag: "generic" } : { signal: "specific" }),
+];
+
+const EVENT_JUDGES: SubJudge[] = [
+  (item) => named("date/time confidence", hasOfficialStartTime(item) ? 0.07 : -0.3, hasOfficialStartTime(item) ? { signal: "official-time" } : { flag: "missing_date" }),
+  (item) => named("ticket/source confidence", hasSource(item) ? 0.06 : -0.18, hasSource(item) ? { signal: "source-confirmed" } : { flag: "missing_source" }),
+  (item) => named("venue fit", hasLocation(item) ? 0.04 : -0.08, hasLocation(item) ? { signal: "venue-known" } : { flag: "missing_location" }),
+  (item) => named("cultural/social value", /jazz|dj|live|chef|wine|gallery|opening|comedy|speaker|festival|theatre|art/i.test(textBlob(item)) ? 0.04 : 0),
+  (item) => {
+    const days = daysUntil(item.startsAt);
+    if (days == null) return named("urgency/expiry", -0.08, { flag: "missing_date" });
+    if (days < 0) return named("urgency/expiry", -0.4, { flag: "expired_event" });
+    if (days <= 10) return named("urgency/expiry", 0.06, { signal: "time-sensitive" });
+    return named("urgency/expiry", 0);
+  },
+  (item) => named("companion fit", /friend|date|group|circle|with|bring|social/i.test(textBlob(item)) ? 0.03 : 0),
+];
+
+const CULTURE_JUDGES: SubJudge[] = [
+  (item) => named("depth", /art|architecture|museum|gallery|exhibit|jazz|classical|film|design|heritage|craft|opera|lecture|author|screening/i.test(textBlob(item)) ? 0.06 : 0),
+  (item) => named("taste-stretch", /new|rare|one-night|experimental|independent|craft|avant|retrospective|underground/i.test(textBlob(item)) ? 0.04 : 0),
+  (item) => named("relevance-to-current-interests", /design|architecture|music|craft|heritage|style|food|ownership|fitness/i.test(textBlob(item)) ? 0.04 : 0),
+  (item) => named("venue/timing fit", hasLocation(item) || item.startsAt ? 0.03 : -0.04, hasLocation(item) || item.startsAt ? undefined : { flag: "weak_evidence" }),
+  (item) => named("anti-bait", SHALLOW_CULTURE_RE.test(textBlob(item)) ? -0.2 : 0.02, SHALLOW_CULTURE_RE.test(textBlob(item)) ? { flag: "shallow" } : { signal: "not-content-bait" }),
+];
+
+const PLACES_JUDGES: SubJudge[] = [
+  (item) => named("place quality", verdictStrength(item) != null || hasReason(item) ? 0.05 : -0.04, hasReason(item) ? { signal: "reasoned" } : { flag: "low_confidence" }),
+  (item) => named("neighborhood fit", Boolean(item.locationName || item.address) ? 0.04 : 0),
+  (item) => named("drift-pattern fit", /walk|drift|neighborhood|nearby|route|stop|wander|loop/i.test(textBlob(item)) ? 0.04 : 0),
+  (item, ctx) => {
+    if (!OUTDOOR_RE.test(textBlob(item))) return named("weather/time fit", 0);
+    const fav = weatherFavorsOutdoor(ctx);
+    if (fav === true) return named("weather/time fit", 0.05, { signal: "weather-fit" });
+    if (fav === false) return named("weather/time fit", -0.08, { flag: "weather-off" });
+    return named("weather/time fit", 0);
+  },
+  (item) => named("photo/location confidence", hasImageSignal(item) || typeof item.lat === "number" || typeof item.lng === "number" ? 0.04 : -0.03),
+  (item) => named("nearby-stop", /coffee|cigar|dessert|bookstore|bar|lunch|after|nearby/i.test(textBlob(item)) ? 0.03 : 0),
+];
+
+const MOVE_JUDGES: SubJudge[] = [
+  (item) => named("energy fit", /low.?pressure|easy|walk|lift|run|bike|reset|active|quick|after work|morning/i.test(textBlob(item)) ? 0.04 : 0),
+  (item, ctx) => {
+    if (!OUTDOOR_RE.test(textBlob(item))) return named("weather/time fit", 0.02);
+    const fav = weatherFavorsOutdoor(ctx);
+    if (fav === true) return named("weather/time fit", 0.05, { signal: "weather-fit" });
+    if (fav === false) return named("weather/time fit", -0.08, { flag: "weather-off" });
+    return named("weather/time fit", 0);
+  },
+  (item) => named("social-context", /solo|friend|date|group|family|circle|bring|with/i.test(textBlob(item)) ? 0.03 : 0),
+  (item) => named("execution-friction", /reservation required|sold out|far|hard to book|waitlist|complicated/i.test(textBlob(item)) ? -0.08 : 0.03),
+  (item) => {
     const p = payloadRecord(item);
-    if (p.second_stop || /cigar|dessert|nightcap|after/.test(textBlob(item))) { s += 0.03; signals.push("second-stop"); }
-    if (GENERIC_RE.test(textBlob(item))) { s -= 0.18; flags.push("generic"); }
-    return { score: clamp01(s), signals, flags, label: signals.includes("occasion-fit") ? "Occasion-fit" : undefined };
+    const hasSequence = Boolean(p.sequence || p.steps || p.route) || SEQUENCE_RE.test(textBlob(item));
+    return named("sequence quality", hasSequence ? 0.05 : -0.1, hasSequence ? { signal: "sequence" } : { flag: "vague-sequence" });
   },
+  (item) => named("payoff", hasReason(item) || /payoff|worth it|reset|better|memory|skill|progress|good story/i.test(textBlob(item)) ? 0.04 : 0),
+];
 
-  events: (item) => {
-    const signals: string[] = [];
-    const flags: string[] = [];
-    let s = baseConfidence(item);
-    if (item.startsAt) { s += 0.05; signals.push("dated"); } else { s -= 0.25; flags.push("no-date"); }
-    if (hasSource(item)) { s += 0.05; signals.push("ticket-source"); } else { flags.push("no-source"); }
-    // Urgency: events in the next ~10 days escalate; far-out or past de-escalate.
-    if (item.startsAt) {
-      const days = (new Date(item.startsAt).getTime() - Date.now()) / 86_400_000;
-      if (days < 0) { s -= 0.4; flags.push("expired_event"); }
-      else if (days <= 10) { s += 0.06; signals.push("urgent"); }
-    }
-    return { score: clamp01(s), signals, flags, label: signals.includes("urgent") ? "Time-sensitive" : undefined };
-  },
-
-  culture: (item) => {
-    const signals: string[] = [];
-    const flags: string[] = [];
-    let s = baseConfidence(item);
-    const blob = textBlob(item);
-    if (/art|architecture|museum|gallery|exhibit|jazz|classical|film|design|heritage|craft|opera/.test(blob)) {
-      s += 0.05; signals.push("depth");
-    }
-    if (SHALLOW_CULTURE_RE.test(blob)) { s -= 0.2; flags.push("shallow"); }
-    if (hasSource(item)) signals.push("sourced");
-    return { score: clamp01(s), signals, flags, label: signals.includes("depth") ? "Depth" : undefined };
-  },
-
-  places: (item, ctx) => {
-    const signals: string[] = [];
-    const flags: string[] = [];
-    let s = baseConfidence(item);
-    if (item.locationName || item.address) { s += 0.04; signals.push("located"); }
-    if (typeof item.lat === "number" && typeof item.lng === "number") signals.push("mapped");
-    const outdoor = OUTDOOR_RE.test(textBlob(item));
-    if (outdoor) {
-      const fav = weatherFavorsOutdoor(ctx);
-      if (fav === true) { s += 0.05; signals.push("weather-fit"); }
-      else if (fav === false) { s -= 0.08; flags.push("weather-off"); }
-    }
-    return { score: clamp01(s), signals, flags, label: signals.includes("weather-fit") ? "Weather-fit" : undefined };
-  },
-
-  moves: (item, ctx) => {
-    const signals: string[] = [];
-    const flags: string[] = [];
-    let s = baseConfidence(item);
-    const p = payloadRecord(item);
-    const blob = textBlob(item);
-    const hasSequence = Boolean(p.sequence || p.steps || p.route) || SEQUENCE_RE.test(blob);
-    if (hasSequence) { s += 0.05; signals.push("sequence"); } else { s -= 0.1; flags.push("vague-sequence"); }
-    if (OUTDOOR_RE.test(blob)) {
-      const fav = weatherFavorsOutdoor(ctx);
-      if (fav === true) { s += 0.05; signals.push("weather-fit"); }
-      else if (fav === false) { s -= 0.08; flags.push("weather-off"); }
-    }
-    return { score: clamp01(s), signals, flags, label: signals.includes("weather-fit") ? "Weather-fit" : undefined };
-  },
-
-  finds: (item) => {
-    // Style now feeds Finds; judged by the Finds readiness gate, not here.
+const FINDS_JUDGES: SubJudge[] = [
+  (item) => named("need strength", /replace|upgrade|need|missing|worn|daily|hosting|travel|fitness|wardrobe/i.test(textBlob(item)) ? 0.05 : 0),
+  (item) => named("product quality", hasPayloadValue(item, ["brand", "maker", "rating", "reviews"]) || verdictStrength(item) ? 0.05 : -0.03),
+  (item) => named("price/value", hasPriceSignal(item) ? 0.04 : -0.03),
+  (item) => named("specs/materials", /wool|cotton|leather|steel|linen|dimensions|material|spec|fit|size/i.test(textBlob(item)) || hasPayloadValue(item, ["materials", "specs"]) ? 0.04 : 0),
+  (item) => named("taste fit", /classic|tailored|quiet|minimal|premium|refined|heritage|texture|matte/i.test(textBlob(item)) ? 0.04 : 0),
+  (item) => named("buyability", hasProductUrl(item) ? 0.06 : -0.18, hasProductUrl(item) ? { signal: "buyable" } : { flag: "missing_product_url" }),
+  (item) => {
     const dossier = readFindsDossier(item);
     const ready = dossier ? findIsReady(dossier) : false;
-    return {
-      score: ready ? clamp01(baseConfidence(item)) : 0.3,
-      signals: ready ? ["product-ready"] : ["researching"],
-      flags: ready ? [] : ["needs-enrichment"],
-      label: undefined,
-    };
+    return named("direct-product-data quality", ready ? 0.05 : -0.18, ready ? { signal: "product-ready" } : { flag: "needs-enrichment" });
   },
+];
+
+const RUBRICS: Record<RadarCategory, RubricFn> = {
+  dining: (item, ctx) => runSubJudges(item, DINING_JUDGES, ctx),
+  events: (item, ctx) => runSubJudges(item, EVENT_JUDGES, ctx),
+  culture: (item, ctx) => runSubJudges(item, CULTURE_JUDGES, ctx),
+  places: (item, ctx) => runSubJudges(item, PLACES_JUDGES, ctx),
+  moves: (item, ctx) => runSubJudges(item, MOVE_JUDGES, ctx),
+  finds: (item, ctx) => runSubJudges(item, FINDS_JUDGES, ctx),
 };
 
 const LABEL_PREFIX: Record<RadarCategory, string> = {
@@ -237,8 +333,9 @@ export function categoryDataReady(item: IndexedItem, categoryInput?: string | nu
 
   switch (category) {
     case "events": {
-      if (!item.startsAt) holdReasons.push("missing_date");
-      if (!hasSource(item) && !hasLocation(item)) holdReasons.push("missing_source");
+      if (!hasOfficialStartTime(item)) holdReasons.push("missing_date");
+      if (!hasLocation(item)) holdReasons.push("missing_location");
+      if (!hasSource(item)) holdReasons.push("missing_source");
       break;
     }
     case "dining": {

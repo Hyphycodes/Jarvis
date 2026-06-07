@@ -662,6 +662,7 @@ export interface Database {
           expires_at: string | null;
           url: string | null;
           image_url: string | null;
+          source_label: string | null;
           occasion_type: string | null;
           source_observation_id: string | null;
           confidence: number | null;
@@ -695,6 +696,7 @@ export interface Database {
           expires_at?: string | null;
           url?: string | null;
           image_url?: string | null;
+          source_label?: string | null;
           occasion_type?: string | null;
           source_observation_id?: string | null;
           confidence?: number | null;
@@ -728,6 +730,7 @@ export interface Database {
           expires_at?: string | null;
           url?: string | null;
           image_url?: string | null;
+          source_label?: string | null;
           occasion_type?: string | null;
           source_observation_id?: string | null;
           confidence?: number | null;

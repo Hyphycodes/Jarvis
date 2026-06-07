@@ -4,7 +4,7 @@ import { EmptyTab } from "@/components/empty/EmptyTab";
 import { RadarVisual } from "@/components/empty/Visuals";
 import { dateLabel } from "@/lib/dateLabel";
 
-const CHIPS = ["Dining", "Culture", "Places", "Events"] as const;
+const CHIPS = ["Moves", "Events", "Dining", "Culture", "Places", "Finds"] as const;
 
 export function RadarEmpty() {
   return (

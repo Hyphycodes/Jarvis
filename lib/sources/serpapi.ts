@@ -24,6 +24,32 @@ export type SerpShoppingResult = {
   product_id?: string;
 };
 
+export type SerpGoogleEventResult = {
+  title?: string;
+  date?: {
+    start_date?: string;
+    when?: string;
+  };
+  address?: string[];
+  link?: string;
+  event_location_map?: {
+    link?: string;
+  };
+  venue?: {
+    name?: string;
+    rating?: number;
+    reviews?: number;
+    link?: string;
+  };
+  ticket_info?: Array<{
+    source?: string;
+    link?: string;
+    link_type?: string;
+  }>;
+  description?: string;
+  thumbnail?: string;
+};
+
 function key(): string {
   const k = process.env.SERPAPI_KEY;
   if (!k) throw new ApiError("SERPAPI_KEY not set", "serpapi", 0);
@@ -64,5 +90,29 @@ export async function searchProducts(input: {
       },
     );
     return data.shopping_results ?? [];
+  });
+}
+
+export async function searchGoogleEvents(input: {
+  query: string;
+  location?: string;
+  maxResults?: number;
+}): Promise<SerpGoogleEventResult[]> {
+  const cacheKey = `serpapi:events:${input.query}:${input.location ?? ""}:${input.maxResults ?? 10}`;
+  return cached(cacheKey, TTL.events, async () => {
+    const data = await fetchJson<{ events_results?: SerpGoogleEventResult[] }>(
+      BASE,
+      {
+        service: "serpapi",
+        query: {
+          engine: "google_events",
+          q: input.query,
+          location: input.location,
+          api_key: key(),
+          hl: "en",
+        },
+      },
+    );
+    return (data.events_results ?? []).slice(0, Math.min(input.maxResults ?? 10, 20));
   });
 }

@@ -62,6 +62,7 @@ export type IndexedItem = {
   expiresAt?: string;
   url?: string;
   imageUrl?: string;
+  sourceLabel?: string;
   rawPayload: Json;
   briefing?: ItemBriefing;
   status: IndexItemStatus;

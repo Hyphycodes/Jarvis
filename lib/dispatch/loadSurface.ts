@@ -778,6 +778,7 @@ function toRadarCard(
     title: actionTitle || briefing?.display_title || item.title,
     summary: editorialLine ?? "",
     displayCategory: briefing?.display_category,
+    sourceLabel: item.sourceLabel ?? stringValue(payload.source_label),
     sourceBrain: stringValue(payload.source_brain),
     budgetTier: visibleRadarCategory(item) === "finds" ? readFindBudgetTier(item) : undefined,
     purposeLabel,

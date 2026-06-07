@@ -31,6 +31,7 @@ type Card = {
   planSlug?: string;
   canGeneratePlan: boolean;
   filter: Filter;
+  sourceLabel?: string;
   sourceBrain?: string;
   budgetTier?: RadarPayloadCard["budgetTier"];
 };
@@ -71,6 +72,7 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
     planSlug: item.planSlug,
     canGeneratePlan: Boolean(!item.planSlug && item.actions.openPlan),
     filter,
+    sourceLabel: item.sourceLabel,
     sourceBrain: item.sourceBrain,
     budgetTier: item.budgetTier,
   };
@@ -534,10 +536,15 @@ function RadarCard({
           }
         >
           <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-gold/80">
-              {isFind
-                ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
-                : card.category}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[0.2em]">
+              <span className="text-muted-gold/80">
+                {isFind
+                  ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
+                  : card.category}
+              </span>
+              {card.sourceLabel ? (
+                <span className="text-muted-gold/48">{card.sourceLabel}</span>
+              ) : null}
             </div>
             <h2 className="mt-3 font-serif text-[28px] leading-[1.06] tracking-[-0.005em] text-warm-ivory">
               {card.title}

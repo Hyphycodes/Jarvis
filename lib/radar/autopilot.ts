@@ -24,7 +24,7 @@ import {
 } from "@/lib/intelligence/radarCurator";
 import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { normalizeRadarCategory } from "@/lib/radar/category";
-import { categoryDataReady, type HoldReason } from "@/lib/brain/categoryCouncils";
+import { categoryDataReady, scoreCategoryCouncil, type HoldReason } from "@/lib/brain/categoryCouncils";
 import { assessFindBudget, findIsReady, type BudgetTier, type ProductDossier } from "@/lib/brain/productResearcher";
 import { runExecutiveCouncil, type ExecutiveCandidate, type ExecutiveDecision } from "@/lib/brain/executiveCouncil";
 import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
@@ -1225,10 +1225,25 @@ async function promoteHoldingWithService(input: {
       meta.row.payload ?? meta.radar.item.rawPayload,
       meta.radar,
     );
+    const category = normalizeRadarCategory(meta.row.category ?? meta.radar.category);
+    const categoryCouncil = category
+      ? scoreCategoryCouncil(rowToIndexedItem(meta.row), category)
+      : null;
     const exec = execMeta.get(id);
     const payload = {
       ...(basePayload as Record<string, unknown>),
       shown_at: now,
+      ...(categoryCouncil
+        ? {
+            source_label: categoryCouncil.sourceLabel ?? null,
+            category_council: {
+              category: categoryCouncil.category,
+              score: categoryCouncil.score,
+              signals: categoryCouncil.signals,
+              flags: categoryCouncil.flags,
+            },
+          }
+        : {}),
       ...(exec
         ? { exec: { attention_rank: exec.attentionRank, surface: exec.surface, why_now: exec.why_now, intent_boosted: exec.intentBoosted } }
         : {}),
@@ -1239,6 +1254,7 @@ async function promoteHoldingWithService(input: {
         destination: "radar",
         status: "shown",
         score: meta.composite,
+        source_label: categoryCouncil?.sourceLabel ?? null,
         payload,
         updated_at: now,
       })

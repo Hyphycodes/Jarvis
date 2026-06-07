@@ -46,6 +46,7 @@ export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
     expiresAt: row.expires_at ?? undefined,
     url: row.url ?? undefined,
     imageUrl: row.image_url ?? readImageUrlFromPayload(payload) ?? undefined,
+    sourceLabel: row.source_label ?? stringValue(payload.source_label) ?? undefined,
     rawPayload: row.payload,
     briefing: readBriefingFromPayload(row.payload) ?? undefined,
     status: row.status,
