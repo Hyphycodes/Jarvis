@@ -12,7 +12,6 @@ import { listIndexItems } from "@/lib/index/repo";
 import { readBriefingFromPayload } from "@/lib/brain/briefingTypes";
 import { actionTitleForItem } from "@/lib/brain/actionTitles";
 import { buildNorthLifeCadence } from "@/lib/brain/lifeCadence";
-import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
 import { purposeLabelForItem } from "@/lib/brain/purposeLabels";
 import {
   RADAR_ACTIVE_ITEM_LIMIT,
@@ -306,17 +305,13 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
 
 export const loadRadarSurface: Loader<RadarCard[]> = async () => {
   try {
-    // Pull the full available pool — not just already-promoted items. Promotion
-    // (discovered→shown) is a separate throttled step, and most high-score
-    // inventory is currently parked in `holding` (displaced there by earlier
-    // selection bugs). The render must fill each lane to target from everything
-    // available now, so read both radar + holding at discovered/shown/opened.
-    // The 0.72 council gate in selectBalancedRadarInventory still decides what's
-    // worthy — this only widens the input set, never lowers the bar.
+    // Render only displays what the pipeline already promoted to `shown`/`opened`
+    // — it never re-judges. The quality gate lives upstream in promotion now, so
+    // an item that reached `shown` has already earned its place on the shelf.
     const items = await listIndexItems({
-      destination: ["radar", "holding"],
-      status: ["shown", "opened", "discovered"],
-      limit: RADAR_ACTIVE_ITEM_LIMIT * 6,
+      destination: "radar",
+      status: ["shown", "opened"],
+      limit: RADAR_ACTIVE_ITEM_LIMIT * 3,
     });
     const visibleItems = selectBalancedRadarInventory(items);
     const [withPlanRefs, libraryImages] = await Promise.all([
@@ -863,30 +858,11 @@ function selectBalancedRadarInventory(items: IndexedItem[]): IndexedItem[] {
   const selected: IndexedItem[] = [];
   for (const category of VISIBLE_RADAR_CATEGORY_ORDER) {
     const lane = (byCategory.get(category) ?? [])
-      // Render-complete cards first (a built plan and/or already shown) so a
-      // still-building backfill item lands in the last slot, never the top —
-      // then the existing within-lane comparator. Fills the lane to 7 from the
-      // available pool while keeping tappable cards on top.
-      .sort((a, b) => {
-        const completeness = renderCompletePriority(b) - renderCompletePriority(a);
-        if (completeness !== 0) return completeness;
-        return compareRadarItemsWithinLane(a, b);
-      })
+      .sort(compareRadarItemsWithinLane)
       .slice(0, RADAR_PER_CATEGORY_ACTIVE_TARGET);
     selected.push(...lane);
   }
   return orderBalancedAllFeed(selected).slice(0, RADAR_ACTIVE_ITEM_LIMIT);
-}
-
-/**
- * How "ready to show" a card is: a stored plan ref (tappable) and/or already
- * promoted to shown. Higher ranks first so the backfilled `discovered` items
- * (which may still be having their plan built) fill the tail of each lane.
- */
-function renderCompletePriority(item: IndexedItem): number {
-  const hasPlan = Boolean(readPlanSlug(item.rawPayload) || readPlanId(item.rawPayload));
-  const shown = item.status === "shown" || item.status === "opened";
-  return (hasPlan ? 2 : 0) + (shown ? 1 : 0);
 }
 
 function visibleRadarCategory(item: IndexedItem): RadarCategory | null {
@@ -911,7 +887,9 @@ function isVisibleRadarItem(item: IndexedItem, category: RadarCategory): boolean
     const budget = readFindBudgetTier(item);
     return String(item.source) === "user_intent" || budget !== "hold";
   }
-  return evaluateActiveRadarItem(item).allowed;
+  // Render no longer re-judges non-finds items: reaching status=shown already
+  // earned the place. The decision-council gate moved upstream into promotion.
+  return true;
 }
 
 function orderBalancedAllFeed(items: IndexedItem[]): IndexedItem[] {

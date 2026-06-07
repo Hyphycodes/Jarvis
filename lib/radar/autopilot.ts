@@ -22,7 +22,7 @@ import {
   isPromotableWhenUnderfilled,
   mergeRadarIntelligencePayload,
 } from "@/lib/intelligence/radarCurator";
-import { evaluateActiveRadarItem } from "@/lib/intelligence/radarFrontRoom";
+import { evaluateActiveRadarItem, radarItemHardBlocked } from "@/lib/intelligence/radarFrontRoom";
 import {
   normalizeRadarCategory,
   normalizeRadarClassification,
@@ -1148,6 +1148,13 @@ export async function promoteHoldingWithService(input: {
     const category = normalizedRadarCategoryForItem(item, radar.category);
     if (!category || !isPromotableWhenUnderfilled(radar)) {
       reasons.push(`${item.title}: ${radar.radarDisposition} · score ${radar.score.toFixed(2)} · confidence ${radar.confidence.toFixed(2)}.`);
+      gateRejectedIds.push(row.id);
+      continue;
+    }
+    // Junk gate (moved here from render): flagged items must never reach `shown`,
+    // since the render no longer re-judges. Promotion is the single quality gate.
+    if (radarItemHardBlocked(item)) {
+      reasons.push(`${item.title}: blocked by quality flag (junk gate).`);
       gateRejectedIds.push(row.id);
       continue;
     }

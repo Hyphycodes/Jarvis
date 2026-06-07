@@ -78,6 +78,20 @@ export function evaluateActiveRadarItem(
   };
 }
 
+/**
+ * Whether an item carries a hard quality-block flag (junk: social/instagram
+ * noise, directory/seo spam, fake_luxury, corny, hype, expired, not_actionable,
+ * etc.). Promotion uses this as the single junk gate now that render no longer
+ * re-judges — flagged items must never reach status=shown.
+ */
+export function radarItemHardBlocked(
+  item: IndexedItem,
+  brainContext?: BrainContextPacket,
+): boolean {
+  const council = evaluateCandidateForRadar(item, { brainContext });
+  return council.negative_flags.some((flag) => HARD_ACTIVE_BLOCK_FLAGS.has(flag));
+}
+
 function readDisposition(
   payload: unknown,
   surface: "radar" | "today" | "plan",
