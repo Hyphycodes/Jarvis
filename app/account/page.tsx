@@ -8,6 +8,7 @@ import {
   Gear,
   Lock,
   LogOut,
+  Shirt,
   Sparkle,
   User,
 } from "@/components/icons";
@@ -106,6 +107,12 @@ export default async function AccountPage() {
           icon={<Sparkle size={20} />}
           title="Tastemakers"
           description="Promoters, DJs, chefs, and curators whose moves you follow."
+        />
+        <AccountNavRow
+          href="/wardrobe"
+          icon={<Shirt size={20} />}
+          title="Closet"
+          description="Wardrobe inventory, gaps, and questions from your photos."
         />
         <AccountNavRow
           href="/settings"

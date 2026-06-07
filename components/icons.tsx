@@ -111,6 +111,15 @@ export function User({ size = 16, className = "" }: IconProps) {
   );
 }
 
+export function Shirt({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M9 4l3 2 3-2" />
+      <path d="M7 5L3.5 8.5l3 3L8 10v10h8V10l1.5 1.5 3-3L17 5l-2-1a4 4 0 0 1-6 0L7 5z" />
+    </svg>
+  );
+}
+
 export function Clock({ size = 16, className = "" }: IconProps) {
   return (
     <svg {...svgProps(size)} className={className}>
