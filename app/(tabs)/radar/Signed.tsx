@@ -544,9 +544,6 @@ function RadarCard({
                   ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
                   : card.category}
               </span>
-              {card.sourceLabel ? (
-                <span className="text-muted-gold/48">{card.sourceLabel}</span>
-              ) : null}
             </div>
             <h2 className="mt-3 font-serif text-[28px] leading-[1.06] tracking-[-0.005em] text-warm-ivory">
               {card.title}
