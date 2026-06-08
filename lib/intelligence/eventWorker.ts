@@ -1,4 +1,5 @@
 import "server-only";
+import { hasRealEventTime } from "@/lib/radar/engine/events/config";
 
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildBrainContext } from "@/lib/brain/context";
@@ -46,10 +47,9 @@ type EventVerification = {
 };
 
 function hasOfficialEventTime(value: string | null | undefined): value is string {
-  if (!value) return false;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return false;
-  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(value);
+  // Judges LOCAL wall-clock midnight (not UTC) so a real 7 PM Chicago show
+  // (00:00 UTC) is not mistaken for a date-only listing. See hasRealEventTime.
+  return hasRealEventTime(value);
 }
 
 function isHttpUrl(value: unknown): value is string {

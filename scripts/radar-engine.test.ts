@@ -25,7 +25,7 @@ import { assessLaneReadiness } from "../lib/radar/engine/laneReadiness";
 import { radarItemReadyForFeature } from "../lib/radar/engine/radarReadiness";
 import { evaluateRecommendationFloor } from "../lib/radar/engine/recommendationFloor";
 import { pillarsForItem } from "../lib/radar/engine/pillars";
-import { classifyEventSubLibrary } from "../lib/radar/engine/events/config";
+import { classifyEventSubLibrary, parseSerpEventDate, hasRealEventTime } from "../lib/radar/engine/events/config";
 import {
   assessTruth,
   assessUrgency,
@@ -489,6 +489,40 @@ check("selectEventsShelf: sub-library variety + venue cap + urgency bump", () =>
   assert.ok(ids.includes("a") && !ids.includes("b")); // venue cap drops the 2nd Green Mill
   assert.ok(ids.includes("e") && ids.includes("f")); // variety + urgency keep food/outdoor
   assert.ok(featured.filter((f) => f.sub_library === "events_music").length <= 3);
+});
+
+// ── events: SerpAPI date parsing + real-time guard (Events rescue) ────────────
+check("parseSerpEventDate: parses 'when' with a time range (start time wins)", () => {
+  // "Sat, Aug 15, 7 – 10 PM" → Aug 15, 19:00 America/Chicago (CDT, -5) = 00:00Z next day.
+  const iso = parseSerpEventDate("Sat, Aug 15, 7 – 10 PM", "Aug 15");
+  assert.ok(iso, "should parse");
+  const local = new Date(iso!).toLocaleString("en-US", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  assert.equal(local, "19:00"); // real 7 PM Chicago, not dropped
+});
+
+check("parseSerpEventDate: falls back to start_date when 'when' has no time", () => {
+  const iso = parseSerpEventDate("Some Festival", "Sep 3"); // when carries no month/day
+  assert.ok(iso);
+  const parts = new Date(iso!).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "2-digit", hourCycle: "h23" });
+  assert.ok(parts.includes("Sep 3")); // date kept
+  assert.ok(parts.includes("19")); // default evening window, never midnight
+});
+
+check("parseSerpEventDate: rejects unparseable, rolls past dates to next year", () => {
+  assert.equal(parseSerpEventDate(null, null), null);
+  assert.equal(parseSerpEventDate("no date here", null), null);
+  const iso = parseSerpEventDate("Jan 5, 8 PM", "Jan 5"); // past in-year → next year
+  assert.ok(iso && new Date(iso).getTime() > Date.now());
+});
+
+check("hasRealEventTime: keeps 7 PM Chicago (00:00 UTC), drops local midnight", () => {
+  // 7 PM CDT show stored as 00:00 UTC — the bug that killed real evening events.
+  assert.equal(hasRealEventTime("2026-08-16T00:00:00Z"), true);
+  assert.equal(hasRealEventTime("2026-08-16T19:00:00-05:00"), true);
+  // A genuine LOCAL midnight (date-only artifact) → not a real time.
+  assert.equal(hasRealEventTime("2026-08-16T05:00:00Z"), false); // 00:00 America/Chicago (CDT)
+  assert.equal(hasRealEventTime(null), false);
+  assert.equal(hasRealEventTime("garbage"), false);
 });
 
 // ── culture: classification ────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ import {
   expiresAtFor,
   type AssessableEvent,
 } from "@/lib/radar/engine/events/assess";
-import { classifyEventSubLibrary } from "@/lib/radar/engine/events/config";
+import { classifyEventSubLibrary, hasRealEventTime } from "@/lib/radar/engine/events/config";
 import { readOperatingPreferences } from "@/lib/operating/readOperatingPreferences";
 import type { Json } from "@/lib/types/database";
 
@@ -54,6 +54,9 @@ const LOCKED_STATUSES = ["saved", "planned", "passed", "completed"];
 export type EventsEngineResult = {
   scouted: number;
   scoutedStructured: number;
+  /** SerpAPI candidates PROPOSED before dedup/insert — proves the structured
+   *  source is returning real events (distinct from how many were new). */
+  scoutedProposed: number;
   verified: number;
   held: number;
   rejected: number;
@@ -76,6 +79,7 @@ export async function runEventsEngine(input: {
   const result: EventsEngineResult = {
     scouted: 0,
     scoutedStructured: 0,
+    scoutedProposed: 0,
     verified: 0,
     held: 0,
     rejected: 0,
@@ -106,6 +110,7 @@ export async function runEventsEngine(input: {
     try {
       const structured = await scoutAllEventSubLibraries({ userId: input.userId, supabase });
       result.scoutedStructured = structured.reduce((s, r) => s + r.added, 0);
+      result.scoutedProposed = structured.reduce((s, r) => s + r.proposed, 0);
     } catch (err) {
       result.errors.push(`scout(serp): ${msg(err)}`);
     }
@@ -500,13 +505,14 @@ function firstUrlDeep(value: unknown): string | null {
   return null;
 }
 
-/** A real future instant — rejects midnight-only "dates" (T00:00) that carry no
- *  real time, so dateless culture-ish listings don't masquerade as dated events. */
+/** A real FUTURE instant with a real clock time. Uses local wall-clock midnight
+ *  (not UTC) so 7 PM Chicago shows (00:00 UTC) aren't dropped, while genuinely
+ *  date-only listings still don't masquerade as dated events. */
 function hasOfficialFutureTime(v: string | null): boolean {
   if (!v) return false;
   const t = new Date(v).getTime();
   if (!Number.isFinite(t) || t <= Date.now()) return false;
-  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(v);
+  return hasRealEventTime(v);
 }
 
 function eventWhyNow(e: EventRow): string {

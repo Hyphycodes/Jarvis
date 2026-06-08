@@ -9,6 +9,7 @@ import {
   EVENTS_SUBLIBRARIES,
   EVENT_SUBLIBRARIES,
   classifyEventSubLibrary,
+  parseSerpEventDate,
   type EventSubLibrary,
 } from "@/lib/radar/engine/events/config";
 
@@ -78,7 +79,7 @@ export async function scoutAllEventSubLibraries(input: {
       for (const ev of events) {
         const title = ev.title?.trim();
         const venue = ev.venue?.name?.trim() || (ev.address ?? [])[0]?.trim() || null;
-        const startsAt = parseSerpDate(ev.date?.when ?? ev.date?.start_date ?? null);
+        const startsAt = parseSerpEventDate(ev.date?.when ?? null, ev.date?.start_date ?? null);
         if (!title || !venue || !startsAt) continue;
 
         const ticket = (ev.ticket_info ?? []).find((t) => isHttpUrl(t.link))?.link ?? (isHttpUrl(ev.link) ? ev.link : null);
@@ -143,22 +144,6 @@ function eventTypeFor(sub: EventSubLibrary): string {
     case "events_outdoor":
       return "other";
   }
-}
-
-/** Parse SerpAPI's loose date strings into ISO; roll to next year if already past. */
-function parseSerpDate(raw: string | null): string | null {
-  if (!raw || !/\d/.test(raw)) return null;
-  // SerpAPI "when" often "Fri, Jun 12, 7 – 10 PM" — take the part before the range dash.
-  const cleaned = raw.split(/[–-]\s*\d/)[0].trim();
-  const now = Date.now();
-  for (const candidate of [cleaned, `${cleaned} ${new Date().getFullYear()}`]) {
-    const t = Date.parse(candidate);
-    if (Number.isFinite(t)) {
-      const rolled = t < now - 24 * 60 * 60 * 1000 ? t + 365 * 24 * 60 * 60 * 1000 : t;
-      return new Date(rolled).toISOString();
-    }
-  }
-  return null;
 }
 
 function dedupeKey(venue: string | null, startsAt: string | null): string | null {

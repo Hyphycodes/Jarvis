@@ -16,6 +16,7 @@ import type {
   EventPlanabilityAssessment,
   EventSurface,
 } from "@/lib/radar/engine/events/config";
+import { hasRealEventTime } from "@/lib/radar/engine/events/config";
 
 export type AssessableEvent = {
   title?: string | null;
@@ -70,12 +71,10 @@ function firstUrlDeep(value: unknown): string | null {
   return null;
 }
 
-/** A real instant — rejects midnight-only T00:00 "dates" that carry no real time. */
+/** A real instant — rejects date-only listings (LOCAL wall-clock midnight) while
+ *  keeping real evening shows whose UTC happens to be 00:00 (7 PM CDT / 6 PM CST). */
 export function hasOfficialTime(v: string | null | undefined): boolean {
-  if (!v) return false;
-  const t = new Date(v).getTime();
-  if (!Number.isFinite(t)) return false;
-  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(v);
+  return hasRealEventTime(v);
 }
 
 /** Expiration instant: end+24h, else start+24h. */

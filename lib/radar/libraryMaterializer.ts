@@ -1,4 +1,5 @@
 import "server-only";
+import { hasRealEventTime } from "@/lib/radar/engine/events/config";
 
 import { RADAR_UNDERFILLED_PROMOTION_FLOOR } from "@/lib/brain/constants";
 import { scoreCategoryCouncil } from "@/lib/brain/categoryCouncils";
@@ -379,10 +380,8 @@ function eventIndexedItem(event: CurrentEventRow): IndexedItem {
 }
 
 function hasOfficialEventTime(value: string | null | undefined): value is string {
-  if (!value) return false;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return false;
-  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(value);
+  // Local wall-clock midnight (not UTC) — keeps real 7 PM Chicago shows (00:00 UTC).
+  return hasRealEventTime(value);
 }
 
 function isHttpUrl(value: unknown): value is string {

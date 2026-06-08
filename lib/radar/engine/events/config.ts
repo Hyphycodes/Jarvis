@@ -180,3 +180,117 @@ export type EventPlanabilityAssessment = {
   logistics_notes: string[];
   missing_plan_data: string[];
 };
+
+// ── SerpAPI Google Events date parsing ───────────────────────────────────────
+
+const MONTH_INDEX: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/**
+ * Parse SerpAPI Google Events dates into an ISO instant. SerpAPI's `when` carries
+ * the real start time but in a loose, human format ("Tue, Dec 9, 6 – 9 PM"); we
+ * read month/day + the START time (the meridiem on a range applies to the start),
+ * and FALL BACK to the clean `start_date` ("Dec 9") when `when` has no parseable
+ * time. A dated listing with no time defaults to 19:00 local — a real evening
+ * window, never a fake T00:00 (which the readiness contract rejects). Times are
+ * resolved as America/Chicago wall-clock so "Add to Calendar" keeps the real time.
+ * Rolls to next year when the month/day already passed.
+ */
+export function parseSerpEventDate(
+  when: string | null,
+  startDate: string | null,
+  tz = "America/Chicago",
+): string | null {
+  const now = Date.now();
+  for (const raw of [when, startDate]) {
+    const parsed = readMonthDayTime(raw);
+    if (!parsed) continue;
+    for (const year of [new Date().getFullYear(), new Date().getFullYear() + 1]) {
+      const iso = zonedWallToUtcISO(year, parsed.month, parsed.day, parsed.hour, parsed.minute, tz);
+      if (iso && new Date(iso).getTime() > now - 24 * 60 * 60 * 1000) return iso;
+    }
+  }
+  return null;
+}
+
+/** Read month, day, and the start time from a SerpAPI date string. Time is
+ *  optional → defaults to a 19:00 evening window for a date-only listing. */
+function readMonthDayTime(
+  raw: string | null,
+): { month: number; day: number; hour: number; minute: number } | null {
+  if (!raw) return null;
+  const s = raw.replace(/^\s*[A-Za-z]{3,9},\s*/, " ").trim(); // drop leading weekday
+  const md = s.match(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2})\b/);
+  if (!md) return null;
+  const month = MONTH_INDEX[md[1].slice(0, 3).toLowerCase()];
+  if (month === undefined) return null;
+  const day = parseInt(md[2], 10);
+  if (!(day >= 1 && day <= 31)) return null;
+
+  // The start time lives AFTER the month/day; a range's meridiem ("6 – 9 PM")
+  // applies to the start. Default to 19:00 when no real time is present.
+  const rest = s.slice((md.index ?? 0) + md[0].length);
+  const merid = (rest.match(/([ap])\.?m\.?/i)?.[1] ?? "").toLowerCase();
+  const tm = rest.match(/(\d{1,2})(?::(\d{2}))?/);
+  let hour = 19;
+  let minute = 0;
+  if (tm) {
+    hour = parseInt(tm[1], 10);
+    minute = tm[2] ? parseInt(tm[2], 10) : 0;
+    if (merid === "p" && hour < 12) hour += 12;
+    else if (merid === "a" && hour === 12) hour = 0;
+    else if (!merid && hour <= 11) hour += 12; // bare event hour → assume evening
+    if (hour > 23 || minute > 59) {
+      hour = 19;
+      minute = 0;
+    }
+  }
+  return { month, day, hour, minute };
+}
+
+/** Wall-clock components in `tz` → UTC ISO (DST-aware). Runtime-timezone
+ *  independent: derives the tz offset at that instant via Intl.formatToParts,
+ *  so it is correct whether the process runs in UTC (Vercel) or any local tz. */
+function zonedWallToUtcISO(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  tz: string,
+): string | null {
+  const guess = Date.UTC(year, month, day, hour, minute);
+  if (!Number.isFinite(guess)) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(guess));
+  const get = (t: string): number => Number(parts.find((p) => p.type === t)?.value);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  if (!Number.isFinite(asUtc)) return new Date(guess).toISOString();
+  return new Date(guess - (asUtc - guess)).toISOString();
+}
+
+/**
+ * True when an event timestamp carries a REAL clock time (not a date-only
+ * listing). The signal for "no real time" is the wall clock in the event's
+ * timezone being exactly midnight — judged in LOCAL time, never UTC. A 7 PM
+ * Chicago show is 00:00 UTC but 19:00 local; the old UTC-string `T00:00` check
+ * wrongly killed exactly those prime evening events. Defaults to America/Chicago
+ * (the owner's city); pass a tz for other locales.
+ */
+export function hasRealEventTime(value: string | null | undefined, tz = "America/Chicago"): boolean {
+  if (!value) return false;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const hm = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(d);
+  return hm !== "00:00";
+}

@@ -1,4 +1,5 @@
 import "server-only";
+import { hasRealEventTime } from "@/lib/radar/engine/events/config";
 
 import type { IndexedItem } from "@/lib/index/types";
 import type { BrainContextPacket } from "@/lib/brain/types";
@@ -182,10 +183,8 @@ function hasImageSignal(item: IndexedItem): boolean {
 }
 
 function hasOfficialStartTime(item: IndexedItem): boolean {
-  if (!item.startsAt) return false;
-  const d = new Date(item.startsAt);
-  if (Number.isNaN(d.getTime())) return false;
-  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(item.startsAt);
+  // Local wall-clock midnight check (not UTC) — 7 PM Chicago = 00:00 UTC is real.
+  return hasRealEventTime(item.startsAt);
 }
 
 function daysUntil(iso?: string): number | null {
