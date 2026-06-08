@@ -36,6 +36,7 @@ import { runExecutiveCouncil, type ExecutiveCandidate, type ExecutiveDecision } 
 import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
 import { planLivingFive, type LivingFiveMember } from "@/lib/radar/livingFive";
 import { preBuildPlansForShownItems } from "@/lib/radar/planPreBuilder";
+import { isEngineOwnedRow } from "@/lib/radar/engine/ownership";
 import {
   blendRadarComposite,
   deriveCompositeDimensions,
@@ -1092,8 +1093,11 @@ export async function promoteHoldingWithService(input: {
     .order("score", { ascending: false, nullsFirst: false })
     .order("updated_at", { ascending: false })
     .limit(250);
-  const activeRowList = ((activeRows ?? []) as SurfacedItemRow[]).filter((row) =>
-    isActiveRadarInventoryItem(rowToIndexedItem(row)),
+  const activeRowList = ((activeRows ?? []) as SurfacedItemRow[]).filter(
+    (row) =>
+      // Engine-owned lanes (dining) are managed by the curation engine — the old
+      // living-7 must never see them, or it would displace/churn engine cards.
+      !isEngineOwnedRow(row) && isActiveRadarInventoryItem(rowToIndexedItem(row)),
   );
   const context = await buildJarvisContext({
     userId: input.userId,
@@ -1129,6 +1133,8 @@ export async function promoteHoldingWithService(input: {
   // never promote. Take up to 15 per category from the score-ordered backlog.
   const reviewedRows = pickFairByCategory(
     ((backlogRows ?? []) as SurfacedItemRow[]).filter((row) => {
+      // Never promote into an engine-owned lane — the engine owns that shelf.
+      if (isEngineOwnedRow(row)) return false;
       if (row.destination === "radar" && (row.status === "shown" || row.status === "opened")) return false;
       if (row.status === "discovered") return true;
       return row.destination === "holding";

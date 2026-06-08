@@ -9,6 +9,7 @@ import {
 } from "@/lib/radar/category";
 import { attributePillar } from "@/lib/north/attributionMap";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { isEngineOwnedCategory } from "@/lib/radar/engine/ownership";
 import type { IndexedItem } from "@/lib/index/types";
 import type {
   CurrentEventRow,
@@ -125,6 +126,13 @@ export async function materializeEligibleLibraryItems(
   // Without this, rotation/dedup can't tell fresh from stale and re-runs churn.
   const placeTimesById = new Map<string, number>();
   for (const place of places) {
+    // Engine-owned lanes (dining) are materialized by the curation engine — the
+    // old library materializer must not also produce them (it would clutter the
+    // discovered pool and fight the engine's shelf).
+    if (isEngineOwnedCategory(deriveCategory(place))) {
+      result.skipped++;
+      continue;
+    }
     placeTimesById.set(place.id, place.times_surfaced ?? 0);
     maybeQueue(place.id, buildPlaceSurfaceRow(userId, place));
   }
