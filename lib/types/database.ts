@@ -1766,6 +1766,52 @@ export type CultureItemRow = {
   updated_at: string;
 };
 
+export type PlacesItemRow = {
+  id: string;
+  user_id: string;
+  external_id: string | null;
+  source: string | null;
+  source_url: string | null;
+  library_place_id: string | null;
+  title: string;
+  description: string | null;
+  place_type: string | null;
+  sub_library: string;
+  sub_type: string | null;
+  neighborhood: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  google_place_id: string | null;
+  image_url: string | null;
+  photo_urls: Json | null;
+  hours: Json | null;
+  vibe_keywords: string[] | null;
+  best_for: string[] | null;
+  verdict: string | null;
+  verdict_strength: number | null;
+  quality_score: number | null;
+  primary_role: string | null;
+  secondary_roles: Json | null;
+  best_use_case: string | null;
+  taste_vector: Json | null;
+  truth_assessment: Json | null;
+  fit_assessment: Json | null;
+  role_assessment: Json | null;
+  planability_assessment: Json | null;
+  pre_score: number | null;
+  final_score: number | null;
+  comparative_rank: number | null;
+  status: string;
+  rejection_stage: string | null;
+  rejection_reason: string | null;
+  plan_id: string | null;
+  first_seen_at: string;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TastemakerRow = {
   id: string;
   user_id: string;

@@ -57,6 +57,10 @@
       "schedule": "7,37 * * * *"
     },
     {
+      "path": "/api/radar/engine?lane=places",
+      "schedule": "14,44 * * * *"
+    },
+    {
       "path": "/api/radar/plans",
       "schedule": "*/5 * * * *"
     },

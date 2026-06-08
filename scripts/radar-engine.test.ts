@@ -40,6 +40,9 @@ import {
   assessCultureFit,
   cultureExpiresAt,
 } from "../lib/radar/engine/culture/assess";
+import { classifyPlaceSubLibrary } from "../lib/radar/engine/places/config";
+import { assessPlaceTruth, assessRole, assessPlaceFit } from "../lib/radar/engine/places/assess";
+import { selectPlacesShelf } from "../lib/radar/engine/places/editor";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -392,6 +395,50 @@ check("assessCultureFit: timeless never expires/suppresses; expired dated vetoes
   assert.equal(staleDated.recommended_surface, "suppress");
   // dated temporary exhibit expires; timeless does not
   assert.equal(cultureExpiresAt({ is_dated: true, ends_at: "2026-07-01T00:00:00Z" }), "2026-07-02T00:00:00.000Z");
+});
+
+// ── places: classification / truth / role / fit / editor ─────────────────────
+check("classifyPlaceSubLibrary: outdoor/neighborhood/venue", () => {
+  assert.equal(classifyPlaceSubLibrary({ title: "Lakefront Trail", place_type: "outdoor" }), "places_outdoor");
+  assert.equal(classifyPlaceSubLibrary({ title: "Logan Square corridor", place_type: "neighborhood" }), "places_neighborhoods");
+  assert.equal(classifyPlaceSubLibrary({ title: "The Allis hotel lobby" }), "places_venues");
+  assert.equal(classifyPlaceSubLibrary({ title: "Riverwalk pocket" }), "places_outdoor");
+});
+
+check("assessPlaceTruth: google_place_id = verified; no location → needs_enrichment", () => {
+  const v = assessPlaceTruth({ title: "X", google_place_id: "g123", lat: 41.9, lng: -87.6 });
+  assert.equal(v.source_quality, "verified");
+  assert.ok(v.location_confidence > 0.9 && !v.needs_enrichment);
+  assert.equal(assessPlaceTruth({ title: "Y" }).needs_enrichment, true);
+});
+
+check("assessRole: cigar → cigar_walk_zone; outdoor → quiet_reset; bookstore → creative_input", () => {
+  assert.equal(assessRole({ title: "Gold Coast cigar walk", vibe_keywords: ["cigar"] }).primary_role, "cigar_walk_zone");
+  assert.equal(assessRole({ title: "Lincoln Park lakefront", sub_library: "places_outdoor" }).primary_role, "quiet_reset");
+  assert.equal(assessRole({ title: "Sandmeyer's Bookstore", place_type: "bookstore" }).primary_role, "creative_input");
+});
+
+check("assessPlaceFit: evergreen → radar; outdoor bad weather → reserve", () => {
+  assert.equal(assessPlaceFit({ title: "Lobby" }).recommended_surface, "radar");
+  const wet = assessPlaceFit({ title: "Park", sub_library: "places_outdoor" }, { weatherBad: true });
+  assert.equal(wet.recommended_surface, "reserve");
+  assert.equal(wet.friction_level, "high");
+});
+
+check("selectPlacesShelf: neighborhood + role caps spread the shelf", () => {
+  const c = (id: string, sub: string, nb: string, role: string, score: number) => ({ id, sub_library: sub, neighborhood: nb, primary_role: role, final_score: score });
+  const { featured } = selectPlacesShelf(
+    [
+      c("a", "places_outdoor", "Lincoln Park", "quiet_reset", 0.9),
+      c("b", "places_outdoor", "Lincoln Park", "quiet_reset", 0.88), // same nb+role → out
+      c("c", "places_venues", "Gold Coast", "meeting_spot", 0.8),
+      c("d", "places_neighborhoods", "Logan Square", "drift_zone", 0.7),
+    ],
+    { limit: 7, maxPerSubLibrary: 3, maxPerNeighborhood: 1, maxPerRole: 2 },
+  );
+  const ids = featured.map((f) => f.id);
+  assert.ok(ids.includes("a") && !ids.includes("b")); // same-neighborhood cap drops the 2nd Lincoln Park
+  assert.ok(ids.includes("c") && ids.includes("d"));
 });
 
 if (failures > 0) {

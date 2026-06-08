@@ -23,6 +23,7 @@ import { editorAssembleLane } from "@/lib/radar/engine/editor";
 import { benchDining } from "@/lib/radar/engine/bench";
 import { runEventsEngine } from "@/lib/radar/engine/events";
 import { runCultureEngine } from "@/lib/radar/engine/culture";
+import { runPlacesEngine } from "@/lib/radar/engine/places";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -86,6 +87,22 @@ export async function GET(req: Request) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "radar/engine culture failed";
       console.error("[api/radar/engine] culture error", err);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
+
+  // Places lane engine — warehouse places_items (seeded from places_library);
+  // evergreen + Role brain (per jarvis-places-engine-brain-tree.md).
+  if (lane === "places") {
+    try {
+      const startedAt = Date.now();
+      const places = await runPlacesEngine({ userId: ownerUserId });
+      const durationMs = Date.now() - startedAt;
+      console.log("[api/radar/engine] places cycle " + JSON.stringify({ durationMs, places }));
+      return NextResponse.json({ ok: true, lane, durationMs, places });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "radar/engine places failed";
+      console.error("[api/radar/engine] places error", err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }
