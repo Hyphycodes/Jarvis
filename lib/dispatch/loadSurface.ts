@@ -3,6 +3,7 @@ import "server-only";
 import { getViewableProfileId } from "@/lib/auth";
 import { buildBrainContext } from "@/lib/brain/context";
 import { operatingSummaryLine } from "@/lib/operating/operatingPreferences";
+import { laneCanExpire } from "@/lib/radar/engine/lanes";
 import {
   buildIntelligenceReason,
   reasonForCircleMoment,
@@ -859,12 +860,52 @@ function selectBalancedRadarInventory(items: IndexedItem[]): IndexedItem[] {
 
   const selected: IndexedItem[] = [];
   for (const category of VISIBLE_RADAR_CATEGORY_ORDER) {
-    const lane = (byCategory.get(category) ?? [])
-      .sort(compareRadarItemsWithinLane)
-      .slice(0, RADAR_PER_CATEGORY_ACTIVE_TARGET);
-    selected.push(...lane);
+    let lane = (byCategory.get(category) ?? []).sort(compareRadarItemsWithinLane);
+    // Finds gets strong dedup: no same-product, no brand/family flood (no Charvet
+    // wall). User-intent finds bypass the caps (he asked for those).
+    if (category === "finds") lane = dedupeFindsLane(lane);
+    selected.push(...lane.slice(0, RADAR_PER_CATEGORY_ACTIVE_TARGET));
   }
   return orderBalancedAllFeed(selected).slice(0, RADAR_ACTIVE_ITEM_LIMIT);
+}
+
+/** Collapse the Finds lane: drop exact-title repeats, cap one per brand+family,
+ *  cap two per brand. Keeps the strongest (already sorted) of each. */
+function dedupeFindsLane(items: IndexedItem[]): IndexedItem[] {
+  const seenTitle = new Set<string>();
+  const seenFamily = new Set<string>();
+  const brandCount = new Map<string, number>();
+  const MAX_PER_BRAND = 2;
+  const out: IndexedItem[] = [];
+  for (const item of items) {
+    if (isUserIntent(item)) {
+      out.push(item); // explicit request — never deduped away
+      continue;
+    }
+    const dossier = readFindsDossier(item);
+    const title = normalizeFindKey(dossier?.best_pick?.name ?? dossier?.mission_title ?? item.title ?? "");
+    const brand = normalizeFindKey(dossier?.best_pick?.brand ?? "");
+    const family = normalizeFindKey([brand, dossier?.subcategory ?? ""].filter(Boolean).join(" "));
+    if (title && seenTitle.has(title)) continue;
+    if (family && seenFamily.has(family)) continue;
+    if (brand) {
+      const count = brandCount.get(brand) ?? 0;
+      if (count >= MAX_PER_BRAND) continue;
+      brandCount.set(brand, count + 1);
+    }
+    if (title) seenTitle.add(title);
+    if (family) seenFamily.add(family);
+    out.push(item);
+  }
+  return out;
+}
+
+function normalizeFindKey(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 /**
@@ -920,6 +961,10 @@ function suppressSupersededLanes(items: IndexedItem[]): IndexedItem[] {
 }
 
 function isVisibleRadarItem(item: IndexedItem, category: RadarCategory): boolean {
+  // Expired dated items (events, dated culture) leave Featured automatically —
+  // the lane contract decides which lanes can expire. Only affects items with a
+  // real past start, so it never empties an evergreen lane.
+  if (isExpiredDatedItem(item, category)) return false;
   if (category === "finds") {
     const dossier = readFindsDossier(item);
     if (!dossier || !findIsReady(dossier)) return false;
@@ -929,6 +974,17 @@ function isVisibleRadarItem(item: IndexedItem, category: RadarCategory): boolean
   // Render no longer re-judges non-finds items: reaching status=shown already
   // earned the place. The decision-council gate moved upstream into promotion.
   return true;
+}
+
+/** A dated item (event / dated culture) whose start is comfortably in the past.
+ *  6h grace so an in-progress event still shows. Lane contract gates which lanes
+ *  can expire at all (evergreen dining/places/finds never do). */
+function isExpiredDatedItem(item: IndexedItem, category: RadarCategory): boolean {
+  if (!laneCanExpire(category)) return false;
+  if (!item.startsAt) return false;
+  const t = Date.parse(item.startsAt);
+  if (!Number.isFinite(t)) return false;
+  return t < Date.now() - 6 * 60 * 60 * 1000;
 }
 
 function orderBalancedAllFeed(items: IndexedItem[]): IndexedItem[] {
