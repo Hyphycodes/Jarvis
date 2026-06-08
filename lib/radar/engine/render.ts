@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
-import { decayedScore, enforceRenderDiversity } from "@/lib/radar/engine/curation";
+import { decayedScore, enforceRenderDiversity, normalizeExternalId } from "@/lib/radar/engine/curation";
 import type { Json, SurfacedItemInsert } from "@/lib/types/database";
 
 /** Stage 23 — render the lane's top-N from the bench into surfaced_items so the
@@ -88,12 +88,39 @@ export async function renderLaneFromBench(input: {
   result.benchConsidered = bench.length;
   if (bench.length === 0) return result;
 
-  // 2. Rank by live decayed score, then diversity-cap to topN.
+  // 2. Pull enrichment for every bench candidate up front (image + venue id) so
+  //    selection can skip imageless cards and dedup the same venue scouted into
+  //    multiple sub-libraries (e.g. Oriole as both tasting_menu and cocktail_bar).
+  const libIds = [...new Set(bench.map((b) => b.radar_library_id))];
+  const { data: libData, error: libErr } = await supabase
+    .from("radar_library")
+    .select("id, final_score, enrichment_data")
+    .eq("user_id", input.userId)
+    .in("id", libIds);
+  if (libErr) result.errors.push(`read library: ${libErr.message}`);
+  const libById = new Map(((libData ?? []) as LibraryRow[]).map((r) => [r.id, r]));
+
+  const enrichOf = (b: BenchRow): Record<string, unknown> => {
+    const e = libById.get(b.radar_library_id)?.enrichment_data;
+    return isRecord(e) ? e : {};
+  };
+  const imageUrlFor = (b: BenchRow): string | null => str(enrichOf(b).image_url);
+  // Identity for cross-sub-library dedup: prefer the Google place id, else name.
+  const identityFor = (b: BenchRow): string => str(enrichOf(b).google_place_id) ?? normalizeExternalId(b.name);
+
+  // 3. Rank by decayed score; drop imageless; dedup by venue identity; diversity-cap.
   const now = new Date();
-  const ranked = [...bench].sort(
-    (a, b) => decayedScore(b.score, b.benched_at, now) - decayedScore(a.score, a.benched_at, now),
-  );
-  const winners = enforceRenderDiversity(ranked, {
+  const ranked = [...bench]
+    .sort((a, b) => decayedScore(b.score, b.benched_at, now) - decayedScore(a.score, a.benched_at, now))
+    .filter((b) => imageUrlFor(b) !== null);
+  const seenIdentity = new Set<string>();
+  const deduped = ranked.filter((b) => {
+    const id = identityFor(b);
+    if (seenIdentity.has(id)) return false;
+    seenIdentity.add(id);
+    return true;
+  });
+  const winners = enforceRenderDiversity(deduped, {
     limit: topN,
     maxPerSubType: MAX_PER_SUBTYPE,
     maxPerNeighborhood: MAX_PER_NEIGHBORHOOD,
@@ -101,15 +128,6 @@ export async function renderLaneFromBench(input: {
     neighborhood: (r) => r.neighborhood,
   });
   const winnerLibIds = new Set(winners.map((w) => w.radar_library_id));
-
-  // 3. Enrichment data for the winners (image/address/verdict).
-  const { data: libData, error: libErr } = await supabase
-    .from("radar_library")
-    .select("id, final_score, enrichment_data")
-    .eq("user_id", input.userId)
-    .in("id", [...winnerLibIds]);
-  if (libErr) result.errors.push(`read library: ${libErr.message}`);
-  const libById = new Map(((libData ?? []) as LibraryRow[]).map((r) => [r.id, r]));
 
   // 4. Existing engine surfaced_items for this lane (dedup + respect user actions).
   const { data: existData, error: existErr } = await supabase
