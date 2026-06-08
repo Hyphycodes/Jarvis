@@ -20,6 +20,7 @@ export type BenchResult = {
 
 type LibraryRow = {
   id: string;
+  external_id: string | null;
   name: string;
   sub_type: string | null;
   neighborhood: string | null;
@@ -89,7 +90,7 @@ export async function benchLane(input: {
   const benchedLibraryIds = new Set(benchRows.map((r) => r.radar_library_id));
   const { data: libData, error: libErr } = await supabase
     .from("radar_library")
-    .select("id, name, sub_type, neighborhood, final_score")
+    .select("id, external_id, name, sub_type, neighborhood, final_score")
     .eq("user_id", input.userId)
     .eq("lane", input.lane)
     .order("final_score", { ascending: false, nullsFirst: false });
@@ -112,24 +113,31 @@ export async function benchLane(input: {
     const openSlot = benchScores.length < capacity;
 
     if (openSlot) {
-      await addToBench(supabase, input.userId, input.lane, candidate, score, nowIso, expiresAt);
-      benchScores.push(score);
-      result.benched += 1;
+      const err = await addToBench(supabase, input.userId, input.lane, candidate, score, nowIso, expiresAt);
+      if (err) {
+        result.errors.push(`bench ${candidate.name}: ${err}`);
+      } else {
+        benchScores.push(score);
+        result.benched += 1;
+      }
     } else {
       const { displace, victimIndex } = shouldDisplace(benchScores, score, capacity);
       if (displace && victimIndex !== undefined) {
         const victim = activeBench[victimIndex];
-        // Expire the victim
-        await supabase
-          .from("radar_bench")
-          .update({ status: "expired" })
-          .eq("id", victim.id)
-          .eq("user_id", input.userId);
-        // Add the challenger
-        await addToBench(supabase, input.userId, input.lane, candidate, score, nowIso, expiresAt);
-        benchScores[victimIndex] = score;
-        result.displaced += 1;
-        result.benched += 1;
+        // Add the challenger first; only expire the victim if it lands.
+        const err = await addToBench(supabase, input.userId, input.lane, candidate, score, nowIso, expiresAt);
+        if (err) {
+          result.errors.push(`bench ${candidate.name}: ${err}`);
+        } else {
+          await supabase
+            .from("radar_bench")
+            .update({ status: "expired" })
+            .eq("id", victim.id)
+            .eq("user_id", input.userId);
+          benchScores[victimIndex] = score;
+          result.displaced += 1;
+          result.benched += 1;
+        }
       }
     }
   }
@@ -144,11 +152,14 @@ async function addToBench(
   score: number,
   benchedAt: string,
   expiresAt: string,
-): Promise<void> {
-  await supabase.from("radar_bench").insert({
+): Promise<string | null> {
+  const { error } = await supabase.from("radar_bench").insert({
     user_id: userId,
     radar_library_id: row.id,
     lane,
+    // external_id is NOT NULL on radar_bench; carry the library's (fall back to
+    // the library row id so the unique key is always satisfied).
+    external_id: row.external_id ?? row.id,
     name: row.name,
     sub_type: row.sub_type,
     neighborhood: row.neighborhood,
@@ -158,6 +169,7 @@ async function addToBench(
     benched_at: benchedAt,
     expires_at: expiresAt,
   });
+  return error ? error.message : null;
 }
 
 export async function benchDining(input: {
