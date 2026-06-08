@@ -155,7 +155,7 @@ async function judge(
     "4. Devil's advocate — your only job is to find reasons to KILL it: too generic, far, loud, expensive, fake, weak.",
     "5. Verdict writer — synthesize a 2-4 sentence opinionated verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
     cfg.brief,
-    "Rules: if the devil's case is decisive, set devil_kill=true with devil_detail. Otherwise final_score is your honest 0..1 conviction this dated opportunity deserves Jerry's radar. An undated idea is NOT an event — score it 0.",
+    "Rules: ONLY set devil_kill=true for CLEAR junk — fake/unverifiable, generic noise, wrong-category, or genuinely off his taste. A real, dated, on-taste event must NOT be devil-killed just for being imperfect — surface concerns in the verdict and a lower final_score instead, and let the floor decide. final_score is your honest 0..1 conviction this dated opportunity deserves Jerry's radar. An undated idea is NOT an event — score it low.",
   ].join("\n");
 
   const list = rows

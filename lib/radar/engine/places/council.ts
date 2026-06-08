@@ -145,7 +145,7 @@ async function judge(
     "4. Devil's advocate — your only job is to KILL it: too generic, touristy, far, scene-heavy, weak reason, or actually a restaurant/event/culture/move.",
     "5. Verdict writer — synthesize a 2-4 sentence verdict + primary_role + best_use_case + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
     cfg.brief,
-    "Rules: Places are EVERGREEN spatial assets — no urgency. A restaurant/bar where food/drink is the point is Dining, not here. final_score is your honest 0..1 conviction this room/zone is worth knowing in his life. Generic map filler → devil_kill.",
+    "Rules: Places are EVERGREEN spatial assets — no urgency. A restaurant/bar where food/drink is the point is Dining, not here. final_score is your honest 0..1 conviction this room/zone is worth knowing in his life. ONLY set devil_kill=true for CLEAR junk — generic map filler, no real identity/reason, or wrong-category. A real place worth knowing must NOT be devil-killed for being imperfect — lower the score and let the floor decide.",
   ].join("\n");
 
   const list = rows

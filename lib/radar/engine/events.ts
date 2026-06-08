@@ -98,21 +98,24 @@ export async function runEventsEngine(input: {
   result.expiredEvents = expired.events;
   result.archivedCards = expired.cards;
 
-  // 3) Scout when the future-ready pool is thin AND cooled down. SerpAPI Events
-  //    (structured, no LLM) is the reliable layer; Tavily+Claude is complementary.
+  // 3) Scout when the future-ready pool is thin. SerpAPI Events (structured, no
+  //    LLM, cached) runs EVERY thin cycle — it's the reliable source for real
+  //    dated concerts/shows. Tavily+Claude (expensive) stays throttled.
   const futureReady = await countFutureReady(supabase, input.userId);
-  if (futureReady < FUTURE_READY_TARGET && (await scoutCooledDown(supabase, input.userId))) {
+  if (futureReady < FUTURE_READY_TARGET) {
     try {
       const structured = await scoutAllEventSubLibraries({ userId: input.userId, supabase });
       result.scoutedStructured = structured.reduce((s, r) => s + r.added, 0);
     } catch (err) {
       result.errors.push(`scout(serp): ${msg(err)}`);
     }
-    try {
-      const scout = await runEventScout(input.userId);
-      result.scouted = scout.candidates_added;
-    } catch (err) {
-      result.errors.push(`scout(tavily): ${msg(err)}`);
+    if (await scoutCooledDown(supabase, input.userId)) {
+      try {
+        const scout = await runEventScout(input.userId);
+        result.scouted = scout.candidates_added;
+      } catch (err) {
+        result.errors.push(`scout(tavily): ${msg(err)}`);
+      }
     }
   }
 
