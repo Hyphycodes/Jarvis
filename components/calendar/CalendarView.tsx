@@ -78,7 +78,7 @@ export function CalendarView({
 
   return (
     <div className="fixed inset-0 z-50 mx-auto flex max-w-[440px] flex-col bg-[#0A0A0A] px-5 pt-[calc(env(safe-area-inset-top)+16px)]">
-      <div className="flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.2em] text-warm-ivory/55">
           Calendar
         </span>
@@ -92,37 +92,41 @@ export function CalendarView({
         </button>
       </div>
 
-      <div className="mt-6">
-        <MonthGrid
-          selectedKey={selectedKey}
-          markedKeys={markedKeys}
-          onSelect={(key) => setSelectedKey(key === selectedKey ? "" : key)}
-        />
-      </div>
-
-      <div className="mt-auto pb-[calc(env(safe-area-inset-bottom)+24px)] pt-6">
-        <div className="mb-3 text-[10px] uppercase tracking-[0.2em] text-warm-ivory/40">
-          {selectedKey ? "On this day" : "Coming up"}
+      {/* Scrollable body — the month grid + the day's plans. Bottom padding
+          clears the fixed nav bar so the last plan is never cut off. */}
+      <div className="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+88px)]">
+        <div className="mt-6">
+          <MonthGrid
+            selectedKey={selectedKey}
+            markedKeys={markedKeys}
+            onSelect={(key) => setSelectedKey(key === selectedKey ? "" : key)}
+          />
         </div>
-        {listed.length > 0 ? (
-          <div className="space-y-3">
-            {listed.map((p) => (
-              <PlanRow
-                key={p.planId}
-                plan={p}
-                showDate={!selectedKey}
-                busy={busyId === p.planId}
-                onOpen={onClose}
-                onReschedule={() => setPickerPlanId(p.planId)}
-                onCancel={() => void cancel(p.planId)}
-              />
-            ))}
+
+        <div className="pt-8">
+          <div className="mb-3 text-[10px] uppercase tracking-[0.2em] text-warm-ivory/40">
+            {selectedKey ? "On this day" : "Coming up"}
           </div>
-        ) : (
-          <p className="text-[13px] text-warm-ivory/45">
-            Nothing on the calendar yet. Add a plan from Radar to see it here.
-          </p>
-        )}
+          {listed.length > 0 ? (
+            <div className="space-y-3">
+              {listed.map((p) => (
+                <PlanRow
+                  key={p.planId}
+                  plan={p}
+                  showDate={!selectedKey}
+                  busy={busyId === p.planId}
+                  onOpen={onClose}
+                  onReschedule={() => setPickerPlanId(p.planId)}
+                  onCancel={() => void cancel(p.planId)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-[13px] text-warm-ivory/45">
+              Nothing on the calendar yet. Add a plan from Radar to see it here.
+            </p>
+          )}
+        </div>
       </div>
 
       {pickerPlanId ? (
