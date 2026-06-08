@@ -969,7 +969,7 @@ export function MicSheet({
                   const res = await fetch(`/api/plans/${schedulePicker.planId}/schedule`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ scheduled_date: date, scheduled_time: time }),
+                    body: JSON.stringify({ scheduled_date: date, scheduled_time: time, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
                   });
                   if (!res.ok) throw new Error("Schedule failed");
                   setSchedulePicker(null);

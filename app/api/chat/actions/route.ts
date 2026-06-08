@@ -457,6 +457,7 @@ async function autoSchedulePlan(input: {
       planId: input.planId,
       scheduledDate: picked.date,
       scheduledTime: picked.time,
+      timezone: "America/Chicago",
     });
     return { label: picked.label, flexible: picked.flexible, fixed: false };
   } catch (error) {

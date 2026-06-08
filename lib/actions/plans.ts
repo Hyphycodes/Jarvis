@@ -708,6 +708,7 @@ export async function schedulePlan(input: {
   planId: string;
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime: string; // HH:MM (24h)
+  timezone?: string; // IANA tz from the browser, e.g. "America/Chicago"
 }): Promise<{ ok: true; startsAt: string }> {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
@@ -721,9 +722,11 @@ export async function schedulePlan(input: {
   const plan = planData as PlanRow | null;
   if (!plan) throw new Error("Plan not found.");
 
-  const startsAt = new Date(
-    `${input.scheduledDate}T${input.scheduledTime}:00`,
-  ).toISOString();
+  const startsAt = wallClockToUtcIso(
+    input.scheduledDate,
+    input.scheduledTime,
+    input.timezone ?? "America/Chicago",
+  );
 
   const nextKeyStats: Json = {
     ...(isRecord(plan.key_stats) ? plan.key_stats : {}),
@@ -1290,4 +1293,19 @@ function formatTimeLabel(iso: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Convert a wall-clock date+time (what the user picked in their local tz) to a
+ *  UTC ISO string. The server runs UTC so `new Date("YYYY-MM-DDThh:mm:00")` would
+ *  be parsed as UTC — 5-6h off for Chicago. Instead: parse as UTC (naive), then
+ *  shift by the actual tz offset at that moment so DST is handled correctly. */
+function wallClockToUtcIso(dateStr: string, timeStr: string, tz: string): string {
+  try {
+    const naive = new Date(`${dateStr}T${timeStr}:00Z`);
+    const inTz = new Date(naive.toLocaleString("en-US", { timeZone: tz }));
+    const offsetMs = naive.getTime() - inTz.getTime();
+    return new Date(naive.getTime() + offsetMs).toISOString();
+  } catch {
+    return new Date(`${dateStr}T${timeStr}:00`).toISOString();
+  }
 }

@@ -13,12 +13,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
-const bodySchema = z
-  .object({
-    scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    scheduled_time: z.string().regex(/^\d{2}:\d{2}$/),
-  })
-  .strict();
+const bodySchema = z.object({
+  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  scheduled_time: z.string().regex(/^\d{2}:\d{2}$/),
+  timezone: z.string().optional(),
+});
 
 export async function POST(
   request: Request,
@@ -31,6 +30,7 @@ export async function POST(
       planId: id,
       scheduledDate: body.scheduled_date,
       scheduledTime: body.scheduled_time,
+      timezone: body.timezone,
     });
     return NextResponse.json(result);
   } catch (error) {

@@ -47,6 +47,7 @@ export function DatePickerSheet({
         body: JSON.stringify({
           scheduled_date: selectedKey,
           scheduled_time,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
       const json = (await res.json()) as { ok?: true; error?: string };

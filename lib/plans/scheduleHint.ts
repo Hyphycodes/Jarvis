@@ -11,12 +11,25 @@ export type PickedDate = {
 };
 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const HOME_TZ = "America/Chicago";
 
+/** Format a Date as YYYY-MM-DD in the home timezone (not UTC). */
 function ymd(d: Date): string {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: HOME_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/** Day-of-week index (0=Sun) for a Date in the home timezone. */
+function localDow(d: Date): number {
+  const day = new Intl.DateTimeFormat("en-US", {
+    timeZone: HOME_TZ,
+    weekday: "short",
+  }).format(d);
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(day);
 }
 
 function addDays(d: Date, n: number): Date {
@@ -27,7 +40,7 @@ function addDays(d: Date, n: number): Date {
 
 /** Days until the next given weekday (1..7; today counts as 7, i.e. next week). */
 function daysUntilWeekday(from: Date, target: number): number {
-  const diff = (target - from.getDay() + 7) % 7;
+  const diff = (target - localDow(from) + 7) % 7;
   return diff === 0 ? 7 : diff;
 }
 
@@ -39,10 +52,15 @@ function timeOfDay(hint: string): string {
 }
 
 function label(date: string, time: string): string {
-  const d = new Date(`${date}T${time}:00`);
+  // Parse wall-clock as UTC then display in home tz so the label matches what
+  // the user will actually see in the picker (not offset by 5-6h).
+  const naive = new Date(`${date}T${time}:00Z`);
+  const inTz = new Date(naive.toLocaleString("en-US", { timeZone: HOME_TZ }));
+  const offsetMs = naive.getTime() - inTz.getTime();
+  const d = new Date(naive.getTime() + offsetMs);
   if (Number.isNaN(d.getTime())) return `${date} ${time}`;
-  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-  const t = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: HOME_TZ });
+  const t = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: HOME_TZ });
   return `${day} · ${t}`;
 }
 
