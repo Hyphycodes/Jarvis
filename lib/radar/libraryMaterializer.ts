@@ -137,13 +137,20 @@ export async function materializeEligibleLibraryItems(
     maybeQueue(place.id, buildPlaceSurfaceRow(userId, place));
   }
 
-  for (const event of events) {
-    const row = buildEventSurfaceRow(userId, event);
-    if (row) {
-      maybeQueue(event.id, row);
-    } else {
-      result.skipped++;
+  // Events are engine-owned (lib/radar/engine/events.ts surfaces them from
+  // current_events). The old materializer must not also produce them — that was
+  // the duplicate event system. Skip the whole loop when events is engine-owned.
+  if (!isEngineOwnedCategory("events")) {
+    for (const event of events) {
+      const row = buildEventSurfaceRow(userId, event);
+      if (row) {
+        maybeQueue(event.id, row);
+      } else {
+        result.skipped++;
+      }
     }
+  } else {
+    result.skipped += events.length;
   }
 
   const surfacedPlaceIds: string[] = [];

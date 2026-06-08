@@ -5,7 +5,7 @@ import { normalizeRadarCategory } from "@/lib/radar/category";
  * pipeline MUST NOT manage these — its living-7 displacement would evict and
  * churn engine cards (and revert scheduled ones). Grows as lanes cut over.
  */
-export const ENGINE_OWNED_LANES = new Set<string>(["dining"]);
+export const ENGINE_OWNED_LANES = new Set<string>(["dining", "events"]);
 export const ENGINE_SOURCE = "radar_engine";
 
 export function isEngineOwnedCategory(category: string | null | undefined): boolean {

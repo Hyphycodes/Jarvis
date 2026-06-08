@@ -21,6 +21,7 @@ import { councilDining } from "@/lib/radar/engine/council";
 import { comparativeDining } from "@/lib/radar/engine/comparative";
 import { editorAssembleLane } from "@/lib/radar/engine/editor";
 import { benchDining } from "@/lib/radar/engine/bench";
+import { runEventsEngine } from "@/lib/radar/engine/events";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,6 +56,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "No owner found." }, { status: 500 });
   }
   const lane = new URL(req.url).searchParams.get("lane") ?? "dining";
+
+  // Events lane engine — reuses the scout + verifier + current_events warehouse
+  // (per radar-lane-engine-replication.md). Distinct flow from dining's stages.
+  if (lane === "events") {
+    try {
+      const startedAt = Date.now();
+      const events = await runEventsEngine({ userId: ownerUserId });
+      const durationMs = Date.now() - startedAt;
+      console.log("[api/radar/engine] events cycle " + JSON.stringify({ durationMs, events }));
+      return NextResponse.json({ ok: true, lane, durationMs, events });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "radar/engine events failed";
+      console.error("[api/radar/engine] events error", err);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
 
   try {
     const supabase = getSupabaseServiceClient();

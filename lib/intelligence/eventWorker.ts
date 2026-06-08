@@ -10,6 +10,8 @@ import { triggerPlanBuildsForNewRadarItems } from "@/lib/plans/autoBuild";
 import { hasSerpapi, searchGoogleEvents } from "@/lib/sources/serpapi";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import { hasTicketmaster, searchEvents } from "@/lib/sources/ticketmaster";
+import { pillarsForItem } from "@/lib/radar/engine/pillars";
+import { ENGINE_SOURCE } from "@/lib/radar/engine/ownership";
 import type { IndexedItem } from "@/lib/index/types";
 import type { CurrentEventRow, PlacesLibraryRow } from "@/lib/types/database";
 
@@ -390,6 +392,10 @@ export async function processEventCandidates(
             source_label: categoryCouncil.sourceLabel ?? null,
             status: "shown",
             payload: {
+              // Engine-owned: the Events lane is curated by the events engine
+              // (lib/radar/engine/events.ts), so loadSurface trusts the stored
+              // category and the old promote pipeline leaves it alone.
+              source_layer: ENGINE_SOURCE,
               event_id: event.id,
               event_type: event.event_type,
               named_entities: event.named_entities,
@@ -404,6 +410,12 @@ export async function processEventCandidates(
                 signals: categoryCouncil.signals,
                 flags: categoryCouncil.flags,
               },
+              pillar_tags: pillarsForItem({
+                category: "events",
+                lane: "events",
+                tags: event.vibe_keywords ?? [],
+                title: event.title,
+              }),
               verified_source_url: verifiedSourceUrl,
               official_starts_at: verifiedStartsAt,
               event_time_locked: true,
