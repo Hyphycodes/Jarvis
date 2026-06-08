@@ -53,6 +53,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/radar/engine?lane=culture",
+      "schedule": "7,37 * * * *"
+    },
+    {
       "path": "/api/radar/plans",
       "schedule": "*/5 * * * *"
     },

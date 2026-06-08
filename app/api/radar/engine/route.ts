@@ -22,6 +22,7 @@ import { comparativeDining } from "@/lib/radar/engine/comparative";
 import { editorAssembleLane } from "@/lib/radar/engine/editor";
 import { benchDining } from "@/lib/radar/engine/bench";
 import { runEventsEngine } from "@/lib/radar/engine/events";
+import { runCultureEngine } from "@/lib/radar/engine/culture";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,6 +70,22 @@ export async function GET(req: Request) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "radar/engine events failed";
       console.error("[api/radar/engine] events error", err);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
+
+  // Culture lane engine — warehouse culture_items; mostly timeless (per
+  // jarvis-culture-engine-brain-tree.md).
+  if (lane === "culture") {
+    try {
+      const startedAt = Date.now();
+      const culture = await runCultureEngine({ userId: ownerUserId });
+      const durationMs = Date.now() - startedAt;
+      console.log("[api/radar/engine] culture cycle " + JSON.stringify({ durationMs, culture }));
+      return NextResponse.json({ ok: true, lane, durationMs, culture });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "radar/engine culture failed";
+      console.error("[api/radar/engine] culture error", err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }
