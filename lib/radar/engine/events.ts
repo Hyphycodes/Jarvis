@@ -118,14 +118,17 @@ export async function runEventsEngine(input: {
   return result;
 }
 
-/** Surface verified/surfaced future events that have NO surfaced_items row yet,
- *  as engine-owned cards (the events featured shelf). Insert-only: never
- *  resurrects archived/passed/saved/planned rows (respects user + history). */
+/** Render the verified pool to the engine-owned featured shelf.
+ *  - INSERT an engine card for a ready future event with no card.
+ *  - ADOPT an existing non-engine shown/discovered card (re-tag engine-owned +
+ *    pillar tags) so a good event already on the board (e.g. via the old
+ *    materializer) survives cutover instead of being suppressed.
+ *  - NEVER touch locked/passed/saved/planned/archived rows (respects user + history). */
 async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): Promise<number> {
   const { data: events, error } = await supabase
     .from("current_events")
     .select(
-      "id, title, venue_name, starts_at, ends_at, ticket_url, description, verdict, verdict_strength, quality_score, event_type, named_entities, vibe_keywords, library_place_id, source_id",
+      "id, title, venue_name, starts_at, ends_at, ticket_url, discovered_via, sources_cited, description, verdict, verdict_strength, quality_score, event_type, named_entities, vibe_keywords, library_place_id",
     )
     .eq("user_id", userId)
     .in("status", ["verified", "surfaced"])
@@ -137,22 +140,44 @@ async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): P
   const ids = (events as EventRow[]).map((e) => e.id);
   const { data: existing } = await supabase
     .from("surfaced_items")
-    .select("source_id")
+    .select("id, source_id, status, source, payload")
     .eq("user_id", userId)
     .eq("category", "events")
     .in("source_id", ids);
-  const haveRow = new Set<string>(
-    ((existing ?? []) as Array<{ source_id: string | null }>)
-      .map((r) => r.source_id)
-      .filter((v): v is string => Boolean(v)),
-  );
+  const cardsByEvent = new Map<string, ExistingCard[]>();
+  for (const row of (existing ?? []) as ExistingCard[]) {
+    if (!row.source_id) continue;
+    const list = cardsByEvent.get(row.source_id) ?? [];
+    list.push(row);
+    cardsByEvent.set(row.source_id, list);
+  }
 
   let rendered = 0;
   for (const e of events as EventRow[]) {
-    if (haveRow.has(e.id)) continue; // already has a card (any status) — respect it
-    const ticket = e.ticket_url;
-    // Readiness: date + venue + source (the lane contract for events).
-    if (!isValidFutureDate(e.starts_at) || !e.venue_name?.trim() || !isHttpUrl(ticket)) continue;
+    // Readiness (the events lane contract): real future time + venue + a source.
+    const sourceUrl = firstEventSource(e);
+    if (!hasOfficialFutureTime(e.starts_at) || !e.venue_name?.trim() || !sourceUrl) continue;
+
+    const cards = cardsByEvent.get(e.id) ?? [];
+    const locked = cards.find((c) => LOCKED_OR_ARCHIVED.has(c.status));
+    if (locked) continue; // user owns it / intentionally removed — leave alone
+
+    const live = cards.find((c) => c.status === "shown" || c.status === "discovered");
+    if (live) {
+      // Already on the board — adopt it as engine-owned if it isn't already.
+      const payload = isRecord(live.payload) ? live.payload : {};
+      if (payload.source_layer === ENGINE_SOURCE) continue;
+      const { error: upErr } = await supabase
+        .from("surfaced_items")
+        .update({ payload: { ...payload, source_layer: ENGINE_SOURCE, pillar_tags: eventPillars(e) } })
+        .eq("id", live.id)
+        .eq("user_id", userId);
+      if (!upErr) rendered += 1;
+      continue;
+    }
+    if (cards.length > 0) continue; // only archived/other — don't resurrect
+
+    // No card → insert a fresh engine-owned one.
     const whyNow = eventWhyNow(e);
     const { error: insErr } = await supabase.from("surfaced_items").insert({
       user_id: userId,
@@ -165,7 +190,7 @@ async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): P
       location_name: e.venue_name,
       starts_at: e.starts_at,
       ends_at: e.ends_at ?? null,
-      url: ticket,
+      url: sourceUrl,
       type: "event",
       category: "events",
       tags: e.vibe_keywords ?? [],
@@ -181,13 +206,8 @@ async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): P
         library_place_id: e.library_place_id,
         verdict_strength: e.verdict_strength,
         why_now: whyNow,
-        pillar_tags: pillarsForItem({
-          category: "events",
-          lane: "events",
-          tags: e.vibe_keywords ?? [],
-          title: e.title,
-        }),
-        verified_source_url: ticket,
+        pillar_tags: eventPillars(e),
+        verified_source_url: sourceUrl,
         official_starts_at: e.starts_at,
         event_time_locked: true,
       },
@@ -197,6 +217,16 @@ async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): P
   return rendered;
 }
 
+const LOCKED_OR_ARCHIVED = new Set<string>([...LOCKED_STATUSES, "archived"]);
+
+type ExistingCard = {
+  id: string;
+  source_id: string | null;
+  status: string;
+  source: string | null;
+  payload: unknown;
+};
+
 type EventRow = {
   id: string;
   title: string;
@@ -204,6 +234,8 @@ type EventRow = {
   starts_at: string | null;
   ends_at: string | null;
   ticket_url: string | null;
+  discovered_via: string | null;
+  sources_cited: unknown;
   description: string | null;
   verdict: string | null;
   verdict_strength: number | null;
@@ -212,8 +244,43 @@ type EventRow = {
   named_entities: string[] | null;
   vibe_keywords: string[] | null;
   library_place_id: string | null;
-  source_id: string | null;
 };
+
+function eventPillars(e: EventRow): string[] {
+  return pillarsForItem({ category: "events", lane: "events", tags: e.vibe_keywords ?? [], title: e.title });
+}
+
+/** Source URL like the verifier: ticket → discovered_via → first url in sources_cited. */
+function firstEventSource(e: EventRow): string | null {
+  if (isHttpUrl(e.ticket_url)) return e.ticket_url;
+  if (isHttpUrl(e.discovered_via)) return e.discovered_via;
+  return firstUrlDeep(e.sources_cited);
+}
+
+function firstUrlDeep(value: unknown): string | null {
+  if (isHttpUrl(value)) return value;
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const found = firstUrlDeep(v);
+      if (found) return found;
+    }
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      const found = firstUrlDeep(v);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** A real future instant — rejects midnight-only "dates" (T00:00) that carry no
+ *  real time, so dateless culture-ish listings don't masquerade as dated events. */
+function hasOfficialFutureTime(v: string | null): boolean {
+  if (!v) return false;
+  const t = new Date(v).getTime();
+  if (!Number.isFinite(t) || t <= Date.now()) return false;
+  return !/T00:00(?::00(?:\.000)?)?(?:Z|[+-]\d\d:?\d\d)?$/i.test(v);
+}
 
 function eventWhyNow(e: EventRow): string {
   const parts: string[] = [];
@@ -227,12 +294,6 @@ function eventWhyNow(e: EventRow): string {
     }
   }
   return parts.join(" · ") || "Upcoming event.";
-}
-
-function isValidFutureDate(v: string | null): boolean {
-  if (!v) return false;
-  const t = new Date(v).getTime();
-  return Number.isFinite(t) && t > Date.now();
 }
 
 function isHttpUrl(v: unknown): v is string {
