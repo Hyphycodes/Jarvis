@@ -32,6 +32,7 @@ import {
   assessPlanability,
   expiresAtFor,
 } from "../lib/radar/engine/events/assess";
+import { selectEventsShelf } from "../lib/radar/engine/events/editor";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -319,6 +320,28 @@ check("expiresAtFor: end+24h else start+24h", () => {
     "2026-07-02T23:00:00.000Z",
   );
   assert.equal(expiresAtFor({}), null);
+});
+
+// ── events: editor shelf assembly ──────────────────────────────────────────────
+check("selectEventsShelf: sub-library variety + venue cap + urgency bump", () => {
+  const c = (id: string, sub: string, venue: string, score: number, urgency = "normal") => ({
+    id, sub_library: sub, venue, final_score: score, urgency, starts_at: "2026-07-01T20:00:00Z",
+  });
+  const { featured } = selectEventsShelf(
+    [
+      c("a", "events_music", "Green Mill", 0.9),
+      c("b", "events_music", "Green Mill", 0.88), // same venue → capped out
+      c("c", "events_music", "Constellation", 0.86),
+      c("d", "events_music", "Thalia", 0.84), // 4th music → over maxPerSubLibrary(3) but venue ok... capped by sub
+      c("e", "events_food", "Kasama", 0.7),
+      c("f", "events_outdoor", "Millennium Park", 0.5, "now"), // urgency bump
+    ],
+    { limit: 7, maxPerSubLibrary: 3, maxPerVenue: 1 },
+  );
+  const ids = featured.map((f) => f.id);
+  assert.ok(ids.includes("a") && !ids.includes("b")); // venue cap drops the 2nd Green Mill
+  assert.ok(ids.includes("e") && ids.includes("f")); // variety + urgency keep food/outdoor
+  assert.ok(featured.filter((f) => f.sub_library === "events_music").length <= 3);
 });
 
 if (failures > 0) {

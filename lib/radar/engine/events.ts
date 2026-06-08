@@ -6,6 +6,20 @@ import { runEventScout } from "@/lib/brain/eventScout";
 import { processEventCandidates } from "@/lib/intelligence/eventWorker";
 import { ENGINE_SOURCE } from "@/lib/radar/engine/ownership";
 import { pillarsForItem } from "@/lib/radar/engine/pillars";
+import { scoutAllEventSubLibraries } from "@/lib/radar/engine/events/scout";
+import { runEventsCouncil } from "@/lib/radar/engine/events/council";
+import { selectEventsShelf, type ShelfCandidate } from "@/lib/radar/engine/events/editor";
+import {
+  assessTruth,
+  assessFit,
+  assessUrgency,
+  assessPlanability,
+  expiresAtFor,
+  type AssessableEvent,
+} from "@/lib/radar/engine/events/assess";
+import { classifyEventSubLibrary } from "@/lib/radar/engine/events/config";
+import { readOperatingPreferences } from "@/lib/operating/readOperatingPreferences";
+import type { Json } from "@/lib/types/database";
 
 /**
  * Events lane engine — the first non-dining physical lane engine (per
@@ -39,12 +53,16 @@ const LOCKED_STATUSES = ["saved", "planned", "passed", "completed"];
 
 export type EventsEngineResult = {
   scouted: number;
+  scoutedStructured: number;
   verified: number;
   held: number;
   rejected: number;
+  assessed: number;
+  judged: number;
   expiredEvents: number;
   archivedCards: number;
   rendered: number;
+  demoted: number;
   routedToToday: number;
   backfilled: number;
   errors: string[];
@@ -57,12 +75,16 @@ export async function runEventsEngine(input: {
   const supabase = input.supabase ?? getSupabaseServiceClient();
   const result: EventsEngineResult = {
     scouted: 0,
+    scoutedStructured: 0,
     verified: 0,
     held: 0,
     rejected: 0,
+    assessed: 0,
+    judged: 0,
     expiredEvents: 0,
     archivedCards: 0,
     rendered: 0,
+    demoted: 0,
     routedToToday: 0,
     backfilled: 0,
     errors: [],
@@ -76,19 +98,25 @@ export async function runEventsEngine(input: {
   result.expiredEvents = expired.events;
   result.archivedCards = expired.cards;
 
-  // 3) Scout only when the future-ready pool is thin AND we haven't scouted
-  //    recently (throttle keeps a frequent cron from hammering Tavily/LLM).
+  // 3) Scout when the future-ready pool is thin AND cooled down. SerpAPI Events
+  //    (structured, no LLM) is the reliable layer; Tavily+Claude is complementary.
   const futureReady = await countFutureReady(supabase, input.userId);
   if (futureReady < FUTURE_READY_TARGET && (await scoutCooledDown(supabase, input.userId))) {
+    try {
+      const structured = await scoutAllEventSubLibraries({ userId: input.userId, supabase });
+      result.scoutedStructured = structured.reduce((s, r) => s + r.added, 0);
+    } catch (err) {
+      result.errors.push(`scout(serp): ${msg(err)}`);
+    }
     try {
       const scout = await runEventScout(input.userId);
       result.scouted = scout.candidates_added;
     } catch (err) {
-      result.errors.push(`scout: ${msg(err)}`);
+      result.errors.push(`scout(tavily): ${msg(err)}`);
     }
   }
 
-  // 4) Verify pending → verified/surfaced (creates engine-owned surfaced_items).
+  // 4) Verify pending → verified/surfaced.
   try {
     const processed = await processEventCandidates(input.userId, VERIFY_LIMIT);
     result.verified = processed.surfaced;
@@ -99,16 +127,42 @@ export async function runEventsEngine(input: {
     result.errors.push(`verify: ${msg(err)}`);
   }
 
-  // 5) Render the verified pool: surface ready future events that have no live
-  //    card yet (the events "bench" → featured shelf). The verifier only acts on
-  //    status='pending', so already-verified events would otherwise never surface.
+  // 5) Assess (deterministic Truth/Fit/Urgency/Planability + expires_at + pre_score)
+  //    on every verified future event — the cheap brain layer before the LLM council.
   try {
-    result.rendered = await renderVerifiedEvents(supabase, input.userId);
+    result.assessed = await assessVerifiedEvents(supabase, input.userId);
+  } catch (err) {
+    result.errors.push(`assess: ${msg(err)}`);
+  }
+
+  // 6) Events Specialist Council (LLM) on finalists → final_score + taste vector.
+  try {
+    const council = await runEventsCouncil({ userId: input.userId, supabase });
+    result.judged = council.reduce((s, r) => s + r.judged, 0);
+    result.rejected += council.reduce((s, r) => s + r.rejected, 0);
+    for (const r of council) if (r.errors.length) result.errors.push(...r.errors);
+  } catch (err) {
+    result.errors.push(`council: ${msg(err)}`);
+  }
+
+  // 7) Comparative (deterministic head-to-head rank per sub-library).
+  try {
+    await rankComparative(supabase, input.userId);
+  } catch (err) {
+    result.errors.push(`comparative: ${msg(err)}`);
+  }
+
+  // 8) Editor + render: assemble the balanced shelf (final_score + urgency, sub-library
+  //    + venue variety) and surface exactly that set as engine-owned cards.
+  try {
+    const shelf = await renderEventsShelf(supabase, input.userId);
+    result.rendered = shelf.rendered;
+    result.demoted = shelf.demoted;
   } catch (err) {
     result.errors.push(`render: ${msg(err)}`);
   }
 
-  // 6) Route day-of high-fit events to Today.
+  // 9) Route day-of high-fit events to Today.
   try {
     result.routedToToday = await routeDayOfToToday(supabase, input.userId);
   } catch (err) {
@@ -118,34 +172,172 @@ export async function runEventsEngine(input: {
   return result;
 }
 
-/** Render the verified pool to the engine-owned featured shelf.
- *  - INSERT an engine card for a ready future event with no card.
- *  - ADOPT an existing non-engine shown/discovered card (re-tag engine-owned +
- *    pillar tags) so a good event already on the board (e.g. via the old
- *    materializer) survives cutover instead of being suppressed.
- *  - NEVER touch locked/passed/saved/planned/archived rows (respects user + history). */
-async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): Promise<number> {
-  const { data: events, error } = await supabase
+/** Deterministic brain layer: write Truth/Fit/Urgency/Planability + expires_at +
+ *  pre_score onto verified future events (cheap, every cycle, no LLM). */
+async function assessVerifiedEvents(supabase: SupabaseClient, userId: string): Promise<number> {
+  const { data, error } = await supabase
     .from("current_events")
     .select(
-      "id, title, venue_name, starts_at, ends_at, ticket_url, discovered_via, sources_cited, description, verdict, verdict_strength, quality_score, event_type, named_entities, vibe_keywords, library_place_id",
+      "id, title, sub_library, event_type, venue_name, description, vibe_keywords, starts_at, ends_at, ticket_url, discovered_via, sources_cited, named_entities, verdict_strength, price_min, price_max",
     )
     .eq("user_id", userId)
     .in("status", ["verified", "surfaced"])
     .gt("starts_at", new Date().toISOString())
-    .order("quality_score", { ascending: false, nullsFirst: false })
-    .limit(FEATURED_TARGET);
-  if (error || !events?.length) return 0;
+    .limit(40);
+  if (error || !data) return 0;
 
-  const ids = (events as EventRow[]).map((e) => e.id);
-  const { data: existing } = await supabase
+  const prefs = await readOperatingPreferences(supabase, userId).catch(() => null);
+  const now = new Date();
+  let assessed = 0;
+  for (const row of data as AssessRow[]) {
+    const e: AssessableEvent = {
+      title: row.title,
+      starts_at: row.starts_at,
+      ends_at: row.ends_at,
+      venue_name: row.venue_name,
+      ticket_url: row.ticket_url,
+      discovered_via: row.discovered_via,
+      sources_cited: row.sources_cited,
+      named_entities: row.named_entities,
+      verdict_strength: row.verdict_strength,
+      price_min: row.price_min,
+      price_max: row.price_max,
+      sub_library: row.sub_library,
+    };
+    const truth = assessTruth(e);
+    const urgency = assessUrgency(e, now);
+    const fit = assessFit(e, {
+      now,
+      lowFrictionWeeknights: prefs?.lowFrictionWeeknights,
+      premiumThreshold: prefs?.premiumThreshold ?? null,
+    });
+    const planability = assessPlanability(e);
+    const subLibrary = row.sub_library ?? classifyEventSubLibrary({
+      event_type: row.event_type,
+      title: row.title,
+      description: row.description,
+      venue_name: row.venue_name,
+      vibe_keywords: row.vibe_keywords,
+    });
+    const pre_score = clamp01(0.5 * truth.exists_confidence + 0.5 * fit.fit_score);
+    const { error: upErr } = await supabase
+      .from("current_events")
+      .update({
+        sub_library: subLibrary,
+        truth_assessment: truth as unknown as Json,
+        fit_assessment: fit as unknown as Json,
+        urgency_assessment: urgency as unknown as Json,
+        planability_assessment: planability as unknown as Json,
+        pre_score,
+        expires_at: expiresAtFor(e),
+        updated_at: now.toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("user_id", userId);
+    if (!upErr) assessed += 1;
+  }
+  return assessed;
+}
+
+type AssessRow = {
+  id: string;
+  title: string;
+  sub_library: string | null;
+  event_type: string | null;
+  venue_name: string | null;
+  description: string | null;
+  vibe_keywords: string[] | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  ticket_url: string | null;
+  discovered_via: string | null;
+  sources_cited: unknown;
+  named_entities: string[] | null;
+  verdict_strength: number | null;
+  price_min: number | null;
+  price_max: number | null;
+};
+
+/** Deterministic comparative: rank judged future events within each sub-library by
+ *  final_score (tiebreak urgency) → comparative_rank. */
+async function rankComparative(supabase: SupabaseClient, userId: string): Promise<void> {
+  const { data } = await supabase
+    .from("current_events")
+    .select("id, sub_library, final_score, urgency_assessment")
+    .eq("user_id", userId)
+    .in("status", ["verified", "surfaced"])
+    .gt("starts_at", new Date().toISOString())
+    .not("final_score", "is", null);
+  const rows = (data ?? []) as Array<{ id: string; sub_library: string | null; final_score: number | null; urgency_assessment: unknown }>;
+  const bySub = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const k = r.sub_library ?? "unknown";
+    const list = bySub.get(k) ?? [];
+    list.push(r);
+    bySub.set(k, list);
+  }
+  for (const list of bySub.values()) {
+    list.sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0) + (urgencyWeight(b.urgency_assessment) - urgencyWeight(a.urgency_assessment)));
+    for (let i = 0; i < list.length; i++) {
+      await supabase
+        .from("current_events")
+        .update({ comparative_rank: i + 1 })
+        .eq("id", list[i].id)
+        .eq("user_id", userId);
+    }
+  }
+}
+
+function urgencyWeight(a: unknown): number {
+  const u = isRecord(a) && typeof a.urgency === "string" ? a.urgency : "normal";
+  return u === "now" ? 0.15 : u === "soon" ? 0.1 : u === "normal" ? 0.04 : 0;
+}
+
+/** Editor + render: assemble the balanced shelf (selectEventsShelf over JUDGED
+ *  events) and surface exactly that set as engine-owned cards. Featured events get
+ *  a shown/radar engine card (insert or adopt); engine event cards that fall off
+ *  the shelf are demoted to 'discovered' (off-board, re-featurable). Locked/passed/
+ *  archived rows are never touched. */
+async function renderEventsShelf(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ rendered: number; demoted: number }> {
+  const { data: events, error } = await supabase
+    .from("current_events")
+    .select(
+      "id, title, venue_name, starts_at, ends_at, ticket_url, discovered_via, sources_cited, description, verdict, verdict_strength, quality_score, final_score, sub_library, urgency_assessment, event_type, named_entities, vibe_keywords, library_place_id",
+    )
+    .eq("user_id", userId)
+    .in("status", ["verified", "surfaced"])
+    .gt("starts_at", new Date().toISOString())
+    .not("final_score", "is", null)
+    .limit(40);
+  if (error || !events?.length) return { rendered: 0, demoted: 0 };
+
+  // Readiness gate, then editor SET-assembly.
+  const ready = (events as EventRow[]).filter(
+    (e) => hasOfficialFutureTime(e.starts_at) && Boolean(e.venue_name?.trim()) && Boolean(firstEventSource(e)),
+  );
+  const candidates: Array<ShelfCandidate & { event: EventRow }> = ready.map((e) => ({
+    id: e.id,
+    sub_library: e.sub_library ?? null,
+    venue: e.venue_name,
+    final_score: e.final_score ?? e.verdict_strength ?? 0,
+    urgency: urgencyOf(e.urgency_assessment),
+    starts_at: e.starts_at,
+    event: e,
+  }));
+  const { featured } = selectEventsShelf(candidates, { limit: FEATURED_TARGET, maxPerSubLibrary: 3, maxPerVenue: 1 });
+  const featuredIds = new Set(featured.map((f) => f.id));
+
+  // Existing engine event cards (to adopt/insert/demote).
+  const { data: cardRows } = await supabase
     .from("surfaced_items")
     .select("id, source_id, status, source, payload")
     .eq("user_id", userId)
-    .eq("category", "events")
-    .in("source_id", ids);
+    .eq("category", "events");
   const cardsByEvent = new Map<string, ExistingCard[]>();
-  for (const row of (existing ?? []) as ExistingCard[]) {
+  for (const row of (cardRows ?? []) as ExistingCard[]) {
     if (!row.source_id) continue;
     const list = cardsByEvent.get(row.source_id) ?? [];
     list.push(row);
@@ -153,23 +345,22 @@ async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): P
   }
 
   let rendered = 0;
-  for (const e of events as EventRow[]) {
-    // Readiness (the events lane contract): real future time + venue + a source.
-    const sourceUrl = firstEventSource(e);
-    if (!hasOfficialFutureTime(e.starts_at) || !e.venue_name?.trim() || !sourceUrl) continue;
-
+  for (const f of featured) {
+    const e = f.event;
     const cards = cardsByEvent.get(e.id) ?? [];
-    const locked = cards.find((c) => LOCKED_OR_ARCHIVED.has(c.status));
-    if (locked) continue; // user owns it / intentionally removed — leave alone
+    if (cards.some((c) => LOCKED_OR_ARCHIVED.has(c.status))) continue; // user owns / removed
 
     const live = cards.find((c) => c.status === "shown" || c.status === "discovered");
     if (live) {
-      // Already on the board — adopt it as engine-owned if it isn't already.
       const payload = isRecord(live.payload) ? live.payload : {};
-      if (payload.source_layer === ENGINE_SOURCE) continue;
       const { error: upErr } = await supabase
         .from("surfaced_items")
-        .update({ payload: { ...payload, source_layer: ENGINE_SOURCE, pillar_tags: eventPillars(e) } })
+        .update({
+          status: "shown",
+          destination: "radar",
+          score: e.final_score ?? e.verdict_strength ?? null,
+          payload: { ...payload, ...eventPayload(e), source_layer: ENGINE_SOURCE },
+        })
         .eq("id", live.id)
         .eq("user_id", userId);
       if (!upErr) rendered += 1;
@@ -177,44 +368,74 @@ async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): P
     }
     if (cards.length > 0) continue; // only archived/other — don't resurrect
 
-    // No card → insert a fresh engine-owned one.
-    const whyNow = eventWhyNow(e);
-    const { error: insErr } = await supabase.from("surfaced_items").insert({
-      user_id: userId,
-      destination: "radar",
-      source: "event_pulse",
-      source_id: e.id,
-      title: e.title,
-      subtitle: e.venue_name,
-      description: e.verdict ?? e.description ?? null,
-      location_name: e.venue_name,
-      starts_at: e.starts_at,
-      ends_at: e.ends_at ?? null,
-      url: sourceUrl,
-      type: "event",
-      category: "events",
-      tags: e.vibe_keywords ?? [],
-      reasons: [whyNow, e.verdict ?? ""].filter(Boolean),
-      score: e.verdict_strength ?? e.quality_score ?? null,
-      status: "shown",
-      payload: {
-        source_layer: ENGINE_SOURCE,
-        event_id: e.id,
-        event_type: e.event_type,
-        named_entities: e.named_entities ?? [],
-        venue_name: e.venue_name,
-        library_place_id: e.library_place_id,
-        verdict_strength: e.verdict_strength,
-        why_now: whyNow,
-        pillar_tags: eventPillars(e),
-        verified_source_url: sourceUrl,
-        official_starts_at: e.starts_at,
-        event_time_locked: true,
-      },
-    });
+    const { error: insErr } = await supabase.from("surfaced_items").insert(buildEventCard(userId, e));
     if (!insErr) rendered += 1;
   }
-  return rendered;
+
+  // Demote engine event cards that fell off the shelf (shown but not featured).
+  let demoted = 0;
+  for (const [eventId, cards] of cardsByEvent) {
+    if (featuredIds.has(eventId)) continue;
+    for (const c of cards) {
+      if (c.status !== "shown") continue;
+      if (LOCKED_OR_ARCHIVED.has(c.status)) continue;
+      if (!isRecord(c.payload) || c.payload.source_layer !== ENGINE_SOURCE) continue;
+      const { error: dErr } = await supabase
+        .from("surfaced_items")
+        .update({ status: "discovered" })
+        .eq("id", c.id)
+        .eq("user_id", userId);
+      if (!dErr) demoted += 1;
+    }
+  }
+
+  return { rendered, demoted };
+}
+
+function urgencyOf(a: unknown): string {
+  return isRecord(a) && typeof a.urgency === "string" ? a.urgency : "normal";
+}
+
+function eventPayload(e: EventRow): Record<string, unknown> {
+  const whyNow = eventWhyNow(e);
+  return {
+    event_id: e.id,
+    event_type: e.event_type,
+    sub_library: e.sub_library,
+    named_entities: e.named_entities ?? [],
+    venue_name: e.venue_name,
+    library_place_id: e.library_place_id,
+    verdict_strength: e.final_score ?? e.verdict_strength,
+    why_now: whyNow,
+    pillar_tags: eventPillars(e),
+    verified_source_url: firstEventSource(e),
+    official_starts_at: e.starts_at,
+    event_time_locked: true,
+  };
+}
+
+function buildEventCard(userId: string, e: EventRow): Record<string, unknown> {
+  const whyNow = eventWhyNow(e);
+  return {
+    user_id: userId,
+    destination: "radar",
+    source: "event_pulse",
+    source_id: e.id,
+    title: e.title,
+    subtitle: e.venue_name,
+    description: e.verdict ?? e.description ?? null,
+    location_name: e.venue_name,
+    starts_at: e.starts_at,
+    ends_at: e.ends_at ?? null,
+    url: firstEventSource(e),
+    type: "event",
+    category: "events",
+    tags: e.vibe_keywords ?? [],
+    reasons: [whyNow, e.verdict ?? ""].filter(Boolean),
+    score: e.final_score ?? e.verdict_strength ?? null,
+    status: "shown",
+    payload: { source_layer: ENGINE_SOURCE, ...eventPayload(e) },
+  };
 }
 
 const LOCKED_OR_ARCHIVED = new Set<string>([...LOCKED_STATUSES, "archived"]);
@@ -240,6 +461,9 @@ type EventRow = {
   verdict: string | null;
   verdict_strength: number | null;
   quality_score: number | null;
+  final_score: number | null;
+  sub_library: string | null;
+  urgency_assessment: unknown;
   event_type: string | null;
   named_entities: string[] | null;
   vibe_keywords: string[] | null;
@@ -426,6 +650,10 @@ function localDateKey(d: Date, tz = "America/Chicago"): string {
     month: "2-digit",
     day: "2-digit",
   }).format(d);
+}
+
+function clamp01(v: number): number {
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
 }
 
 function msg(err: unknown): string {
