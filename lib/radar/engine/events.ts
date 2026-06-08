@@ -5,6 +5,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { runEventScout } from "@/lib/brain/eventScout";
 import { processEventCandidates } from "@/lib/intelligence/eventWorker";
 import { ENGINE_SOURCE } from "@/lib/radar/engine/ownership";
+import { pillarsForItem } from "@/lib/radar/engine/pillars";
 
 /**
  * Events lane engine — the first non-dining physical lane engine (per
@@ -24,6 +25,8 @@ import { ENGINE_SOURCE } from "@/lib/radar/engine/ownership";
 
 // Keep the future-ready pool healthy without over-scouting (Tavily/LLM cost).
 const FUTURE_READY_TARGET = 6;
+// Featured events shelf size (rendered from the verified pool).
+const FEATURED_TARGET = 7;
 // Even when thin, scout at most this often (cron may fire every ~30 min).
 const SCOUT_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const VERIFY_LIMIT = 12;
@@ -41,6 +44,7 @@ export type EventsEngineResult = {
   rejected: number;
   expiredEvents: number;
   archivedCards: number;
+  rendered: number;
   routedToToday: number;
   backfilled: number;
   errors: string[];
@@ -58,6 +62,7 @@ export async function runEventsEngine(input: {
     rejected: 0,
     expiredEvents: 0,
     archivedCards: 0,
+    rendered: 0,
     routedToToday: 0,
     backfilled: 0,
     errors: [],
@@ -94,7 +99,16 @@ export async function runEventsEngine(input: {
     result.errors.push(`verify: ${msg(err)}`);
   }
 
-  // 5) Route day-of high-fit events to Today.
+  // 5) Render the verified pool: surface ready future events that have no live
+  //    card yet (the events "bench" → featured shelf). The verifier only acts on
+  //    status='pending', so already-verified events would otherwise never surface.
+  try {
+    result.rendered = await renderVerifiedEvents(supabase, input.userId);
+  } catch (err) {
+    result.errors.push(`render: ${msg(err)}`);
+  }
+
+  // 6) Route day-of high-fit events to Today.
   try {
     result.routedToToday = await routeDayOfToToday(supabase, input.userId);
   } catch (err) {
@@ -102,6 +116,127 @@ export async function runEventsEngine(input: {
   }
 
   return result;
+}
+
+/** Surface verified/surfaced future events that have NO surfaced_items row yet,
+ *  as engine-owned cards (the events featured shelf). Insert-only: never
+ *  resurrects archived/passed/saved/planned rows (respects user + history). */
+async function renderVerifiedEvents(supabase: SupabaseClient, userId: string): Promise<number> {
+  const { data: events, error } = await supabase
+    .from("current_events")
+    .select(
+      "id, title, venue_name, starts_at, ends_at, ticket_url, description, verdict, verdict_strength, quality_score, event_type, named_entities, vibe_keywords, library_place_id, source_id",
+    )
+    .eq("user_id", userId)
+    .in("status", ["verified", "surfaced"])
+    .gt("starts_at", new Date().toISOString())
+    .order("quality_score", { ascending: false, nullsFirst: false })
+    .limit(FEATURED_TARGET);
+  if (error || !events?.length) return 0;
+
+  const ids = (events as EventRow[]).map((e) => e.id);
+  const { data: existing } = await supabase
+    .from("surfaced_items")
+    .select("source_id")
+    .eq("user_id", userId)
+    .eq("category", "events")
+    .in("source_id", ids);
+  const haveRow = new Set<string>(
+    ((existing ?? []) as Array<{ source_id: string | null }>)
+      .map((r) => r.source_id)
+      .filter((v): v is string => Boolean(v)),
+  );
+
+  let rendered = 0;
+  for (const e of events as EventRow[]) {
+    if (haveRow.has(e.id)) continue; // already has a card (any status) — respect it
+    const ticket = e.ticket_url;
+    // Readiness: date + venue + source (the lane contract for events).
+    if (!isValidFutureDate(e.starts_at) || !e.venue_name?.trim() || !isHttpUrl(ticket)) continue;
+    const whyNow = eventWhyNow(e);
+    const { error: insErr } = await supabase.from("surfaced_items").insert({
+      user_id: userId,
+      destination: "radar",
+      source: "event_pulse",
+      source_id: e.id,
+      title: e.title,
+      subtitle: e.venue_name,
+      description: e.verdict ?? e.description ?? null,
+      location_name: e.venue_name,
+      starts_at: e.starts_at,
+      ends_at: e.ends_at ?? null,
+      url: ticket,
+      type: "event",
+      category: "events",
+      tags: e.vibe_keywords ?? [],
+      reasons: [whyNow, e.verdict ?? ""].filter(Boolean),
+      score: e.verdict_strength ?? e.quality_score ?? null,
+      status: "shown",
+      payload: {
+        source_layer: ENGINE_SOURCE,
+        event_id: e.id,
+        event_type: e.event_type,
+        named_entities: e.named_entities ?? [],
+        venue_name: e.venue_name,
+        library_place_id: e.library_place_id,
+        verdict_strength: e.verdict_strength,
+        why_now: whyNow,
+        pillar_tags: pillarsForItem({
+          category: "events",
+          lane: "events",
+          tags: e.vibe_keywords ?? [],
+          title: e.title,
+        }),
+        verified_source_url: ticket,
+        official_starts_at: e.starts_at,
+        event_time_locked: true,
+      },
+    });
+    if (!insErr) rendered += 1;
+  }
+  return rendered;
+}
+
+type EventRow = {
+  id: string;
+  title: string;
+  venue_name: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  ticket_url: string | null;
+  description: string | null;
+  verdict: string | null;
+  verdict_strength: number | null;
+  quality_score: number | null;
+  event_type: string | null;
+  named_entities: string[] | null;
+  vibe_keywords: string[] | null;
+  library_place_id: string | null;
+  source_id: string | null;
+};
+
+function eventWhyNow(e: EventRow): string {
+  const parts: string[] = [];
+  if (e.named_entities?.length) parts.push(e.named_entities.slice(0, 2).join(" + "));
+  if (e.starts_at) {
+    const d = new Date(e.starts_at);
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(
+        `${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/Chicago" })} at ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" })}`,
+      );
+    }
+  }
+  return parts.join(" · ") || "Upcoming event.";
+}
+
+function isValidFutureDate(v: string | null): boolean {
+  if (!v) return false;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) && t > Date.now();
+}
+
+function isHttpUrl(v: unknown): v is string {
+  return typeof v === "string" && /^https?:\/\//i.test(v);
 }
 
 /** Tag existing event cards engine-owned so suppressSupersededLanes keeps them
