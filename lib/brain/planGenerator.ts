@@ -809,13 +809,22 @@ async function buildSupplementalContext(
   ]);
   const placeDetails = placeResult.status === "fulfilled" ? placeResult.value : null;
   const photoNames = placeDetails?.photoNames ?? [];
-  const selectedPhotoUrl = photoNames.length
-    ? await pickBestVenuePhoto({
-        photoNames,
-        venueName: item.title,
-        category: item.category ?? "places",
-      }).catch(() => null)
-    : null;
+  // If the item already carries a resolved hero image (e.g. the curation engine's
+  // enrich stage already picked one), reuse it and SKIP the vision photo-pick —
+  // that saves an Anthropic vision call + ~5 photo resolutions per plan build.
+  const existingImage =
+    typeof item.imageUrl === "string" && /^https?:\/\//i.test(item.imageUrl)
+      ? item.imageUrl
+      : null;
+  const selectedPhotoUrl = existingImage
+    ? existingImage
+    : photoNames.length
+      ? await pickBestVenuePhoto({
+          photoNames,
+          venueName: item.title,
+          category: item.category ?? "places",
+        }).catch(() => null)
+      : null;
   const [reservation, menuCorpus] = await Promise.all([
     resolveReservation(item, placeDetails).catch(() => null),
     gatherMenuCorpus(item, placeDetails).catch(() => null),

@@ -25,9 +25,10 @@ export const maxDuration = 300;
 
 /** Lanes the curation engine owns (readiness-gated). Grows as lanes cut over. */
 const ENGINE_LANES = ["dining"];
-// Small batch: each plan build can take tens of seconds. The cadence drains the
-// backlog over a few cycles; bump the cron frequency to fill faster.
-const PLANS_PER_RUN = 4;
+// With the vision photo-pick skipped for items that already have a hero image
+// (engine cards do), each build is ~halved, so a batch of 6 stays well under the
+// 300s function limit. Bump the cron frequency too if a faster fill is wanted.
+const PLANS_PER_RUN = 6;
 
 function validateCronSecret(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
