@@ -25,6 +25,7 @@ import { runEventsEngine } from "@/lib/radar/engine/events";
 import { runCultureEngine } from "@/lib/radar/engine/culture";
 import { runPlacesEngine } from "@/lib/radar/engine/places";
 import { runMovesEngine } from "@/lib/radar/engine/moves";
+import { runFindsEngine } from "@/lib/radar/engine/finds";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -120,6 +121,23 @@ export async function GET(req: Request) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "radar/engine moves failed";
       console.error("[api/radar/engine] moves error", err);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
+
+  // Finds lane engine — curation brain over the existing Product Researcher finds
+  // (per jarvis-finds-engine-brain-tree.md). Scores + budget-gates IN PLACE; never
+  // re-renders or touches the /find/[id] product UI.
+  if (lane === "finds") {
+    try {
+      const startedAt = Date.now();
+      const finds = await runFindsEngine({ userId: ownerUserId });
+      const durationMs = Date.now() - startedAt;
+      console.log("[api/radar/engine] finds cycle " + JSON.stringify({ durationMs, finds }));
+      return NextResponse.json({ ok: true, lane, durationMs, finds });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "radar/engine finds failed";
+      console.error("[api/radar/engine] finds error", err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }

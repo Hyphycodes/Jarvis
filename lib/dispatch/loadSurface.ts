@@ -4,6 +4,8 @@ import { getViewableProfileId } from "@/lib/auth";
 import { buildBrainContext } from "@/lib/brain/context";
 import { operatingSummaryLine } from "@/lib/operating/operatingPreferences";
 import { laneCanExpire } from "@/lib/radar/engine/lanes";
+import { selectFindsShelf } from "@/lib/radar/engine/finds/editor";
+import { findFamilyKey, normalizeFindTitle } from "@/lib/radar/engine/finds/config";
 import {
   buildIntelligenceReason,
   reasonForCircleMoment,
@@ -871,41 +873,29 @@ function selectBalancedRadarInventory(items: IndexedItem[]): IndexedItem[] {
 
 /** Collapse the Finds lane: drop exact-title repeats, cap one per brand+family,
  *  cap two per brand. Keeps the strongest (already sorted) of each. */
+/** Finds dedup/variety at render — delegates to the centralized, tested Finds
+ *  editor (brand+family / source-brain / aspirational caps; user-intent bypasses).
+ *  Preserves the caller's sort order; the per-category slice happens downstream. */
 function dedupeFindsLane(items: IndexedItem[]): IndexedItem[] {
-  const seenTitle = new Set<string>();
-  const seenFamily = new Set<string>();
-  const brandCount = new Map<string, number>();
-  const MAX_PER_BRAND = 2;
-  const out: IndexedItem[] = [];
-  for (const item of items) {
-    if (isUserIntent(item)) {
-      out.push(item); // explicit request — never deduped away
-      continue;
-    }
+  const candidates = items.map((item) => {
     const dossier = readFindsDossier(item);
-    const title = normalizeFindKey(dossier?.best_pick?.name ?? dossier?.mission_title ?? item.title ?? "");
-    const brand = normalizeFindKey(dossier?.best_pick?.brand ?? "");
-    const family = normalizeFindKey([brand, dossier?.subcategory ?? ""].filter(Boolean).join(" "));
-    if (title && seenTitle.has(title)) continue;
-    if (family && seenFamily.has(family)) continue;
-    if (brand) {
-      const count = brandCount.get(brand) ?? 0;
-      if (count >= MAX_PER_BRAND) continue;
-      brandCount.set(brand, count + 1);
-    }
-    if (title) seenTitle.add(title);
-    if (family) seenFamily.add(family);
-    out.push(item);
-  }
-  return out;
-}
-
-function normalizeFindKey(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+    const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+    const name = dossier?.best_pick?.name ?? dossier?.mission_title ?? item.title ?? "";
+    const tier = readFindBudgetTier(item);
+    return {
+      id: item.id,
+      titleKey: normalizeFindTitle(name),
+      familyKey: findFamilyKey({ brand: dossier?.best_pick?.brand, subcategory: dossier?.subcategory, title: name }),
+      productUrl: dossier?.best_pick?.product_url ?? null,
+      sourceBrain: stringValue(payload.source_brain) ?? dossier?.source_brain ?? null,
+      budgetTier: tier === "premium-realistic" ? "premium_realistic" : tier ?? null,
+      finalScore: item.score ?? 0,
+      userRequested: isUserIntent(item),
+    };
+  });
+  const { featured } = selectFindsShelf(candidates, { limit: items.length, maxPerSourceBrain: 2, maxAspirational: 1 });
+  const keep = new Set(featured.map((f) => f.id));
+  return items.filter((item) => keep.has(item.id));
 }
 
 /**

@@ -46,6 +46,9 @@ import { selectPlacesShelf } from "../lib/radar/engine/places/editor";
 import { classifyMoveSubLibrary } from "../lib/radar/engine/moves/config";
 import { assessMoveTruth, assessMoveFit, assessEnergy, assessWeather } from "../lib/radar/engine/moves/assess";
 import { selectMovesShelf } from "../lib/radar/engine/moves/editor";
+import { classifyFindSubLibrary, findFamilyKey } from "../lib/radar/engine/finds/config";
+import { assessFindTruth, assessFindBudget } from "../lib/radar/engine/finds/assess";
+import { selectFindsShelf } from "../lib/radar/engine/finds/editor";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -493,6 +496,70 @@ check("selectMovesShelf: sub-library cap spreads beyond one move type", () => {
   const ids = featured.map((f) => f.id);
   assert.ok(ids.includes("a") && ids.includes("b") && !ids.includes("c"));
   assert.ok(ids.includes("d") && ids.includes("e")); // variety
+});
+
+// ── finds: keeps its own UI route ────────────────────────────────────────────
+check("finds detail route is 'find' (protected buyer UI, not a plan)", () => {
+  assert.equal(detailRouteFor("finds"), "find");
+  assert.notEqual(detailRouteFor("finds"), "plan");
+});
+
+check("classifyFindSubLibrary + findFamilyKey: watch keyword + brand family", () => {
+  assert.equal(classifyFindSubLibrary({ source_brain: "style", subcategory: "dive watch" }), "finds_watches");
+  assert.equal(classifyFindSubLibrary({ source_brain: "style", subcategory: "linen shirt" }), "finds_clothing");
+  // Charvet shirt variants share a family key → dedup cluster
+  assert.equal(
+    findFamilyKey({ brand: "Charvet", subcategory: "Shirt Program" }),
+    findFamilyKey({ brand: "Charvet", subcategory: "Shirt Program" }),
+  );
+});
+
+check("assessFindTruth: needs URL+image to be buy-ready", () => {
+  assert.equal(assessFindTruth({ title: "X", price: "$120" }).needs_more_research, true);
+  const ready = assessFindTruth({ title: "Shirt", price: "$120", retailer: "Drake's", product_url: "https://drakes.com/x", image_url: "https://drakes.com/x.jpg", research_state: "ready" });
+  assert.equal(ready.needs_more_research, false);
+  assert.ok(ready.product_confidence > 0.8);
+});
+
+check("assessFindBudget: fantasy luxury holds unless requested; $100k balanced default", () => {
+  const watch = assessFindBudget({ title: "Rolex", price: "$12,000" }, { premiumThreshold: 300, aspirationalFrequency: "rare_unless_requested" });
+  assert.equal(watch.budget_tier, "hold");
+  assert.equal(watch.requires_user_request, true);
+  assert.equal(watch.should_surface_background, false);
+  const requested = assessFindBudget({ title: "Rolex", price: "$12,000", userRequested: true }, { premiumThreshold: 300 });
+  assert.equal(requested.should_surface_background, true); // he asked
+  assert.equal(assessFindBudget({ title: "Tee", price: "$40" }, {}).budget_tier, "attainable");
+  assert.equal(assessFindBudget({ title: "Jacket", price: "$250" }, { premiumThreshold: 300 }).budget_tier, "premium_realistic");
+});
+
+check("selectFindsShelf: no Charvet wall (1/family, 2/brain, 1 aspirational)", () => {
+  const c = (id: string, fam: string, brain: string, tier: string, score: number, req = false) => ({
+    id, titleKey: id, familyKey: fam, productUrl: `https://x/${id}`, sourceBrain: brain, budgetTier: tier, finalScore: score, userRequested: req,
+  });
+  const { featured } = selectFindsShelf(
+    [
+      c("a", "charvet:shirt", "style", "premium_realistic", 0.9),
+      c("b", "charvet:shirt", "style", "premium_realistic", 0.88), // same family → reserve
+      c("c", "drakes:knit", "style", "premium_realistic", 0.86),
+      c("d", "loro:scarf", "style", "premium_realistic", 0.84), // 3rd style → over maxPerSourceBrain(2)
+      c("e", "leica:camera", "gear", "premium_realistic", 0.7),
+      c("f", "rolex:watch", "watches", "aspirational", 0.95),
+      c("g", "omega:watch", "watches", "aspirational", 0.93), // 2nd aspirational → reserve
+    ],
+    { limit: 7, maxPerSourceBrain: 2, maxAspirational: 1 },
+  );
+  const ids = featured.map((x) => x.id);
+  assert.ok(ids.includes("a") && !ids.includes("b")); // family cap
+  assert.ok(!ids.includes("d")); // source-brain cap (style maxed at 2)
+  assert.ok(ids.includes("f") && !ids.includes("g")); // 1 aspirational only
+  assert.ok(ids.includes("e")); // variety from another brain
+});
+
+check("selectFindsShelf: hold tier never features in background; user-requested bypasses caps", () => {
+  const held = selectFindsShelf([{ id: "h", titleKey: "h", familyKey: "x:y", sourceBrain: "watches", budgetTier: "hold", finalScore: 0.99 }], {});
+  assert.equal(held.featured.length, 0);
+  const requested = selectFindsShelf([{ id: "r", titleKey: "r", familyKey: "x:y", sourceBrain: "watches", budgetTier: "hold", finalScore: 0.5, userRequested: true }], {});
+  assert.equal(requested.featured.length, 1); // he asked for it
 });
 
 if (failures > 0) {
