@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { scoutDining } from "@/lib/radar/engine/scout";
+import { preScoreDining } from "@/lib/radar/engine/prescore";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -52,14 +53,23 @@ export async function GET(req: Request) {
   try {
     const supabase = getSupabaseServiceClient();
     const startedAt = Date.now();
-    // Stage 1 (scout) — dining lane only for now.
-    const results = await scoutDining({ userId: ownerUserId, supabase });
+    // Dining lane: Stage 1 (scout) → Stage 3 (pre-score). Light/deep enrich +
+    // finalists + council + comparative + plan + editor + bench land here next.
+    const scout = await scoutDining({ userId: ownerUserId, supabase });
+    const prescore = await preScoreDining({ userId: ownerUserId, supabase });
     const durationMs = Date.now() - startedAt;
     console.log(
-      "[api/radar/engine] scout " +
-        JSON.stringify({ lane, durationMs, results }),
+      "[api/radar/engine] cycle " +
+        JSON.stringify({ lane, durationMs, scout, prescore }),
     );
-    return NextResponse.json({ ok: true, lane, stage: "scout", durationMs, results });
+    return NextResponse.json({
+      ok: true,
+      lane,
+      stages: ["scout", "pre_score"],
+      durationMs,
+      scout,
+      prescore,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "radar/engine failed";
     console.error("[api/radar/engine] error", err);
