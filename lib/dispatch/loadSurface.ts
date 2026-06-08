@@ -4,6 +4,7 @@ import { getViewableProfileId } from "@/lib/auth";
 import { buildBrainContext } from "@/lib/brain/context";
 import { operatingSummaryLine } from "@/lib/operating/operatingPreferences";
 import { laneCanExpire } from "@/lib/radar/engine/lanes";
+import { radarItemReadyForFeature } from "@/lib/radar/engine/radarReadiness";
 import { selectFindsShelf } from "@/lib/radar/engine/finds/editor";
 import { findFamilyKey, normalizeFindTitle } from "@/lib/radar/engine/finds/config";
 import {
@@ -309,28 +310,93 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
 
 export const loadRadarSurface: Loader<RadarCard[]> = async () => {
   try {
-    // Render only displays what the pipeline already promoted to `shown`/`opened`
-    // — it never re-judges. The quality gate lives upstream in promotion now, so
-    // an item that reached `shown` has already earned its place on the shelf.
     const items = await listIndexItems({
       destination: "radar",
       status: ["shown", "opened"],
       limit: RADAR_ACTIVE_ITEM_LIMIT * 3,
     });
-    const visibleItems = selectBalancedRadarInventory(suppressSupersededLanes(items));
+    const pool = suppressSupersededLanes(items);
+
+    // Resolve plan + image facts on the FULL pool first, so the Radar Readiness
+    // Contract runs BEFORE per-lane balancing — each lane then fills from items
+    // that are genuinely ready, never padded with half-built ones.
     const [withPlanRefs, libraryImages] = await Promise.all([
-      withRadarPlanRefs(visibleItems),
-      resolveLibraryImages(visibleItems),
+      withRadarPlanRefs(pool),
+      resolveLibraryImages(pool),
     ]);
-    return withPlanRefs
-      .map(({ item, planRef }) =>
-        toRadarCard(item, planRef, libraryImages.get(item.id)),
-      );
+    const planRefById = new Map(withPlanRefs.map((r) => [r.item.id, r.planRef]));
+
+    // THE FINAL GATE before Radar display: an item only reaches the shelf with a
+    // complete card, a real image, and the correct ready detail experience for
+    // its lane. Anything incomplete stays in reserve (logged, never shown).
+    const readyPool = pool.filter((item) =>
+      passesRadarReadiness(item, planRefById.get(item.id), libraryImages.get(item.id)),
+    );
+
+    const visibleItems = selectBalancedRadarInventory(readyPool);
+    return visibleItems.map((item) =>
+      toRadarCard(
+        item,
+        planRefById.get(item.id) ?? { hasStoredRef: false, isReady: false },
+        libraryImages.get(item.id),
+      ),
+    );
   } catch (error) {
     logSurfaceError("radar", error);
     return [];
   }
 };
+
+/**
+ * The Radar Readiness Contract applied at the display gate. Resolves the exact
+ * hero image the card will render and the same finds-dossier readiness used
+ * everywhere else, then defers the verdict to the central, unit-tested helper.
+ * Held items are logged (never shown) so internal diagnostics can see what's
+ * still being prepared ("Building plan", "Finding image").
+ */
+function passesRadarReadiness(
+  item: IndexedItem,
+  planRef: RadarPlanRef | undefined,
+  libraryImage: string | undefined,
+): boolean {
+  const lane = visibleRadarCategory(item);
+  if (!lane) return false; // not classifiable into a Radar lane → not front-room.
+
+  const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+  const brief = readCardBrief(payload);
+  const dossier = readFindsDossier(item);
+  const effectiveImageUrl =
+    heroImageForItem(item) ??
+    brief?.heroImageUrl ??
+    libraryImage ??
+    dossier?.best_pick?.image_url ??
+    undefined;
+
+  const result = radarItemReadyForFeature({
+    lane,
+    title: item.title,
+    description:
+      stringValue(item.description) ?? brief?.jarvisLine ?? stringValue(item.subtitle),
+    score: item.score ?? null,
+    imageUrl: effectiveImageUrl,
+    hasPlanRef: planRef?.hasStoredRef ?? false,
+    planReady: planRef?.isReady ?? false,
+    findsReady: lane === "finds" ? Boolean(dossier && findIsReady(dossier)) : undefined,
+    startsAt: item.startsAt ?? null,
+    venue: item.locationName ?? stringValue(item.subtitle),
+    location: item.locationName ?? stringValue(item.address),
+    neighborhood: stringValue(item.subtitle),
+  });
+
+  if (!result.ready) {
+    console.info("[radar.readiness.held]", {
+      id: item.id,
+      lane: result.lane,
+      missing: result.missing,
+    });
+  }
+  return result.ready;
+}
 
 /**
  * Batch-resolve curated library photos for items that have no image of their

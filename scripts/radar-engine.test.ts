@@ -22,6 +22,7 @@ import {
 } from "../lib/radar/engine/tasteSignal";
 import { LANE_ENGINE, detailRouteFor, laneCanExpire } from "../lib/radar/engine/lanes";
 import { assessLaneReadiness } from "../lib/radar/engine/laneReadiness";
+import { radarItemReadyForFeature } from "../lib/radar/engine/radarReadiness";
 import { evaluateRecommendationFloor } from "../lib/radar/engine/recommendationFloor";
 import { pillarsForItem } from "../lib/radar/engine/pillars";
 import { classifyEventSubLibrary } from "../lib/radar/engine/events/config";
@@ -225,6 +226,136 @@ check("assessLaneReadiness: dated culture must carry a date", () => {
   assert.ok(datedNoDate.missing.includes("date_time"));
   const timeless = assessLaneReadiness({ lane: "culture", culturalReason: "Bauhaus retrospective" });
   assert.equal(timeless.ready, true);
+});
+
+// ── radar readiness contract ────────────────────────────────────────────────
+const GOOD_IMG = "https://venue.example/photo.jpg";
+
+check("readiness: a complete dining card with a ready plan is featured", () => {
+  const r = radarItemReadyForFeature({
+    lane: "dining",
+    title: "Kasama",
+    description: "Michelin Filipino tasting in Ukrainian Village.",
+    score: 0.82,
+    imageUrl: GOOD_IMG,
+    hasPlanRef: true,
+    planReady: true,
+  });
+  assert.equal(r.ready, true);
+  assert.deepEqual(r.missing, []);
+  assert.equal(r.route, "plan");
+  assert.equal(r.imageReady, true);
+  assert.equal(r.planReady, true);
+  assert.equal(r.detailReady, true);
+});
+
+check("readiness: a card that opens a half-built plan is held", () => {
+  const r = radarItemReadyForFeature({
+    lane: "dining",
+    title: "Kasama",
+    description: "great spot",
+    score: 0.8,
+    imageUrl: GOOD_IMG,
+    hasPlanRef: true,
+    planReady: false, // building / failed / cancelled
+  });
+  assert.equal(r.ready, false);
+  assert.ok(r.missing.includes("plan"));
+  assert.equal(r.detailReady, false);
+});
+
+check("readiness: a plan-lane card with NO plan ref still passes on card+image", () => {
+  // No "open plan" advertised → it renders as a brief, owes only card + image.
+  const r = radarItemReadyForFeature({
+    lane: "moves",
+    title: "Sunrise lakefront run",
+    description: "Easy 3 miles before work.",
+    score: 0.7,
+    imageUrl: GOOD_IMG,
+    hasPlanRef: false,
+  });
+  assert.equal(r.ready, true);
+  assert.equal(r.planReady, true);
+});
+
+check("readiness: every lane needs a real image (blank/stock held)", () => {
+  const blank = radarItemReadyForFeature({ lane: "places", title: "X", description: "y", score: 0.6 });
+  assert.equal(blank.ready, false);
+  assert.ok(blank.missing.includes("image"));
+  assert.equal(blank.imageReady, false);
+  const stock = radarItemReadyForFeature({
+    lane: "places",
+    title: "X",
+    description: "y",
+    score: 0.6,
+    imageUrl: "https://www.gettyimages.com/photo/123.jpg",
+  });
+  assert.equal(stock.imageReady, false); // editorial/stock host rejected
+});
+
+check("readiness: finds use the /find dossier gate, not a plan", () => {
+  const ready = radarItemReadyForFeature({
+    lane: "finds",
+    title: "Linen camp-collar shirt",
+    description: "A summer staple in a quiet palette.",
+    score: 0.75,
+    imageUrl: GOOD_IMG,
+    findsReady: true,
+    hasPlanRef: true, // a stray plan ref must NOT gate a find
+    planReady: false,
+  });
+  assert.equal(ready.route, "find");
+  assert.equal(ready.ready, true); // plan ignored; dossier is ready
+  const notReady = radarItemReadyForFeature({
+    lane: "finds",
+    title: "Watch",
+    description: "y",
+    score: 0.9,
+    imageUrl: GOOD_IMG,
+    findsReady: false,
+  });
+  assert.equal(notReady.ready, false);
+  assert.ok(notReady.missing.includes("product_detail"));
+});
+
+check("readiness: events need a real date + venue", () => {
+  const bare = radarItemReadyForFeature({
+    lane: "events",
+    title: "Some show",
+    description: "y",
+    score: 0.8,
+    imageUrl: GOOD_IMG,
+  });
+  assert.equal(bare.ready, false);
+  assert.ok(bare.missing.includes("date_time"));
+  assert.ok(bare.missing.includes("venue"));
+  const full = radarItemReadyForFeature({
+    lane: "events",
+    title: "Jazz quartet",
+    description: "Live at the Green Mill.",
+    score: 0.8,
+    imageUrl: GOOD_IMG,
+    startsAt: "2026-07-01T20:00:00Z",
+    venue: "Green Mill",
+  });
+  assert.equal(full.ready, true);
+});
+
+check("readiness: missing card basics (title/reason/score) are blockers", () => {
+  const r = radarItemReadyForFeature({ lane: "culture", imageUrl: GOOD_IMG });
+  assert.equal(r.ready, false);
+  assert.ok(r.missing.includes("title"));
+  assert.ok(r.missing.includes("description"));
+  assert.ok(r.missing.includes("score"));
+  // score=0 is a valid score, not "missing"
+  const zero = radarItemReadyForFeature({
+    lane: "culture",
+    title: "Permanent collection",
+    description: "Evergreen.",
+    score: 0,
+    imageUrl: GOOD_IMG,
+  });
+  assert.equal(zero.ready, true);
 });
 
 // ── recommendation floor ──────────────────────────────────────────────────────

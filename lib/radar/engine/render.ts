@@ -3,6 +3,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { decayedScore, enforceRenderDiversity, normalizeExternalId } from "@/lib/radar/engine/curation";
+import { radarItemReadyForFeature } from "@/lib/radar/engine/radarReadiness";
+import { normalizeRadarCategory } from "@/lib/radar/category";
 import type { Json, SurfacedItemInsert } from "@/lib/types/database";
 
 /** Stage 23 — surface the lane's best venues, but ONLY once their plan is ready.
@@ -54,7 +56,10 @@ type EngineItemRow = {
   status: string;
   destination: string | null;
   score: number | null;
+  title: string | null;
+  category: string | null;
   subtitle: string | null;
+  image_url: string | null;
   payload: Record<string, unknown> | null;
 };
 
@@ -180,7 +185,7 @@ export async function promotePlanReadyToShown(input: {
 
   const { data, error } = await supabase
     .from("surfaced_items")
-    .select("id, source_id, status, destination, score, subtitle, payload")
+    .select("id, source_id, status, destination, score, title, category, subtitle, image_url, payload")
     .eq("user_id", input.userId)
     .eq("source", RENDER_SOURCE)
     .eq("category", input.lane)
@@ -200,7 +205,12 @@ export async function promotePlanReadyToShown(input: {
     return str(p.sub_type);
   };
 
-  const ready = items.filter((it) => isPlanReady(it) && !LOCKED.has(it.status));
+  // Final readiness contract: even a plan-ready row may not feature if its card
+  // or image isn't complete. The engine promotes only complete items; the rest
+  // stay 'discovered' for enrichment (the materializer back-fills images there).
+  const ready = items.filter(
+    (it) => isPlanReady(it) && !LOCKED.has(it.status) && passesEngineContract(it),
+  );
   result.planReady = ready.length;
 
   const ranked = [...ready].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -242,6 +252,33 @@ export async function promotePlanReadyToShown(input: {
   }
 
   return result;
+}
+
+/** The Radar Readiness Contract at the engine promote step. Plan readiness is
+ *  already established by isPlanReady; this adds the rest of the contract — a
+ *  real image, and (for events) a real date+venue — so the engine never marks an
+ *  incomplete row 'shown'. Card basics fall back to guaranteed columns so this
+ *  only ever holds on genuinely-missing facts. */
+function passesEngineContract(it: EngineItemRow): boolean {
+  const lane = normalizeRadarCategory(it.category);
+  if (!lane) return false;
+  const p = isRecord(it.payload) ? it.payload : {};
+  const brief = isRecord(p.brief) ? p.brief : {};
+  const imageUrl = str(it.image_url) ?? str(brief.hero_image_url) ?? str(p.image_url);
+  const hasPlanRef = typeof p.plan_slug === "string" && p.plan_slug.length > 0;
+  return radarItemReadyForFeature({
+    lane,
+    title: str(it.title),
+    description: str(brief.jarvis_line) ?? str(it.title),
+    score: it.score ?? 0,
+    imageUrl,
+    hasPlanRef,
+    planReady: true, // caller already filtered isPlanReady
+    findsReady: lane === "finds" ? Boolean(p.finds) : undefined,
+    startsAt: str(p.official_starts_at),
+    venue: str(it.subtitle),
+    location: str(it.subtitle),
+  }).ready;
 }
 
 function buildSurfacedRow(
