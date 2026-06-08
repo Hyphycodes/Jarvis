@@ -24,6 +24,14 @@ import { LANE_ENGINE, detailRouteFor, laneCanExpire } from "../lib/radar/engine/
 import { assessLaneReadiness } from "../lib/radar/engine/laneReadiness";
 import { evaluateRecommendationFloor } from "../lib/radar/engine/recommendationFloor";
 import { pillarsForItem } from "../lib/radar/engine/pillars";
+import { classifyEventSubLibrary } from "../lib/radar/engine/events/config";
+import {
+  assessTruth,
+  assessUrgency,
+  assessFit,
+  assessPlanability,
+  expiresAtFor,
+} from "../lib/radar/engine/events/assess";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -242,6 +250,75 @@ check("pillarsForItem: content kernel first, lane default fallback", () => {
   assert.ok(dinner.includes("taste"));
   const fallback = pillarsForItem({ lane: "places", title: "" });
   assert.ok(fallback.length > 0); // falls back to lane default pillars
+});
+
+// ── events: sub-library classification ────────────────────────────────────────
+check("classifyEventSubLibrary: event_type wins, then keywords", () => {
+  assert.equal(classifyEventSubLibrary({ event_type: "dj_set" }), "events_music");
+  assert.equal(classifyEventSubLibrary({ event_type: "wine_event" }), "events_food");
+  assert.equal(classifyEventSubLibrary({ event_type: "art_opening" }), "events_art");
+  // keyword fallback, most-specific first
+  assert.equal(classifyEventSubLibrary({ title: "Movies in the Park: lakefront screening" }), "events_outdoor");
+  assert.equal(classifyEventSubLibrary({ title: "Gallery opening + artist talk" }), "events_art");
+  assert.equal(classifyEventSubLibrary({ title: "Wine dinner with the chef" }), "events_food");
+  assert.equal(classifyEventSubLibrary({ title: "Jazz quartet live" }), "events_music");
+});
+
+// ── events: truth ────────────────────────────────────────────────────────────
+check("assessTruth: needs_enrichment when date/venue/source missing; official when ticketed", () => {
+  const bare = assessTruth({ title: "Show" });
+  assert.equal(bare.needs_enrichment, true);
+  assert.ok(bare.unsupported_claims.includes("no_real_date"));
+  const full = assessTruth({
+    starts_at: "2026-07-01T20:00:00Z",
+    venue_name: "Thalia Hall",
+    ticket_url: "https://tickets.example/x",
+  });
+  assert.equal(full.needs_enrichment, false);
+  assert.equal(full.source_quality, "official");
+  assert.ok(full.datetime_confidence > 0.8);
+});
+
+// ── events: urgency ──────────────────────────────────────────────────────────
+check("assessUrgency: now / soon / low / expired", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+  assert.equal(assessUrgency({ starts_at: "2026-06-10T23:00:00Z" }, now).urgency, "now");
+  assert.equal(assessUrgency({ starts_at: "2026-06-13T20:00:00Z" }, now).urgency, "soon");
+  assert.equal(assessUrgency({ starts_at: "2026-07-30T20:00:00Z" }, now).urgency, "low");
+  assert.equal(assessUrgency({ starts_at: "2026-06-01T20:00:00Z" }, now).urgency, "expired");
+});
+
+// ── events: fit ──────────────────────────────────────────────────────────────
+check("assessFit: today surfaces today; outdoor bad weather vetoes; stretch budget", () => {
+  const now = new Date("2026-06-10T09:00:00Z");
+  const today = assessFit({ starts_at: "2026-06-10T23:00:00Z", venue_name: "X" }, { now });
+  assert.equal(today.timing_fit, "today");
+  assert.equal(today.recommended_surface, "today");
+  const wet = assessFit(
+    { starts_at: "2026-06-12T18:00:00Z", sub_library: "events_outdoor" },
+    { now, weatherBadOnEventDay: true },
+  );
+  assert.ok(wet.vetoes.includes("bad_weather_outdoor"));
+  assert.equal(wet.recommended_surface, "suppress");
+  const pricey = assessFit({ starts_at: "2026-06-20T20:00:00Z", price_max: 500 }, { now, premiumThreshold: 300 });
+  assert.equal(pricey.budget_fit, "stretch");
+});
+
+// ── events: planability + expiration ──────────────────────────────────────────
+check("assessPlanability: plan_ready needs time+venue+source; arrival 20m early", () => {
+  const ready = assessPlanability({ starts_at: "2026-07-01T20:00:00Z", venue_name: "Hall", ticket_url: "https://t/x" });
+  assert.equal(ready.plan_ready, true);
+  assert.ok(ready.suggested_arrival && new Date(ready.suggested_arrival) < new Date("2026-07-01T20:00:00Z"));
+  assert.equal(assessPlanability({ title: "x" }).plan_ready, false);
+});
+
+check("expiresAtFor: end+24h else start+24h", () => {
+  assert.equal(expiresAtFor({ starts_at: "2026-07-01T20:00:00Z" }), "2026-07-02T20:00:00.000Z");
+  assert.equal(
+    expiresAtFor({ starts_at: "2026-07-01T20:00:00Z", ends_at: "2026-07-01T23:00:00Z" }),
+    "2026-07-02T23:00:00.000Z",
+  );
+  assert.equal(expiresAtFor({}), null);
 });
 
 if (failures > 0) {

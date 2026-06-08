@@ -1694,6 +1694,31 @@ export type CurrentEventRow = {
   status: string;
   created_at: string;
   updated_at: string;
+  // Events brain tree (additive — all nullable). sub_library segments the lane;
+  // the four assessment jsonbs hold Truth/Fit/Urgency/Planability; taste_vector +
+  // scores + comparative_rank drive curation; expires_at drives expiration.
+  sub_library?: string | null;
+  neighborhood?: string | null;
+  venue_address?: string | null;
+  image_url?: string | null;
+  timezone?: string | null;
+  price_min?: number | null;
+  price_max?: number | null;
+  external_id?: string | null;
+  taste_vector?: Json | null;
+  truth_assessment?: Json | null;
+  fit_assessment?: Json | null;
+  urgency_assessment?: Json | null;
+  planability_assessment?: Json | null;
+  pre_score?: number | null;
+  final_score?: number | null;
+  comparative_rank?: number | null;
+  expires_at?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  rejection_stage?: string | null;
+  rejection_reason?: string | null;
+  plan_id?: string | null;
 };
 
 export type TastemakerRow = {
