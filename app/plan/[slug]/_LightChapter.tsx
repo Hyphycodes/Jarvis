@@ -32,9 +32,13 @@ import type {
 export async function renderLightChapter({
   params,
   chapterKey,
+  renderFooter,
 }: {
   params: Promise<{ slug: string }>;
   chapterKey: PlanChapterKey;
+  /** Optional extra content rendered below the chapter, given the loaded brief
+   *  (the AFTER chapter uses this for the Experience capture form). */
+  renderFooter?: (brief: PlanBrief) => ReactNode;
 }): Promise<ReactNode> {
   const { slug } = await params;
   const user = await getSessionUser();
@@ -136,6 +140,8 @@ export async function renderLightChapter({
       >
         {section.closing}
       </p>
+
+      {renderFooter ? renderFooter(brief) : null}
     </PlanShell>
   );
 }

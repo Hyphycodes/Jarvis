@@ -9,6 +9,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { type TasteVector } from "@/lib/radar/engine/tasteVector";
 import { DINING_SUBLIBRARIES } from "@/lib/radar/engine/sources";
 import { logRejections } from "@/lib/radar/engine/rejections";
+import { getExperienceContext } from "@/lib/radar/engine/experienceContext";
 
 /** Stage 6 — specialist council (authenticity + Jerry-fit + devil's advocate +
  *  verdict synthesis), built ON TOP of the preserved taste model (does not modify
@@ -97,9 +98,17 @@ export async function councilSubLibrary(input: {
     northTags: brain.northTags ?? [],
   };
 
+  // Jerry's own past feedback for this lane — the Experience Memory Engine
+  // feeding curation so the shelf adapts to what he actually enjoyed.
+  const experiences = await getExperienceContext({
+    userId: input.userId,
+    lane: config.lane,
+    supabase,
+  });
+
   let verdicts: Map<number, CouncilVerdict>;
   try {
-    verdicts = await runCouncil(config.subLibrary, config.brief, taste, rows);
+    verdicts = await runCouncil(config.subLibrary, config.brief, taste, rows, experiences.block);
   } catch (err) {
     result.errors.push(`council LLM: ${err instanceof Error ? err.message : String(err)}`);
     return result;
@@ -187,6 +196,7 @@ async function runCouncil(
   brief: string,
   taste: AgentTaste,
   rows: FinalistRow[],
+  experiencesBlock: string,
 ): Promise<Map<number, CouncilVerdict>> {
   const system = [
     `You are the SPECIALIST COUNCIL for the "${subLibrary}" sub-library — four voices in one verdict:`,
@@ -206,6 +216,7 @@ async function runCouncil(
   const prompt = [
     "Jerry's taste, pulled fresh:",
     buildAgentTasteBlock(taste),
+    ...(experiencesBlock ? ["", experiencesBlock] : []),
     "",
     "Finalists (index. name):",
     list,
