@@ -313,7 +313,7 @@ export const loadRadarSurface: Loader<RadarCard[]> = async () => {
       status: ["shown", "opened"],
       limit: RADAR_ACTIVE_ITEM_LIMIT * 3,
     });
-    const visibleItems = selectBalancedRadarInventory(items);
+    const visibleItems = selectBalancedRadarInventory(suppressSupersededLanes(items));
     const [withPlanRefs, libraryImages] = await Promise.all([
       withRadarPlanRefs(visibleItems),
       resolveLibraryImages(visibleItems),
@@ -865,7 +865,22 @@ function selectBalancedRadarInventory(items: IndexedItem[]): IndexedItem[] {
   return orderBalancedAllFeed(selected).slice(0, RADAR_ACTIVE_ITEM_LIMIT);
 }
 
+/**
+ * An item produced by the curation engine (Stage 23 render mirror). These carry
+ * one authoritative category per row — we trust it and never re-classify.
+ */
+function isEngineItem(item: IndexedItem): boolean {
+  const payload = isRecord(item.rawPayload) ? item.rawPayload : {};
+  return payload.source_layer === "radar_engine" || String(item.source) === "radar_engine";
+}
+
 function visibleRadarCategory(item: IndexedItem): RadarCategory | null {
+  // Engine rows are authoritative — trusting the stored category is the whole
+  // point of the engine (the runtime re-guess below is what scattered dining
+  // bars into other lanes pre-engine). Old-pipeline rows still get classified.
+  if (isEngineItem(item)) {
+    return normalizeRadarCategory(item.category);
+  }
   return normalizeRadarClassification({
     category: item.category,
     type: item.type,
@@ -878,6 +893,28 @@ function visibleRadarCategory(item: IndexedItem): RadarCategory | null {
     reasons: item.reasons,
     sourcePayload: item.rawPayload,
   }).category;
+}
+
+/**
+ * Lane cutover: once the engine has surfaced items for a lane, that lane is
+ * "engine-owned" — drop the old pipeline's rows for it so the board shows the
+ * curated shelf, not a mix. Conditional + per-lane: until the engine produces a
+ * lane's items, the old pipeline shows unchanged (no blanking during cutover),
+ * and it's reversible (engine stops → behavior reverts automatically).
+ */
+function suppressSupersededLanes(items: IndexedItem[]): IndexedItem[] {
+  const engineLanes = new Set<RadarCategory>();
+  for (const item of items) {
+    if (!isEngineItem(item)) continue;
+    const category = visibleRadarCategory(item);
+    if (category) engineLanes.add(category);
+  }
+  if (engineLanes.size === 0) return items;
+  return items.filter((item) => {
+    if (isEngineItem(item)) return true;
+    const category = visibleRadarCategory(item);
+    return !(category && engineLanes.has(category));
+  });
 }
 
 function isVisibleRadarItem(item: IndexedItem, category: RadarCategory): boolean {

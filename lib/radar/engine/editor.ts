@@ -58,13 +58,16 @@ export async function editorAssembleLane(input: {
   const supabase = input.supabase ?? getSupabaseServiceClient();
   const shelfSize = input.shelfSize ?? EDITOR_SHELF_SIZE;
 
-  // Read category_best rows for this lane that haven't been graduated yet
+  // Read category_best rows for this lane the editor hasn't processed yet.
+  // editor_notes is the processed-flag: set on both kept (the rationale) and
+  // cut (the marker) rows, so neither is re-judged next cycle. Leaves plan_id
+  // free for the real plan (stage 8).
   const { data, error } = await supabase
     .from("category_best")
     .select("id, source_sub_library, name, sub_type, neighborhood, final_score, comparative_rank, enrichment_data")
     .eq("user_id", input.userId)
     .eq("lane", input.lane)
-    .is("plan_id", null) // not yet graduated (plan_id used as graduation flag until radar_library populated)
+    .is("editor_notes", null)
     .order("comparative_rank", { ascending: true, nullsFirst: false });
   if (error) {
     result.errors.push(`read category_best: ${error.message}`);
@@ -126,10 +129,10 @@ export async function editorAssembleLane(input: {
         result.errors.push(`graduate ${row.name}: ${insErr.message}`);
         continue;
       }
-      // Mark category_best as graduated (using plan_id='00000000-0000-0000-0000-000000000001' as sentinel)
+      // Mark processed via editor_notes (must be non-null so it isn't re-judged).
       await supabase
         .from("category_best")
-        .update({ editor_notes: sel?.editor_notes ?? null, plan_id: "00000000-0000-0000-0000-000000000001" })
+        .update({ editor_notes: sel?.editor_notes?.trim() || "Selected for shelf." })
         .eq("id", row.id)
         .eq("user_id", input.userId);
       result.graduated += 1;

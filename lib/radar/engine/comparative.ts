@@ -30,7 +30,35 @@ type JudgedRow = {
   pre_score: number | null;
   final_score: number | null;
   council: Record<string, unknown> | null;
+  google_place_id: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  price_level: string | null;
+  hours: string | null;
+  reservation_required: boolean | null;
+  cuisine: string | null;
+  photo_urls: unknown;
 };
+
+/** Bundle the council verdict + Google enrichment into the jsonb that rides
+ *  forward to category_best → radar_library → the surfaced_items mirror. */
+function buildEnrichmentData(row: JudgedRow): Record<string, unknown> {
+  const photos = Array.isArray(row.photo_urls) ? (row.photo_urls as unknown[]) : [];
+  const imageUrl = typeof photos[0] === "string" ? (photos[0] as string) : null;
+  return {
+    council: row.council ?? null,
+    image_url: imageUrl,
+    google_place_id: row.google_place_id,
+    address: row.address,
+    lat: row.lat,
+    lng: row.lng,
+    price_level: row.price_level,
+    hours: row.hours,
+    reservation_required: row.reservation_required,
+    cuisine: row.cuisine,
+  };
+}
 
 type RankEntry = {
   i: number;
@@ -72,7 +100,7 @@ export async function comparativeSubLibrary(input: {
 
   const { data, error } = await supabase
     .from(config.subLibrary)
-    .select("id, name, sub_type, neighborhood, pre_score, final_score, council")
+    .select("id, name, sub_type, neighborhood, pre_score, final_score, council, google_place_id, address, lat, lng, price_level, hours, reservation_required, cuisine, photo_urls")
     .eq("user_id", input.userId)
     .eq("status", "judged")
     .order("final_score", { ascending: false, nullsFirst: false });
@@ -80,7 +108,10 @@ export async function comparativeSubLibrary(input: {
     result.errors.push(`read judged: ${error.message}`);
     return result;
   }
-  const rows = (data ?? []) as JudgedRow[];
+  // Only promote rows that have been deep-enriched (have a google_place_id), so
+  // the shelf is image-complete. Un-enriched judged rows stay judged and get
+  // picked up by a later cycle's enrich, then promote — nothing is stranded.
+  const rows = ((data ?? []) as JudgedRow[]).filter((r) => Boolean(r.google_place_id));
   result.considered = rows.length;
   if (rows.length === 0) return result;
 
@@ -135,7 +166,7 @@ export async function comparativeSubLibrary(input: {
         neighborhood: row.neighborhood,
         final_score: row.final_score,
         comparative_rank: entry?.rank ?? i + 1,
-        enrichment_data: row.council,
+        enrichment_data: buildEnrichmentData(row),
         promoted_at: now,
       });
       if (insErr) {

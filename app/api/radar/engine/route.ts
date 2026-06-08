@@ -16,10 +16,12 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { scoutDining } from "@/lib/radar/engine/scout";
 import { preScoreDining } from "@/lib/radar/engine/prescore";
 import { selectFinalistsDining } from "@/lib/radar/engine/finalists";
+import { enrichDining } from "@/lib/radar/engine/enrich";
 import { councilDining } from "@/lib/radar/engine/council";
 import { comparativeDining } from "@/lib/radar/engine/comparative";
 import { editorAssembleLane } from "@/lib/radar/engine/editor";
 import { benchDining } from "@/lib/radar/engine/bench";
+import { renderLaneFromBench } from "@/lib/radar/engine/render";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -64,27 +66,31 @@ export async function GET(req: Request) {
     const scout = await scoutDining({ userId: ownerUserId, supabase });
     const prescore = await preScoreDining({ userId: ownerUserId, supabase });
     const finalists = await selectFinalistsDining({ userId: ownerUserId, supabase });
+    const enrich = await enrichDining({ userId: ownerUserId, supabase });
     const council = await councilDining({ userId: ownerUserId, supabase });
     const comparative = await comparativeDining({ userId: ownerUserId, supabase });
     const editor = await editorAssembleLane({ userId: ownerUserId, lane: "dining", supabase });
     const bench = await benchDining({ userId: ownerUserId, supabase });
+    const render = await renderLaneFromBench({ userId: ownerUserId, lane: "dining", supabase });
     const durationMs = Date.now() - startedAt;
     console.log(
       "[api/radar/engine] cycle " +
-        JSON.stringify({ lane, durationMs, scout, prescore, finalists, council, comparative, editor, bench }),
+        JSON.stringify({ lane, durationMs, scout, prescore, finalists, enrich, council, comparative, editor, bench, render }),
     );
     return NextResponse.json({
       ok: true,
       lane,
-      stages: ["scout", "pre_score", "finalists", "council", "comparative", "editor", "bench"],
+      stages: ["scout", "pre_score", "finalists", "enrich", "council", "comparative", "editor", "bench", "render"],
       durationMs,
       scout,
       prescore,
       finalists,
+      enrich,
       council,
       comparative,
       editor,
       bench,
+      render,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "radar/engine failed";
