@@ -7,7 +7,7 @@ import {
   type RadarCategory,
   typeForRadarCategory,
 } from "@/lib/radar/category";
-import { attributePillar } from "@/lib/north/attributionMap";
+import { pillarsForItem } from "@/lib/radar/engine/pillars";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { isEngineOwnedCategory } from "@/lib/radar/engine/ownership";
 import type { IndexedItem } from "@/lib/index/types";
@@ -225,8 +225,9 @@ export async function materializeEligibleLibraryItems(
 function buildPlaceSurfaceRow(userId: string, place: PlacesLibraryRow): SurfacedItemInsert {
   const category = deriveCategory(place);
   const type = category ? typeForRadarCategory(category) : "place";
-  const pillarTags = attributePillar({
+  const pillarTags = pillarsForItem({
     category,
+    lane: category,
     tags: place.vibe_keywords ?? [],
     title: place.name,
   });
@@ -330,8 +331,9 @@ function buildEventSurfaceRow(userId: string, event: CurrentEventRow): SurfacedI
       event_time_locked: true,
       price_level: event.price_level,
       library_place_id: event.library_place_id,
-      pillar_tags: attributePillar({
+      pillar_tags: pillarsForItem({
         category: "events",
+        lane: "events",
         tags: event.vibe_keywords ?? [],
         title: event.title,
       }),
