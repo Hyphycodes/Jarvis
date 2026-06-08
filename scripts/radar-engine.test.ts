@@ -43,6 +43,9 @@ import {
 import { classifyPlaceSubLibrary } from "../lib/radar/engine/places/config";
 import { assessPlaceTruth, assessRole, assessPlaceFit } from "../lib/radar/engine/places/assess";
 import { selectPlacesShelf } from "../lib/radar/engine/places/editor";
+import { classifyMoveSubLibrary } from "../lib/radar/engine/moves/config";
+import { assessMoveTruth, assessMoveFit, assessEnergy, assessWeather } from "../lib/radar/engine/moves/assess";
+import { selectMovesShelf } from "../lib/radar/engine/moves/editor";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -439,6 +442,57 @@ check("selectPlacesShelf: neighborhood + role caps spread the shelf", () => {
   const ids = featured.map((f) => f.id);
   assert.ok(ids.includes("a") && !ids.includes("b")); // same-neighborhood cap drops the 2nd Lincoln Park
   assert.ok(ids.includes("c") && ids.includes("d"));
+});
+
+// ── moves: classification / truth / fit / energy / weather / editor ───────────
+check("classifyMoveSubLibrary: sports/training/recovery/creative/outdoor", () => {
+  assert.equal(classifyMoveSubLibrary({ title: "Pickup basketball shootaround" }), "moves_sports");
+  assert.equal(classifyMoveSubLibrary({ title: "Boxing class + conditioning" }), "moves_training");
+  assert.equal(classifyMoveSubLibrary({ title: "Sunday reset + meal prep" }), "moves_recovery");
+  assert.equal(classifyMoveSubLibrary({ title: "Camera walk before sunset" }), "moves_creative");
+  assert.equal(classifyMoveSubLibrary({ title: "Gold Coast cigar walk" }), "moves_outdoor");
+});
+
+check("assessMoveTruth: no sequence → needs_enrichment; bookable needs source", () => {
+  assert.equal(assessMoveTruth({ title: "Vague" }).needs_enrichment, true);
+  const free = assessMoveTruth({ title: "Walk", move_kind: "self_directed", sequence: [{ label: "Start at the lakefront" }, { label: "Walk north 30 min" }] });
+  assert.equal(free.needs_enrichment, false); // free move valid with a concrete sequence
+  const paid = assessMoveTruth({ title: "Golf lesson", move_kind: "bookable", sequence: [{ label: "Range lesson" }] });
+  assert.equal(paid.needs_enrichment, true); // bookable needs a source
+});
+
+check("assessEnergy + assessWeather: recovery restorative; outdoor bad weather", () => {
+  assert.equal(assessEnergy({ sub_library: "moves_recovery" }).energy_payoff, "restorative");
+  assert.equal(assessEnergy({ sub_library: "moves_training" }).energy_required, "high");
+  const w = assessWeather({ title: "Lakefront walk", sub_library: "moves_outdoor" }, { weatherBad: true });
+  assert.equal(w.weather_fit, "bad");
+  assert.ok(w.alternative_if_bad);
+});
+
+check("assessMoveFit: recovery-mode kills high-energy; outdoor bad weather → reserve", () => {
+  const now = new Date("2026-06-13T15:00:00Z"); // a Saturday
+  const recoveryClash = assessMoveFit({ title: "Boxing", sub_library: "moves_training" }, { now, operatingMode: "recovery" });
+  assert.equal(recoveryClash.energy_fit, "too_much");
+  const wet = assessMoveFit({ title: "Cigar walk", sub_library: "moves_outdoor" }, { now, weatherBad: true });
+  assert.ok(wet.vetoes.includes("bad_weather_outdoor"));
+  assert.equal(wet.recommended_surface, "reserve"); // weather pause, not suppress
+});
+
+check("selectMovesShelf: sub-library cap spreads beyond one move type", () => {
+  const c = (id: string, sub: string, e: string, s: number) => ({ id, sub_library: sub, energy_required: e, final_score: s });
+  const { featured } = selectMovesShelf(
+    [
+      c("a", "moves_training", "high", 0.9),
+      c("b", "moves_training", "high", 0.88),
+      c("c", "moves_training", "high", 0.86), // 3rd training → capped (max 2)
+      c("d", "moves_outdoor", "low", 0.7),
+      c("e", "moves_recovery", "low", 0.65),
+    ],
+    { limit: 7, maxPerSubLibrary: 2, maxPerEnergy: 4 },
+  );
+  const ids = featured.map((f) => f.id);
+  assert.ok(ids.includes("a") && ids.includes("b") && !ids.includes("c"));
+  assert.ok(ids.includes("d") && ids.includes("e")); // variety
 });
 
 if (failures > 0) {

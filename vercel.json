@@ -61,6 +61,10 @@
       "schedule": "14,44 * * * *"
     },
     {
+      "path": "/api/radar/engine?lane=moves",
+      "schedule": "21,51 * * * *"
+    },
+    {
       "path": "/api/radar/plans",
       "schedule": "*/5 * * * *"
     },

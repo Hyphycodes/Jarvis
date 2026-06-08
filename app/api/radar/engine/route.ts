@@ -24,6 +24,7 @@ import { benchDining } from "@/lib/radar/engine/bench";
 import { runEventsEngine } from "@/lib/radar/engine/events";
 import { runCultureEngine } from "@/lib/radar/engine/culture";
 import { runPlacesEngine } from "@/lib/radar/engine/places";
+import { runMovesEngine } from "@/lib/radar/engine/moves";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -103,6 +104,22 @@ export async function GET(req: Request) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "radar/engine places failed";
       console.error("[api/radar/engine] places error", err);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
+
+  // Moves lane engine — generated executable actions; evergreen + Energy/Weather
+  // brains (per jarvis-moves-engine-brain-tree.md).
+  if (lane === "moves") {
+    try {
+      const startedAt = Date.now();
+      const moves = await runMovesEngine({ userId: ownerUserId });
+      const durationMs = Date.now() - startedAt;
+      console.log("[api/radar/engine] moves cycle " + JSON.stringify({ durationMs, moves }));
+      return NextResponse.json({ ok: true, lane, durationMs, moves });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "radar/engine moves failed";
+      console.error("[api/radar/engine] moves error", err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }

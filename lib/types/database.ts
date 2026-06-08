@@ -1812,6 +1812,51 @@ export type PlacesItemRow = {
   updated_at: string;
 };
 
+export type MovesItemRow = {
+  id: string;
+  user_id: string;
+  external_id: string | null;
+  source: string | null;
+  source_url: string | null;
+  title: string;
+  description: string | null;
+  sub_library: string;
+  sub_type: string | null;
+  move_kind: string | null;
+  activity_type: string | null;
+  location_name: string | null;
+  neighborhood: string | null;
+  suggested_window: string | null;
+  duration_minutes: number | null;
+  price_hint: string | null;
+  booking_url: string | null;
+  image_url: string | null;
+  sequence: Json | null;
+  gear_needed: Json | null;
+  prep_notes: Json | null;
+  north_pillars: string[] | null;
+  vibe_keywords: string[] | null;
+  verdict: string | null;
+  verdict_strength: number | null;
+  taste_vector: Json | null;
+  truth_assessment: Json | null;
+  fit_assessment: Json | null;
+  energy_assessment: Json | null;
+  weather_assessment: Json | null;
+  planability_assessment: Json | null;
+  pre_score: number | null;
+  final_score: number | null;
+  comparative_rank: number | null;
+  status: string;
+  rejection_stage: string | null;
+  rejection_reason: string | null;
+  plan_id: string | null;
+  first_seen_at: string;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TastemakerRow = {
   id: string;
   user_id: string;
