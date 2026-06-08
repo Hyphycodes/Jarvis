@@ -9,6 +9,9 @@
     "app/api/radar/engine/route.ts": {
       "maxDuration": 300
     },
+    "app/api/radar/plans/route.ts": {
+      "maxDuration": 300
+    },
     "app/api/library/convert-inbox/route.ts": {
       "maxDuration": 300
     },
@@ -44,6 +47,10 @@
     {
       "path": "/api/radar/engine?lane=dining",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/radar/plans",
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/finds/scout",

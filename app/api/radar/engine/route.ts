@@ -21,7 +21,6 @@ import { councilDining } from "@/lib/radar/engine/council";
 import { comparativeDining } from "@/lib/radar/engine/comparative";
 import { editorAssembleLane } from "@/lib/radar/engine/editor";
 import { benchDining } from "@/lib/radar/engine/bench";
-import { renderLaneFromBench } from "@/lib/radar/engine/render";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,16 +70,17 @@ export async function GET(req: Request) {
     const comparative = await comparativeDining({ userId: ownerUserId, supabase });
     const editor = await editorAssembleLane({ userId: ownerUserId, lane: "dining", supabase });
     const bench = await benchDining({ userId: ownerUserId, supabase });
-    const render = await renderLaneFromBench({ userId: ownerUserId, lane: "dining", supabase });
+    // Staging → plan-build → show is handled by the readiness-gated /api/radar/plans
+    // cron, so a card only reaches the board once its plan is complete.
     const durationMs = Date.now() - startedAt;
     console.log(
       "[api/radar/engine] cycle " +
-        JSON.stringify({ lane, durationMs, scout, prescore, finalists, enrich, council, comparative, editor, bench, render }),
+        JSON.stringify({ lane, durationMs, scout, prescore, finalists, enrich, council, comparative, editor, bench }),
     );
     return NextResponse.json({
       ok: true,
       lane,
-      stages: ["scout", "pre_score", "finalists", "enrich", "council", "comparative", "editor", "bench", "render"],
+      stages: ["scout", "pre_score", "finalists", "enrich", "council", "comparative", "editor", "bench"],
       durationMs,
       scout,
       prescore,
@@ -90,7 +90,6 @@ export async function GET(req: Request) {
       comparative,
       editor,
       bench,
-      render,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "radar/engine failed";

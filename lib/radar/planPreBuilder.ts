@@ -16,9 +16,15 @@ type PreBuildRow = {
 export async function preBuildPlansForShownItems(
   userId: string,
   supabase: SupabaseClient,
-  opts: { maxItems?: number } = {},
+  opts: { maxItems?: number; statuses?: string[]; orderBy?: "score" | "updated_at" } = {},
 ): Promise<{ built: number; errors: string[] }> {
   const max = opts.maxItems ?? 8;
+  // Default to 'shown' (legacy callers). The engine stages cards as 'discovered'
+  // and needs their plans built BEFORE they're shown (the readiness gate), so the
+  // plans cron passes ['discovered','shown'].
+  const statuses = opts.statuses ?? ["shown"];
+  // Engine passes 'score' so the best venues get planned (and shown) first.
+  const orderBy = opts.orderBy ?? "updated_at";
   const errors: string[] = [];
   let built = 0;
 
@@ -26,9 +32,9 @@ export async function preBuildPlansForShownItems(
     .from("surfaced_items")
     .select("id, category, payload")
     .eq("user_id", userId)
-    .eq("status", "shown")
+    .in("status", statuses)
     .eq("destination", "radar")
-    .order("updated_at", { ascending: false })
+    .order(orderBy, { ascending: false, nullsFirst: false })
     .limit(max * 4);
 
   if (queryError || !rows) {

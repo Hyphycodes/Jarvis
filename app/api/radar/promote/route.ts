@@ -19,7 +19,6 @@ import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { materializeEligibleLibraryItems } from "@/lib/radar/libraryMaterializer";
 import { promoteHoldingWithService } from "@/lib/radar/autopilot";
-import { preBuildPlansForShownItems } from "@/lib/radar/planPreBuilder";
 import { createRunBudget } from "@/lib/radar/foundationSprint";
 import { readCategoryInventory } from "@/lib/radar/inventoryHealth";
 import { RADAR_PROMOTIONS_PER_RUN } from "@/lib/brain/constants";
@@ -32,7 +31,6 @@ const RUN_BUDGET_MS = 220_000;
 const MATERIALIZE_BATCH = 16;
 const MAX_MATERIALIZE_ITERATIONS = 12; // up to ~192 inserts/run — drains the ready pool
 const MAX_PROMOTE_ITERATIONS = 6; // up to ~60 board changes/run — fills 6×7 with headroom
-const PLAN_PREBUILD_PER_RUN = 6;
 
 function validateCronSecret(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -97,15 +95,8 @@ export async function GET(req: Request) {
       if (res.promoted === 0) break; // board full or nothing eligible
     }
 
-    // 3. Pre-build plans for newly-shown items so they open instantly (bounded).
-    let plansBuilt = 0;
-    if (!budget.shouldStopSoon()) {
-      const pb = await preBuildPlansForShownItems(ownerUserId, supabase, {
-        maxItems: PLAN_PREBUILD_PER_RUN,
-      });
-      plansBuilt = pb.built;
-      if (pb.errors.length) errors.push(...pb.errors);
-    }
+    // Plan-building moved to the dedicated, readiness-gated /api/radar/plans cron
+    // (it was starving here behind the materialize/promote budget).
 
     // Per-category snapshot of the board after promoting.
     const inventoryAfter = await readCategoryInventory(ownerUserId, supabase);
@@ -122,7 +113,6 @@ export async function GET(req: Request) {
           materialized,
           promoted,
           reviewed,
-          plansBuilt,
           durationMs,
           timeBudgetReached: budget.shouldStopSoon(),
           shownBefore: shownByCategory(inventoryBefore),
@@ -136,7 +126,6 @@ export async function GET(req: Request) {
       materialized,
       promoted,
       reviewed,
-      plansBuilt,
       durationMs,
       inventoryBefore,
       inventoryAfter,
