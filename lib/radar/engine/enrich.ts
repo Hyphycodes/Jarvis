@@ -79,6 +79,7 @@ export async function enrichSubLibrary(input: {
     .eq("user_id", input.userId)
     .in("status", ["finalist", "judged"])
     .is("google_place_id", null)
+    .order("pre_score", { ascending: false, nullsFirst: false })
     .limit(input.limit ?? ENRICH_LIMIT);
   if (error) {
     result.errors.push(`read finalists: ${error.message}`);

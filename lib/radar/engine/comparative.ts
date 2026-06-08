@@ -12,7 +12,11 @@ import { logRejections } from "@/lib/radar/engine/rejections";
 /** Stage 7 — comparative head-to-head within each sub-library.
  *  Ranked survivors insert into category_best; losers → rejected/comparative_cut. */
 
-export const COMPARATIVE_KEEP = 7; // top N per sub-library go to category_best
+// Top N per sub-library promoted to category_best. Generous on purpose: this
+// feeds the bench (target 30+/lane) and the editor does the final shelf trim.
+// Keeping only ~7 here would starve the bench AND permanently reject good
+// enriched venues each cycle. The editor (≤30) + bench displacement curate down.
+export const COMPARATIVE_KEEP = 15;
 
 export type ComparativeResult = {
   subLibrary: string;
