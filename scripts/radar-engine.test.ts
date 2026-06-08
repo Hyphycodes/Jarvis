@@ -20,6 +20,10 @@ import {
   tasteValence,
   RATING_STRENGTH,
 } from "../lib/radar/engine/tasteSignal";
+import { LANE_ENGINE, detailRouteFor, laneCanExpire } from "../lib/radar/engine/lanes";
+import { assessLaneReadiness } from "../lib/radar/engine/laneReadiness";
+import { evaluateRecommendationFloor } from "../lib/radar/engine/recommendationFloor";
+import { pillarsForItem } from "../lib/radar/engine/pillars";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -153,6 +157,91 @@ check("buildExperienceTasteSignal: negative valence + notes truncated to 280", (
   ) as Record<string, unknown>;
   assert.equal(sig.valence, "negative");
   assert.equal((sig.notes_summary as string).length, 280);
+});
+
+// ── lane contract ─────────────────────────────────────────────────────────────
+check("LANE_ENGINE: detail routes + expire semantics per lane", () => {
+  assert.equal(detailRouteFor("finds"), "find");
+  assert.equal(detailRouteFor("dining"), "plan");
+  assert.equal(detailRouteFor("places"), "brief");
+  assert.equal(detailRouteFor("culture"), "brief");
+  assert.equal(laneCanExpire("events"), true);
+  assert.equal(laneCanExpire("dining"), false);
+  assert.equal(LANE_ENGINE.finds.canSchedule, false);
+  assert.equal(LANE_ENGINE.events.canSchedule, true);
+});
+
+// ── lane readiness ────────────────────────────────────────────────────────────
+check("assessLaneReadiness: events need date+venue+source", () => {
+  const bare = assessLaneReadiness({ lane: "events", title: "Some show" });
+  assert.equal(bare.ready, false);
+  assert.deepEqual(bare.missing.sort(), ["date_time", "source", "venue"]);
+  const full = assessLaneReadiness({
+    lane: "events",
+    title: "Show",
+    startsAt: "2026-07-01T20:00:00Z",
+    venue: "Thalia Hall",
+    sourceUrl: "https://tickets.example/show",
+  });
+  assert.equal(full.ready, true);
+});
+
+check("assessLaneReadiness: finds need price+image+budget_tier; unknown lane passes", () => {
+  assert.equal(assessLaneReadiness({ lane: "finds", title: "X" }).ready, false);
+  assert.equal(
+    assessLaneReadiness({ lane: "finds", price: "$120", imageUrl: "https://x/y.jpg", budgetTier: "premium_realistic" }).ready,
+    true,
+  );
+  assert.equal(assessLaneReadiness({ lane: "weird_lane", title: "x" }).ready, true);
+});
+
+check("assessLaneReadiness: dated culture must carry a date", () => {
+  const datedNoDate = assessLaneReadiness({ lane: "culture", title: "Jazz night", isDated: true });
+  assert.ok(datedNoDate.missing.includes("date_time"));
+  const timeless = assessLaneReadiness({ lane: "culture", culturalReason: "Bauhaus retrospective" });
+  assert.equal(timeless.ready, true);
+});
+
+// ── recommendation floor ──────────────────────────────────────────────────────
+check("recommendationFloor: suppresses wrong category + stale events + duplicate", () => {
+  assert.deepEqual(
+    evaluateRecommendationFloor({ lane: "dining", classifiedCategory: "places", tasteScore: 0.9 }).suppressed_because,
+    ["wrong_category"],
+  );
+  const stale = evaluateRecommendationFloor({
+    lane: "events",
+    classifiedCategory: "events",
+    startsAt: "2020-01-01T00:00:00Z",
+    tasteScore: 0.9,
+  });
+  assert.ok(stale.suppressed_because.includes("stale_dated"));
+  assert.ok(evaluateRecommendationFloor({ lane: "dining", isDuplicate: true, tasteScore: 0.9 }).suppressed_because.includes("duplicate"));
+});
+
+check("recommendationFloor: fantasy luxury blocked unless allowed/requested", () => {
+  assert.ok(
+    evaluateRecommendationFloor({ lane: "finds", isFantasyLuxury: true, tasteScore: 0.9 }).suppressed_because.includes("fantasy_luxury"),
+  );
+  assert.equal(
+    evaluateRecommendationFloor({ lane: "finds", isFantasyLuxury: true, userRequested: true, tasteScore: 0.9 }).ok,
+    true,
+  );
+});
+
+check("recommendationFloor: generic/weak suppressed, strong passes", () => {
+  assert.ok(evaluateRecommendationFloor({ lane: "dining", title: "a nice spot" }).suppressed_because.includes("generic_or_weak"));
+  assert.equal(
+    evaluateRecommendationFloor({ lane: "dining", title: "Kasama", reasons: ["Michelin Filipino tasting"], tasteScore: 0.8 }).ok,
+    true,
+  );
+});
+
+// ── pillar tagging ────────────────────────────────────────────────────────────
+check("pillarsForItem: content kernel first, lane default fallback", () => {
+  const dinner = pillarsForItem({ lane: "dining", category: "dining", title: "Dinner with friends", tags: ["friends"] });
+  assert.ok(dinner.includes("taste"));
+  const fallback = pillarsForItem({ lane: "places", title: "" });
+  assert.ok(fallback.length > 0); // falls back to lane default pillars
 });
 
 if (failures > 0) {
