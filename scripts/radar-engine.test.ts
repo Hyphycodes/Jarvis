@@ -15,6 +15,11 @@ import {
   normalizeExternalId,
   BENCH_DECAY_PER_DAY,
 } from "../lib/radar/engine/curation";
+import {
+  buildExperienceTasteSignal,
+  tasteValence,
+  RATING_STRENGTH,
+} from "../lib/radar/engine/tasteSignal";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -107,6 +112,47 @@ check("normalizeExternalId produces a stable kebab key", () => {
     normalizeExternalId("Green Mill"),
     normalizeExternalId("green   mill"),
   );
+});
+
+// ── experience memory taste signal ───────────────────────────────────────────
+check("tasteValence: loved/good positive, meh/not_for_me negative", () => {
+  assert.equal(tasteValence("loved"), "positive");
+  assert.equal(tasteValence("good"), "positive");
+  assert.equal(tasteValence("meh"), "negative");
+  assert.equal(tasteValence("not_for_me"), "negative");
+});
+
+check("RATING_STRENGTH ranks conviction (loved > not_for_me > good > meh)", () => {
+  assert.ok(RATING_STRENGTH.loved > RATING_STRENGTH.not_for_me);
+  assert.ok(RATING_STRENGTH.not_for_me > RATING_STRENGTH.good);
+  assert.ok(RATING_STRENGTH.good > RATING_STRENGTH.meh);
+});
+
+check("buildExperienceTasteSignal carries dimensions + valence/strength", () => {
+  const sig = buildExperienceTasteSignal(
+    { rating: "loved", wouldReturn: true, spendAmount: 150, companions: ["Sophia"], notes: "great mole" },
+    { lane: "dining", venueName: "Topolobampo", neighborhood: "River North", subType: "tasting_menu", cuisine: "Mexican", tags: ["date"] },
+  ) as Record<string, unknown>;
+  assert.equal(sig.valence, "positive");
+  assert.equal(sig.strength, 1.0);
+  assert.equal(sig.venue, "Topolobampo");
+  assert.equal(sig.lane, "dining");
+  assert.equal(sig.neighborhood, "River North");
+  assert.equal(sig.sub_type, "tasting_menu");
+  assert.equal(sig.cuisine, "Mexican");
+  assert.equal(sig.would_return, true);
+  assert.equal(sig.spend, 150);
+  assert.deepEqual(sig.companions, ["Sophia"]);
+  assert.equal(sig.notes_summary, "great mole");
+});
+
+check("buildExperienceTasteSignal: negative valence + notes truncated to 280", () => {
+  const sig = buildExperienceTasteSignal(
+    { rating: "not_for_me", notes: "x".repeat(500) },
+    { lane: "dining", venueName: "X", neighborhood: null, subType: null, cuisine: null, tags: [] },
+  ) as Record<string, unknown>;
+  assert.equal(sig.valence, "negative");
+  assert.equal((sig.notes_summary as string).length, 280);
 });
 
 if (failures > 0) {

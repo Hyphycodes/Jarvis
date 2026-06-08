@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
+import { buildExperienceTasteSignal } from "@/lib/radar/engine/tasteSignal";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
+import type { ExperienceRating } from "@/lib/radar/engine/tasteSignal";
 
-export type ExperienceRating = "loved" | "good" | "meh" | "not_for_me";
+export type { ExperienceRating } from "@/lib/radar/engine/tasteSignal";
 
 export type ExperienceMemoryInput = {
   planId?: string | null;
@@ -30,13 +32,6 @@ export type ExperienceMemory = {
   spendAmount: number | null;
   notes: string | null;
   photoUrls: string[] | null;
-};
-
-const RATING_STRENGTH: Record<ExperienceRating, number> = {
-  loved: 1.0,
-  good: 0.6,
-  meh: 0.4,
-  not_for_me: 0.85,
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -67,29 +62,6 @@ function contextFrom(plan: PlanRow | null, item: SurfacedItemRow | null): Experi
     cuisine: str(payload.cuisine) ?? str(keyStats.cuisine_or_focus) ?? str(keyStats.cuisine),
     tags: Array.isArray(item?.tags) ? (item!.tags as string[]) : [],
   };
-}
-
-/** A compact, deterministic, reusable signal future curation/council can read.
- *  Positive (loved/good) reinforces; negative (meh/not_for_me) is an avoid signal. */
-function buildTasteSignal(input: ExperienceMemoryInput, ctx: ExperienceContext): Json {
-  const valence: "positive" | "negative" =
-    input.rating === "loved" || input.rating === "good" ? "positive" : "negative";
-  return {
-    valence,
-    strength: RATING_STRENGTH[input.rating],
-    rating: input.rating,
-    would_return: input.wouldReturn ?? null,
-    venue: ctx.venueName,
-    lane: ctx.lane,
-    neighborhood: ctx.neighborhood,
-    sub_type: ctx.subType,
-    cuisine: ctx.cuisine,
-    tags: ctx.tags,
-    spend: input.spendAmount ?? null,
-    companions: input.companions ?? [],
-    notes_summary: input.notes ? input.notes.slice(0, 280) : null,
-    recorded_at: new Date().toISOString(),
-  } as Json;
 }
 
 export async function recordExperienceMemory(
@@ -129,7 +101,7 @@ export async function recordExperienceMemory(
   }
 
   const ctx = contextFrom(plan, item);
-  const tasteSignal = buildTasteSignal(input, ctx);
+  const tasteSignal = buildExperienceTasteSignal(input, ctx);
 
   const row = {
     user_id: owner.id,
