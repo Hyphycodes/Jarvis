@@ -1,3 +1,5 @@
+import type { OperatingPreferences } from "@/lib/operating/operatingPreferences";
+
 export type TodayContext = {
   isoDate: string;
   localDateLabel: string;
@@ -89,6 +91,7 @@ export type KnownPlaceContext = {
 export type ChatContextPacket = {
   today: TodayContext;
   user: UserProfileContext;
+  operating: OperatingPreferences;
   activePlans: PlanContext[];
   radar: RadarItemContext[];
   circle: CirclePersonContext[];

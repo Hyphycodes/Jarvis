@@ -56,11 +56,28 @@ export function NorthSigned({ payload }: { payload?: NorthPayload }) {
       <Header />
       <Hero />
       <NorthStar title={northStar.title} subtitle={northStar.subtitle} />
+      {payload?.operatingRead ? <OperatingRead read={payload.operatingRead} /> : null}
       <Pillars pillars={pillars} />
       <NextRightSteps signals={signals} pillars={pillars} />
       <NorthReminder reminder={reminder} />
       <AccountRow />
     </AppFrame>
+  );
+}
+
+// ── Operating read ─────────────────────────────────────────────────────────
+
+function OperatingRead({ read }: { read: string }) {
+  return (
+    <Link
+      href="/account"
+      className="mt-5 block border-l-2 border-muted-gold/40 bg-soft-black/40 px-4 py-3 transition-colors duration-300 ease-atmospheric hover:bg-soft-black/60"
+    >
+      <div className="text-[10px] uppercase tracking-editorial text-muted-gold/80">
+        Operating
+      </div>
+      <p className="mt-1 text-[13px] leading-[1.5] text-warm-ivory/75">{read}</p>
+    </Link>
   );
 }
 

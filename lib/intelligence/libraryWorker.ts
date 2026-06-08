@@ -6,6 +6,7 @@ import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { researchPlace } from "@/lib/brain/researcher";
 import { writeVerdict } from "@/lib/brain/verdictWriter";
 import type { BrainContextPacket } from "@/lib/brain/types";
+import { DEFAULT_OPERATING_PREFERENCES } from "@/lib/operating/operatingPreferences";
 import type { FounderProfileRow } from "@/lib/types/database";
 
 const REJECTION_CONFIDENCE_THRESHOLD = 0.3;
@@ -26,6 +27,7 @@ function buildMinimalContext(
       dealbreakers: founder?.dealbreakers ?? [],
       pinnedPrinciples: founder?.pinned_principles ?? [],
     },
+    operating: DEFAULT_OPERATING_PREFERENCES,
     memory: [],
     recentSignals: [],
     recentActions: [],

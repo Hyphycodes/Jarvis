@@ -200,6 +200,81 @@ export interface Database {
         };
         Relationships: [];
       };
+      user_operating_preferences: {
+        Row: {
+          user_id: string;
+          operating_mode: string;
+          annual_income_range: string | null;
+          spend_mode: string;
+          savings_priority: string | null;
+          fixed_expense_pressure: string | null;
+          dining_normal_min: number | null;
+          dining_normal_max: number | null;
+          dining_premium_min: number | null;
+          dining_premium_max: number | null;
+          finds_comfort: string;
+          premium_threshold: number;
+          aspirational_frequency: string;
+          preferred_plan_windows: Json;
+          sunday_reset: boolean;
+          low_friction_weeknights: boolean;
+          recovery_preference: string | null;
+          social_window: string | null;
+          deep_work_window: string | null;
+          rhythm_notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          operating_mode?: string;
+          annual_income_range?: string | null;
+          spend_mode?: string;
+          savings_priority?: string | null;
+          fixed_expense_pressure?: string | null;
+          dining_normal_min?: number | null;
+          dining_normal_max?: number | null;
+          dining_premium_min?: number | null;
+          dining_premium_max?: number | null;
+          finds_comfort?: string;
+          premium_threshold?: number;
+          aspirational_frequency?: string;
+          preferred_plan_windows?: Json;
+          sunday_reset?: boolean;
+          low_friction_weeknights?: boolean;
+          recovery_preference?: string | null;
+          social_window?: string | null;
+          deep_work_window?: string | null;
+          rhythm_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          operating_mode?: string;
+          annual_income_range?: string | null;
+          spend_mode?: string;
+          savings_priority?: string | null;
+          fixed_expense_pressure?: string | null;
+          dining_normal_min?: number | null;
+          dining_normal_max?: number | null;
+          dining_premium_min?: number | null;
+          dining_premium_max?: number | null;
+          finds_comfort?: string;
+          premium_threshold?: number;
+          aspirational_frequency?: string;
+          preferred_plan_windows?: Json;
+          sunday_reset?: boolean;
+          low_friction_weeknights?: boolean;
+          recovery_preference?: string | null;
+          social_window?: string | null;
+          deep_work_window?: string | null;
+          rhythm_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       memory_items: {
         Row: {
           id: string;
@@ -1536,6 +1611,8 @@ export interface Database {
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type FounderProfileRow =
   Database["public"]["Tables"]["founder_profile"]["Row"];
+export type UserOperatingPreferencesRow =
+  Database["public"]["Tables"]["user_operating_preferences"]["Row"];
 export type MemoryItemRow = Database["public"]["Tables"]["memory_items"]["Row"];
 export type TasteSignalRow =
   Database["public"]["Tables"]["taste_signals"]["Row"];

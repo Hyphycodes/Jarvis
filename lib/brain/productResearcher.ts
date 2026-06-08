@@ -4,6 +4,13 @@ import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
 import { hasTavily, searchWeb } from "@/lib/sources/tavily";
 import { hasSerpapi, searchProducts, type SerpShoppingResult } from "@/lib/sources/serpapi";
+import {
+  DEFAULT_OPERATING_PREFERENCES,
+  spendContextForResearcher,
+} from "@/lib/operating/operatingPreferences";
+
+/** Fallback OWNER MONEY CONTEXT when the caller doesn't pass declared spend. */
+const DEFAULT_SPEND_BLOCK = spendContextForResearcher(DEFAULT_OPERATING_PREFERENCES);
 
 /** Which internal specialist this find belongs to. Style is no longer a visible
  *  Radar tab — it's one of several brains that feed Finds. */
@@ -145,12 +152,6 @@ OUTPUT per pick:
 - budget_fit/value_for_income/cost_per_use/aspirational_penalty/quality_without_flash: 0..1.
 - realistic_purchase_timing: crisp timing such as "this month", "save for 1-2 months", "aspirational only", or null.
 
-OWNER MONEY CONTEXT:
-- Owner makes around $100k/year and likes refined, subtle luxury.
-- Prefer quality, longevity, and attainable premium over fantasy luxury.
-- Watches or luxury apparel above realistic everyday budgets must be rare, marked aspirational/hold, and paired with realistic alternatives.
-- Do not treat $10k-$30k watches or luxury apparel as normal background Finds unless explicitly requested.
-
 Return strict JSON:
 {
   "mission_title": string,
@@ -187,6 +188,9 @@ export async function researchProduct(input: {
   /** Optional budget hints parsed upstream. */
   budgetMin?: number;
   budgetMax?: number;
+  /** Declared OWNER MONEY CONTEXT block (from spendContextForResearcher). When
+   *  omitted, falls back to the default posture. */
+  spend?: string;
 }): Promise<ProductDossier> {
   const mission = input.mission.trim();
   const sourceBrain = input.sourceBrain ?? classifyBrain(mission, input.context);
@@ -257,9 +261,13 @@ export async function researchProduct(input: {
     reviews: r.reviews ?? null,
   }));
 
+  // Declared spend posture (replaces the old hardcoded OWNER MONEY CONTEXT) so
+  // the buyer respects the Private Layer's spend controls.
+  const system = `${SYSTEM_PROMPT}\n\n${input.spend ?? DEFAULT_SPEND_BLOCK}`;
+
   try {
     const raw = await generateStructured<RawDossier>({
-      system: SYSTEM_PROMPT,
+      system,
       prompt: JSON.stringify(
         {
           mission,

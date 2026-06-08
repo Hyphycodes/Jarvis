@@ -11,6 +11,7 @@ import type {
   TodayContext,
 } from "@/lib/chat/context/types";
 import type { IndexDestination, IndexItemStatus } from "@/lib/index/types";
+import type { OperatingPreferences } from "@/lib/operating/operatingPreferences";
 import type { Json } from "@/lib/types/database";
 
 export type FounderDayContext = {
@@ -183,6 +184,8 @@ export type FounderContextPacket = {
     pinnedPrinciples: string[];
     weeklyRhythm?: FounderWeeklyRhythm | null;
   };
+  /** Declared OPERATING controls (mode + spend + rhythm preferences). */
+  operating: OperatingPreferences;
   north: {
     pillars: FounderNorthPillar[];
     activePriorities: FounderNorthPriority[];
@@ -414,6 +417,7 @@ export function toBrainContextPacket(packet: FounderContextPacket): BrainContext
         }
       : null,
     weeklyRhythm: packet.founder.weeklyRhythm ?? undefined,
+    operating: packet.operating,
     people: packet.circle.relevantPeople.map((person) => {
       const recentUpdate = packet.circle.upcomingMoments.find((moment) => moment.personId === person.id);
       return {
@@ -524,6 +528,7 @@ export function toChatContextPacket(packet: FounderContextPacket): ChatContextPa
       dealbreakers: packet.founder.dealbreakers,
       pinnedPrinciples: packet.founder.pinnedPrinciples,
     },
+    operating: packet.operating,
     activePlans,
     radar,
     circle,

@@ -12,6 +12,8 @@ import {
   type SourceBrain,
 } from "@/lib/brain/productResearcher";
 import { buildClosetSummary } from "@/lib/wardrobe/closet";
+import { readOperatingPreferences } from "@/lib/operating/readOperatingPreferences";
+import { spendContextForResearcher } from "@/lib/operating/operatingPreferences";
 import type { Json } from "@/lib/types/database";
 
 export type FindSource = "user_intent" | "need_scout" | "finds";
@@ -50,12 +52,14 @@ export async function createFind(input: {
     }
   }
 
+  const prefs = await readOperatingPreferences(sb, input.userId);
   const dossier = await researchProduct({
     mission: input.mission,
     context,
     refine: input.refine,
     sourceBrain: brain,
     budgetMax: defaultFindBudgetMax(brain, input.mission, source),
+    spend: spendContextForResearcher(prefs),
   });
 
   // Never surface an empty, unresearched shell with nothing to show.
@@ -88,12 +92,14 @@ export async function refineFind(input: {
   if (!prior) return { ok: false };
   const source = (isRecord(payload) && typeof payload.source === "string" ? payload.source : "finds") as FindSource;
 
+  const prefs = await readOperatingPreferences(sb, input.userId);
   const dossier = await researchProduct({
     mission: prior.mission_title,
     context: prior.why_surfaced,
     refine: input.refine,
     sourceBrain: prior.source_brain,
     budgetMax: defaultFindBudgetMax(prior.source_brain, prior.mission_title, source),
+    spend: spendContextForResearcher(prefs),
   });
   const row = buildFindRow(input.userId, dossier, source);
   await sb.from("surfaced_items").update({ ...row, updated_at: new Date().toISOString() }).eq("id", input.itemId).eq("user_id", input.userId);

@@ -2,6 +2,10 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireOwner } from "@/lib/auth";
+import {
+  DEFAULT_OPERATING_PREFERENCES,
+  normalizeOperatingPreferences,
+} from "@/lib/operating/operatingPreferences";
 import { normalizeWeeklyRhythm } from "@/lib/schedule/weeklyRhythm";
 import { getCurrentWeather } from "@/lib/sources/openMeteo";
 import { geocode, hasMapbox } from "@/lib/sources/mapbox";
@@ -95,6 +99,7 @@ export async function buildFounderContextPacket(options: {
     circlePeopleRes,
     circleUpdatesRes,
     knownPlacesRes,
+    operatingRes,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -202,6 +207,11 @@ export async function buildFounderContextPacket(options: {
       .eq("user_id", userId)
       .order("verdict_strength", { ascending: false, nullsFirst: false })
       .limit(40),
+    supabase
+      .from("user_operating_preferences")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle(),
   ]);
 
   logQueryError("context.profile", profileRes.error);
@@ -220,6 +230,7 @@ export async function buildFounderContextPacket(options: {
   logQueryError("context.circle.people", circlePeopleRes.error);
   logQueryError("context.circle.updates", circleUpdatesRes.error);
   logQueryError("context.places.library", knownPlacesRes.error);
+  logQueryError("context.operating", operatingRes.error);
 
   const profile = (profileRes.data ?? null) as {
     display_name?: string | null;
@@ -230,6 +241,9 @@ export async function buildFounderContextPacket(options: {
   } | null;
   const founder = (founderRes.data ?? null) as FounderProfileRow | null;
   const weeklyRhythm = readWeeklyRhythm(founder?.weekly_rhythm);
+  const operating = operatingRes.data
+    ? normalizeOperatingPreferences(operatingRes.data)
+    : { ...DEFAULT_OPERATING_PREFERENCES };
   const timezone = profile?.timezone ?? weeklyRhythm?.timezone ?? "UTC";
   const liveLocation = (liveLocationRes.data ?? null) as {
     latitude: number;
@@ -375,6 +389,7 @@ export async function buildFounderContextPacket(options: {
       pinnedPrinciples: founder?.pinned_principles ?? [],
       weeklyRhythm,
     },
+    operating,
     north: {
       pillars: northPillars,
       activePriorities: northPriorities,

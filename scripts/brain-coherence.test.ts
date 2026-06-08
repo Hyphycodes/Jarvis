@@ -62,6 +62,7 @@ import { RADAR_MIN_ACTIVE_ITEM_TARGET } from "../lib/brain/constants";
 import { normalizeRadarClassification } from "../lib/radar/category";
 import type { IndexedItem } from "../lib/index/types";
 import type { RadarItem } from "../lib/intelligence/types";
+import { DEFAULT_OPERATING_PREFERENCES } from "../lib/operating/operatingPreferences";
 
 const now = "2026-06-03T18:00:00.000Z";
 
@@ -83,6 +84,7 @@ function emptyPacket(): FounderContextPacket {
       pinnedPrinciples: [],
       weeklyRhythm: null,
     },
+    operating: DEFAULT_OPERATING_PREFERENCES,
     north: { pillars: [], activePriorities: [], tags: [] },
     radar: { current: [], recentlySaved: [], recentlyPassed: [], patterns: [] },
     today: { upcomingItems: [], activePlan: null, activePlans: [] },

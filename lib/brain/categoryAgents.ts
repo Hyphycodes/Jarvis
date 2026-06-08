@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasAnthropic } from "@/lib/ai/anthropic";
 import { generateStructured } from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
+import { operatingFitBlock } from "@/lib/operating/operatingPreferences";
 import { upsertCandidateInboxItem } from "@/lib/radar/candidateInbox";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { buildClosetSummary } from "@/lib/wardrobe/closet";
@@ -71,6 +72,8 @@ export type AgentTaste = {
   pinnedPrinciples: string[];
   memories: Array<{ content: string; kind: string }>;
   northTags: string[];
+  /** Declared operating posture (mode + spend + rhythm), preformatted. */
+  operatingRead?: string | null;
 };
 
 export type SynthesisResult = {
@@ -120,6 +123,7 @@ export function buildAgentTasteBlock(taste: AgentTaste): string {
   lines.push(`Home base: ${taste.city}.`);
   if (taste.lifeDirection) lines.push(`Life direction: ${taste.lifeDirection}.`);
   if (taste.currentFocus) lines.push(`Current focus: ${taste.currentFocus}.`);
+  if (taste.operatingRead) lines.push(taste.operatingRead);
   if (taste.vibeKeywords.length) lines.push(`Vibe he leans into: ${taste.vibeKeywords.join(", ")}.`);
   if (taste.avoidKeywords.length) lines.push(`Avoid: ${taste.avoidKeywords.join(", ")}.`);
   if (taste.dealbreakers.length) lines.push(`Dealbreakers (never surface): ${taste.dealbreakers.join(", ")}.`);
@@ -317,6 +321,7 @@ export async function runCategoryScout(input: {
     pinnedPrinciples: brain.founder?.pinnedPrinciples ?? [],
     memories: (brain.memory ?? []).map((m) => ({ content: m.content, kind: m.kind })),
     northTags: brain.northTags ?? [],
+    operatingRead: operatingFitBlock(brain.operating),
   };
   const week = buildWeekContext(new Date(brain.now), city);
   const tasteBlock = buildAgentTasteBlock(taste);

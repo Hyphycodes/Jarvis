@@ -4,6 +4,7 @@ import type { RadarDecision } from "@/lib/brain/decisionCouncilTypes";
 import type { RadarItem } from "@/lib/intelligence/types";
 import type { PlacesLibraryRow } from "@/lib/types/database";
 import type { NorthAlignment } from "@/lib/context/types";
+import type { OperatingPreferences } from "@/lib/operating/operatingPreferences";
 
 export type PersonContext = {
   name: string;
@@ -111,6 +112,8 @@ export type BrainContextPacket = {
     workLocation: string;
     timezone: string;
   };
+  /** Declared OPERATING controls (mode + spend + rhythm preferences). */
+  operating: OperatingPreferences;
   people: PersonContext[];
   /** Life context — what the founder's actual week looks like, so curation
    *  reflects rhythm and gaps, not just taste. Optional so nothing breaks if

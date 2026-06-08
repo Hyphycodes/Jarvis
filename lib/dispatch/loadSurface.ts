@@ -2,6 +2,7 @@ import "server-only";
 
 import { getViewableProfileId } from "@/lib/auth";
 import { buildBrainContext } from "@/lib/brain/context";
+import { operatingSummaryLine } from "@/lib/operating/operatingPreferences";
 import {
   buildIntelligenceReason,
   reasonForCircleMoment,
@@ -429,6 +430,7 @@ export const loadNorthSurface: Loader<NorthPayload> = async () => {
       pillars,
       signals,
       lifeCadence: buildNorthLifeCadence(brainContext),
+      operatingRead: operatingSummaryLine(brainContext.operating),
     };
   } catch (error) {
     logSurfaceError("north", error);

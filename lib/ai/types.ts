@@ -293,6 +293,8 @@ export type NorthPayload = {
   pillars: NorthPillar[];
   signals: NorthSignal[];
   lifeCadence?: NorthLifeLane[];
+  /** One-line declared operating read (mode + spend posture) for the North header. */
+  operatingRead?: string;
 };
 
 export type NorthPillar = {

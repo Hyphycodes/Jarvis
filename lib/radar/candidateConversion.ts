@@ -6,6 +6,7 @@ import { generateStructured } from "@/lib/ai/structured";
 import { researchPlace } from "@/lib/brain/researcher";
 import { writeVerdict } from "@/lib/brain/verdictWriter";
 import type { BrainContextPacket } from "@/lib/brain/types";
+import { DEFAULT_OPERATING_PREFERENCES } from "@/lib/operating/operatingPreferences";
 import { qualityTierFromScore } from "@/lib/library/quality";
 import { upsertSourceFromLibraryEntity } from "@/lib/library/sourceGraph";
 import { assessResultQuality } from "@/lib/sources/resultQuality";
@@ -934,6 +935,7 @@ function buildMinimalContext(founder: Partial<FounderProfileRow> | null): BrainC
       dealbreakers: arrayValue(founder?.dealbreakers),
       pinnedPrinciples: arrayValue(founder?.pinned_principles),
     },
+    operating: DEFAULT_OPERATING_PREFERENCES,
     memory: [],
     recentSignals: [],
     recentActions: [],

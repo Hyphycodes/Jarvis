@@ -10,6 +10,7 @@ import { type TasteVector } from "@/lib/radar/engine/tasteVector";
 import { DINING_SUBLIBRARIES } from "@/lib/radar/engine/sources";
 import { logRejections } from "@/lib/radar/engine/rejections";
 import { getExperienceContext } from "@/lib/radar/engine/experienceContext";
+import { operatingFitBlock } from "@/lib/operating/operatingPreferences";
 
 /** Stage 6 — specialist council (authenticity + Jerry-fit + devil's advocate +
  *  verdict synthesis), built ON TOP of the preserved taste model (does not modify
@@ -96,6 +97,7 @@ export async function councilSubLibrary(input: {
     pinnedPrinciples: brain.founder?.pinnedPrinciples ?? [],
     memories: (brain.memory ?? []).map((m) => ({ content: m.content, kind: m.kind })),
     northTags: brain.northTags ?? [],
+    operatingRead: operatingFitBlock(brain.operating),
   };
 
   // Jerry's own past feedback for this lane — the Experience Memory Engine
