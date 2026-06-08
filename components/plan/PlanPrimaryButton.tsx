@@ -55,6 +55,12 @@ export function PlanPrimaryButton({
   // calendar, not start it tonight. "Begin Evening" only appears on the day.
   const isSchedulable =
     (state === "ready" || state === "holding") && !dayOf && !scheduleFixed;
+  // On the day, ready/holding plans say "Begin <daypart>" — dynamic to the
+  // plan's actual start time, not a hardcoded "Evening".
+  const beginConfigLabel =
+    state === "ready" || state === "holding"
+      ? dynamicBeginLabel(suggestedStart)
+      : config.label;
   const label =
     labelOverride ??
     (isFixedFuture
@@ -63,7 +69,7 @@ export function PlanPrimaryButton({
         ? scheduled
           ? "Reschedule"
           : "Add to Calendar"
-        : config.label);
+        : beginConfigLabel);
   const disabled = config.disabled || (!planId && state !== "ready");
 
   // A fixed-date plan downloads its .ics directly (the date can't change).
@@ -157,6 +163,18 @@ export function PlanPrimaryButton({
       ) : null}
     </div>
   );
+}
+
+/** "Begin Morning/Afternoon/Evening/Night" from the plan's start time (local). */
+function dynamicBeginLabel(iso?: string): string {
+  if (!iso) return "Begin";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Begin";
+  const h = d.getHours();
+  if (h < 11) return "Begin Morning";
+  if (h < 16) return "Begin Afternoon";
+  if (h < 21) return "Begin Evening";
+  return "Begin Night";
 }
 
 function configFor(state: PlanState): {

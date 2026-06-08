@@ -745,9 +745,18 @@ export async function schedulePlan(input: {
 
   const sourceItemId = readSourceItemId(plan.key_stats);
   if (sourceItemId) {
+    // Scheduling = commitment. Mark the source item 'planned' and stamp its
+    // start so it leaves Radar (discovery) and appears on Today (on the day) /
+    // Upcoming (before) — both query status IN (saved,planned). Without the
+    // status flip, destination='today' alone never matched, so "Add to Calendar"
+    // never actually surfaced on Today.
     await supabase
       .from("surfaced_items")
-      .update({ destination: inferItemDestination(startsAt) })
+      .update({
+        destination: inferItemDestination(startsAt),
+        status: "planned",
+        starts_at: startsAt,
+      })
       .eq("id", sourceItemId)
       .eq("user_id", owner.id);
     revalidatePath(`/item/${sourceItemId}`);
