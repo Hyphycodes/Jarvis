@@ -11,12 +11,13 @@ import {
   activatePlan,
   cancelPlan,
   completePlan,
+  unschedulePlan,
 } from "@/lib/actions/plans";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ACTIONS = ["activate", "complete", "cancel"] as const;
+const ACTIONS = ["activate", "complete", "cancel", "unschedule"] as const;
 type Action = (typeof ACTIONS)[number];
 
 const paramsSchema = z.object({
@@ -45,6 +46,8 @@ async function dispatch(action: Action, planId: string) {
       return completePlan({ planId });
     case "cancel":
       return cancelPlan({ planId });
+    case "unschedule":
+      return unschedulePlan({ planId });
   }
 }
 

@@ -777,6 +777,57 @@ export async function schedulePlan(input: {
   return { ok: true, startsAt };
 }
 
+/** Remove from calendar — the inverse of schedulePlan. Clears the date and
+ *  returns the source card to Radar (discovery) so it can be re-added later. */
+export async function unschedulePlan(input: {
+  planId: string;
+}): Promise<{ ok: true }> {
+  const owner = await requireOwner();
+  const supabase = await getServerSupabase();
+
+  const { data: planData } = await supabase
+    .from("plans")
+    .select("*")
+    .eq("id", input.planId)
+    .eq("user_id", owner.id)
+    .maybeSingle();
+  const plan = planData as PlanRow | null;
+  if (!plan) throw new Error("Plan not found.");
+
+  const nextKeyStats = isRecord(plan.key_stats) ? { ...plan.key_stats } : {};
+  delete (nextKeyStats as Record<string, unknown>).starts_at;
+
+  const { error: planError } = await supabase
+    .from("plans")
+    .update({
+      scheduled_date: null,
+      scheduled_time: null,
+      date: null,
+      live_label: "BEGIN",
+      key_stats: nextKeyStats as Json,
+    })
+    .eq("id", input.planId)
+    .eq("user_id", owner.id);
+  if (planError) throw new Error(planError.message);
+
+  const sourceItemId = readSourceItemId(plan.key_stats);
+  if (sourceItemId) {
+    await supabase
+      .from("surfaced_items")
+      .update({ destination: "radar", status: "shown", starts_at: null })
+      .eq("id", sourceItemId)
+      .eq("user_id", owner.id);
+    revalidatePath(`/item/${sourceItemId}`);
+  }
+
+  revalidatePath(`/`);
+  revalidatePath(`/upcoming`);
+  const slug = readSlugFromKeyStats(plan.key_stats);
+  if (slug) revalidatePath(`/plan/${slug}`);
+
+  return { ok: true };
+}
+
 // ── Lifecycle actions ───────────────────────────────────────────────────────
 
 export async function activatePlan(input: {

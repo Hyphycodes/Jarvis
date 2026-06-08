@@ -67,9 +67,11 @@ export function PlanPrimaryButton({
       ? "Add to Calendar"
       : isSchedulable
         ? scheduled
-          ? "Reschedule"
+          ? "Added to Calendar"
           : "Add to Calendar"
         : beginConfigLabel);
+  // Show a remove action once a flexible plan is on the calendar.
+  const showRemoveFromCalendar = isSchedulable && Boolean(scheduled);
   const disabled = config.disabled || (!planId && state !== "ready");
 
   // A fixed-date plan downloads its .ics directly (the date can't change).
@@ -92,7 +94,7 @@ export function PlanPrimaryButton({
     if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
   }
 
-  function run(action: "activate" | "complete" | "cancel") {
+  function run(action: "activate" | "complete" | "cancel" | "unschedule") {
     if (!planId) return;
     setError(null);
     startTransition(async () => {
@@ -140,6 +142,18 @@ export function PlanPrimaryButton({
           style={{ color: "var(--text-muted)" }}
         >
           Cancel plan
+        </button>
+      ) : null}
+
+      {showRemoveFromCalendar && planId ? (
+        <button
+          type="button"
+          onClick={() => run("unschedule")}
+          disabled={pending}
+          className="mt-2 self-end text-[10px] uppercase tracking-[0.22em] transition-opacity duration-300 ease-atmospheric"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Remove from calendar
         </button>
       ) : null}
 
