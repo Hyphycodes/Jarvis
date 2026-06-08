@@ -52,6 +52,7 @@ type EngineItemRow = {
   id: string;
   source_id: string | null;
   status: string;
+  destination: string | null;
   score: number | null;
   subtitle: string | null;
   payload: Record<string, unknown> | null;
@@ -179,7 +180,7 @@ export async function promotePlanReadyToShown(input: {
 
   const { data, error } = await supabase
     .from("surfaced_items")
-    .select("id, source_id, status, score, subtitle, payload")
+    .select("id, source_id, status, destination, score, subtitle, payload")
     .eq("user_id", input.userId)
     .eq("source", RENDER_SOURCE)
     .eq("category", input.lane)
@@ -213,10 +214,14 @@ export async function promotePlanReadyToShown(input: {
   const winnerIds = new Set(winners.map((w) => w.id));
 
   for (const w of winners) {
-    if (w.status === "shown") continue;
+    // Already live on the board? Only skip when BOTH the status and destination
+    // are right. The board reads (destination='radar' AND status='shown'), so a
+    // winner stuck on destination='holding' must be pulled back to radar — else
+    // it stays invisible while occupying a winner slot and starves the lane.
+    if (w.status === "shown" && w.destination === "radar") continue;
     const { error: upErr } = await supabase
       .from("surfaced_items")
-      .update({ status: "shown" })
+      .update({ status: "shown", destination: "radar" })
       .eq("id", w.id)
       .eq("user_id", input.userId);
     if (upErr) result.errors.push(`show ${w.id}: ${upErr.message}`);
