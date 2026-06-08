@@ -1721,6 +1721,51 @@ export type CurrentEventRow = {
   plan_id?: string | null;
 };
 
+export type CultureItemRow = {
+  id: string;
+  user_id: string;
+  external_id: string | null;
+  source: string | null;
+  source_url: string | null;
+  discovered_via: string | null;
+  title: string;
+  description: string | null;
+  venue_name: string | null;
+  institution_name: string | null;
+  venue_address: string | null;
+  neighborhood: string | null;
+  sub_library: string;
+  sub_type: string | null;
+  is_dated: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  timezone: string | null;
+  image_url: string | null;
+  admission_price_min: number | null;
+  admission_price_max: number | null;
+  vibe_keywords: string[] | null;
+  verdict: string | null;
+  verdict_strength: number | null;
+  quality_score: number | null;
+  taste_vector: Json | null;
+  truth_assessment: Json | null;
+  fit_assessment: Json | null;
+  depth_assessment: Json | null;
+  planability_assessment: Json | null;
+  pre_score: number | null;
+  final_score: number | null;
+  comparative_rank: number | null;
+  status: string;
+  rejection_stage: string | null;
+  rejection_reason: string | null;
+  plan_id: string | null;
+  expires_at: string | null;
+  first_seen_at: string;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TastemakerRow = {
   id: string;
   user_id: string;

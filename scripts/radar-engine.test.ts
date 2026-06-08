@@ -33,6 +33,13 @@ import {
   expiresAtFor,
 } from "../lib/radar/engine/events/assess";
 import { selectEventsShelf } from "../lib/radar/engine/events/editor";
+import { classifyCultureSubLibrary } from "../lib/radar/engine/culture/config";
+import {
+  assessCultureTruth,
+  assessDepth,
+  assessCultureFit,
+  cultureExpiresAt,
+} from "../lib/radar/engine/culture/assess";
 
 let failures = 0;
 function check(name: string, fn: () => void) {
@@ -342,6 +349,49 @@ check("selectEventsShelf: sub-library variety + venue cap + urgency bump", () =>
   assert.ok(ids.includes("a") && !ids.includes("b")); // venue cap drops the 2nd Green Mill
   assert.ok(ids.includes("e") && ids.includes("f")); // variety + urgency keep food/outdoor
   assert.ok(featured.filter((f) => f.sub_library === "events_music").length <= 3);
+});
+
+// ── culture: classification ────────────────────────────────────────────────────
+check("classifyCultureSubLibrary: screenings/performances/arch/exhibits", () => {
+  assert.equal(classifyCultureSubLibrary({ title: "Tarkovsky retrospective at the Music Box" }), "culture_screenings");
+  assert.equal(classifyCultureSubLibrary({ title: "CSO: Mahler symphony" }), "culture_performances");
+  assert.equal(classifyCultureSubLibrary({ title: "Mies van der Rohe architecture exhibit" }), "culture_architecture_design");
+  assert.equal(classifyCultureSubLibrary({ title: "Photography collection at the Art Institute" }), "culture_exhibits");
+  assert.equal(classifyCultureSubLibrary({ title: "Something vague" }), "culture_exhibits"); // default
+});
+
+// ── culture: truth / depth / fit / expiration ────────────────────────────────
+check("assessCultureTruth: needs institution + source; is_dated only when dated", () => {
+  assert.equal(assessCultureTruth({ title: "X" }).needs_enrichment, true);
+  const t = assessCultureTruth({ title: "Show", institution_name: "Art Institute", source_url: "https://artic.edu/x" });
+  assert.equal(t.needs_enrichment, false);
+  assert.equal(t.source_quality, "official");
+  assert.equal(t.is_dated, false);
+  assert.equal(assessCultureTruth({ title: "Y", is_dated: true, starts_at: "2026-07-01T19:00:00Z" }).is_dated, true);
+});
+
+check("assessDepth: curatorial language is deep; instagram bait is shallow", () => {
+  const deep = assessDepth({
+    title: "Curatorial retrospective",
+    institution_name: "MCA",
+    description: "A major retrospective tracing the artist's material practice across four decades with rare provenance.",
+    vibe_keywords: ["exhibition"],
+  });
+  assert.ok(deep.depth_score >= 0.7 && (deep.substance === "deep" || deep.substance === "solid"));
+  const shallow = assessDepth({ title: "Immersive selfie lights experience room", description: "instagrammable" });
+  assert.equal(shallow.substance, "shallow");
+});
+
+check("assessCultureFit: timeless never expires/suppresses; expired dated vetoes", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+  const timeless = assessCultureFit({ title: "Permanent collection", is_dated: false }, { now });
+  assert.equal(timeless.recommended_surface, "radar"); // evergreen lives on radar, not suppressed
+  assert.equal(cultureExpiresAt({ is_dated: false, starts_at: "2026-06-01T00:00:00Z" }), null);
+  const staleDated = assessCultureFit({ is_dated: true, starts_at: "2026-06-01T19:00:00Z" }, { now });
+  assert.ok(staleDated.vetoes.includes("expired_dated"));
+  assert.equal(staleDated.recommended_surface, "suppress");
+  // dated temporary exhibit expires; timeless does not
+  assert.equal(cultureExpiresAt({ is_dated: true, ends_at: "2026-07-01T00:00:00Z" }), "2026-07-02T00:00:00.000Z");
 });
 
 if (failures > 0) {
