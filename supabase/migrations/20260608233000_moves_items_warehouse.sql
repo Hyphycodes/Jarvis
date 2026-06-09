@@ -54,13 +54,17 @@ create index if not exists moves_items_user_final_idx
   on public.moves_items (user_id, final_score desc nulls last);
 
 alter table public.moves_items enable row level security;
+drop policy if exists moves_items_owner_select on public.moves_items;
 create policy moves_items_owner_select on public.moves_items
   for select using (auth.uid() = user_id);
+drop policy if exists moves_items_owner_insert on public.moves_items;
 create policy moves_items_owner_insert on public.moves_items
   for insert with check (auth.uid() = user_id);
+drop policy if exists moves_items_owner_update on public.moves_items;
 create policy moves_items_owner_update on public.moves_items
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop trigger if exists moves_items_set_updated_at on public.moves_items;
 create trigger moves_items_set_updated_at
   before update on public.moves_items
   for each row execute function public.tg_set_updated_at();

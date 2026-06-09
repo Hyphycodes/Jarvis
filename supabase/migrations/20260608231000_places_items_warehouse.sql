@@ -56,13 +56,17 @@ create index if not exists places_items_user_final_idx
   on public.places_items (user_id, final_score desc nulls last);
 
 alter table public.places_items enable row level security;
+drop policy if exists places_items_owner_select on public.places_items;
 create policy places_items_owner_select on public.places_items
   for select using (auth.uid() = user_id);
+drop policy if exists places_items_owner_insert on public.places_items;
 create policy places_items_owner_insert on public.places_items
   for insert with check (auth.uid() = user_id);
+drop policy if exists places_items_owner_update on public.places_items;
 create policy places_items_owner_update on public.places_items
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop trigger if exists places_items_set_updated_at on public.places_items;
 create trigger places_items_set_updated_at
   before update on public.places_items
   for each row execute function public.tg_set_updated_at();
