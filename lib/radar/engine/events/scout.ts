@@ -230,11 +230,13 @@ async function persistDiagnostics(
 ): Promise<void> {
   try {
     await supabase.from("intelligence_traces").insert({
+      // `surface` has a CHECK constraint; "scout" is the allowed value that fits.
       user_id: userId,
       route: "api/radar/engine",
-      surface: "events",
-      decision_type: "scout_diagnostics",
+      surface: "scout",
+      decision_type: "events_scout_diagnostics",
       context_summary: {
+        lane: "events",
         primary_reason: primaryReason,
         proposed: run.proposed,
         parsed: run.parsed,
