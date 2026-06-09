@@ -70,7 +70,7 @@ const DIRECT: Record<string, RadarCategory> = {
   museum: "culture", reading: "culture", lecture: "culture", opening: "culture",
   literary: "culture", film: "culture", cinema: "culture", theater: "culture",
   theatre: "culture",
-  // dining — food & drink
+  // dining — food & drink (exhaustive: anything you eat/drink at is dining)
   dining: "dining", restaurant: "dining", restaurants: "dining", food: "dining",
   bar: "dining", bars: "dining", cafe: "dining", coffee: "dining", lounge: "dining",
   brunch: "dining", dinner: "dining", cuisine: "dining", cocktails: "dining",
@@ -81,6 +81,11 @@ const DIRECT: Record<string, RadarCategory> = {
   enoteca: "dining", brasserie: "dining", gastropub: "dining", izakaya: "dining",
   ramen: "dining", noodle: "dining", deli: "dining", diner: "dining",
   patisserie: "dining", gelato: "dining", supperclub: "dining", trattorias: "dining",
+  // drink-forward venues — must not slip into places
+  beer: "dining", pub: "dining", taproom: "dining", mezcal: "dining",
+  distillery: "dining", sommelier: "dining", somm: "dining",
+  whiskey: "dining", bourbon: "dining", tequila: "dining", sake: "dining",
+  cider: "dining", agave: "dining", draft: "dining", spirits: "dining",
   // places — non-food spots / atmosphere
   place: "places", places: "places", park: "places", parks: "places",
   shop: "places", venue: "places", view: "places", spa: "places",
@@ -96,15 +101,19 @@ const DIRECT: Record<string, RadarCategory> = {
 };
 
 // Ordered substring fallback for free-form multi-word inputs. Order encodes
-// priority so atmosphere terms beat generic ones (e.g. "cigar lounge" → places,
-// not dining). A `null` target means "route out of Radar" (e.g. real estate).
+// priority: dining beats places so "neighborhood brewery" → dining, not places.
+// Cigar/lobby/rooftop are explicit places exceptions handled by the exclusion
+// list in hasDiningSignal. A `null` target means "route out of Radar".
 const KEYWORD_ORDER: Array<[RegExp, RadarCategory | null]> = [
   [/real.?estate|listing|\bland\b|homestead|\bproperty\b|\bacre/, null],
+  // Dining must appear before places so drink-focused venues (wine, beer,
+  // taproom, mezcal…) are routed correctly even when the phrase also contains
+  // a neighborhood or venue word.
+  [/restaurant|dining|\bbar\b|\bcafe\b|coffee|lounge|brunch|\bfood\b|cuisine|cocktail|steak|sushi|winery|\bwine\b|\bbeer\b|taproom|brewery|brewpub|tavern|omakase|pizzeria|pizza|bistro|mezcal|distillery|sommelier|\bpub\b|tequila|whiskey|bourbon|agave|\bcider\b|natural wine|craft beer|enoteca|trattoria|izakaya|ramen|pasta/, "dining"],
   [/cigar|rooftop|\bpark\b|garden|\bview\b|\bspa\b|hotel|boutique\b|bookstore|\blobby\b|\btrail\b|lakefront|riverwalk|neighborhood|scenic/, "places"],
   [/gallery|museum|exhibit|\bart\b|reading|lecture|opening|literary/, "culture"],
   [/concert|\bmusic\b|festival|\bshow\b|\bgame\b|ticket|comedy|nightlife|\bgig\b/, "events"],
   [/watch|\bdrop\b|sneaker|apparel|fashion|overshirt|jacket|retail|shopping|\bbuy\b/, "finds"],
-  [/restaurant|dining|\bbar\b|\bcafe\b|coffee|lounge|brunch|\bfood\b|cuisine|cocktail|steak|sushi|winery|wine bar|brewery|tavern|omakase|pizzeria|pizza|bistro/, "dining"],
   [/hike|golf|basketball|workout|fitness|outdoor|wellness|\brun\b|\bgym\b|\bclass\b/, "moves"],
 ];
 
@@ -259,7 +268,11 @@ export function labelForRadarCategory(category: RadarCategory | string | null | 
 
 const SEQUENCE_RE = /\b(then|after|start(?:ing)? at|finish|end at|route|loop|circuit|stop\s+\d|first|next|walk to|drive to|followed by|itinerary)\b/i;
 const MOVE_ACTION_RE = /\b(walk|route|loop|run|ride|bike|hike|workout|boxing|basketball|shootaround|golf|class|lesson|errands?|flow|tour|horseback|horse riding|trail ride|pickleball|tennis|pilates|yoga|range|court|league)\b/i;
-const DINING_RE = /\b(restaurant|dining room|dining|supper club|supper|dinner|brunch|lunch|bar|cafe|café|coffee|coffeehouse|lounge|cocktail|wine bar|wine list|winery|brewery|brewpub|tavern|steakhouse|sushi|omakase|pizzeria|pizza|bistro|trattoria|osteria|ristorante|enoteca|brasserie|gastropub|izakaya|ramen|noodle|pasta|kitchen|chef|tasting menu|tasting room|taqueria|bakery|patisserie|gelato|deli|diner)\b/i;
+// Dining signal regex — anything you primarily eat or drink at. This fires
+// BEFORE hasPlaceSignal in normalizeRadarClassification so food/drink venues
+// never bleed into Places even when their description mentions "neighborhood",
+// "wine shop", "intimate room", etc.
+const DINING_RE = /\b(restaurant|dining room|dining|supper club|supper|dinner|brunch|lunch|bar|cafe|café|coffee|coffeehouse|lounge|cocktail|wine bar|wine list|wine shop|wine|winery|brewery|taproom|brewpub|tavern|steakhouse|sushi|omakase|pizzeria|pizza|bistro|trattoria|osteria|ristorante|enoteca|brasserie|gastropub|izakaya|ramen|noodle|pasta|kitchen|chef|tasting menu|tasting room|taqueria|bakery|patisserie|gelato|deli|diner|beer|pub|mezcal|distillery|sommelier|somm|whiskey|bourbon|tequila|sake|cider|agave|spirits bar|natural wine|craft beer|cocktail bar|craft cocktail|wine program|beer bar)\b/i;
 const PLACE_RE = /\b(hotel|inn|lobby|park|trail|lakefront|riverwalk|waterfront|beach|garden|neighborhood|scenic|view|bookstore|book shop|boutique|record shop|wine shop|gift shop|galleria|artisan market|cigar lounge|cigar room|cigar|spa|plaza|promenade|lookout|observatory)\b/i;
 const CULTURE_RE = /\b(museum|gallery|exhibit|exhibition|architecture|architectural|design|film|cinema|craftsmanship|opera|theater|theatre|fine arts|cultural center|biennial|art institute|installation|screening|artist|symphony|orchestra|orchestral|philharmonic|classical|recital|chamber music|ballet|conservatory|jazz club|jazz room|jazz lounge|listening bar|listening room|live music|music room|music venue|concert hall|concert venue|performing arts|jazz archive)\b/i;
 const FIND_RE = /\b(product|watch|sneaker|apparel|fashion|overshirt|jacket|retail|shopping|buy|purchase|acquire|drop|gear|wardrobe|shirt|denim|bag|luggage|homeware)\b/i;
