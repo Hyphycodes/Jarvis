@@ -9,6 +9,11 @@
  *
  * Optional:
  *   REPAIR_USER_ID=<uuid>       target a specific founder
+ *   REPAIR_ALL_USERS=1         repair across every user (ignores REPAIR_USER_ID)
+ *   REPAIR_NULL_ONLY=1         only backfill rows whose stored category IS NULL,
+ *                              scoped to destination='radar' + status shown/opened.
+ *                              Leaves non-null (incl. authoritative engine) rows
+ *                              untouched — use this for the stale-NULL backfill.
  *   REPAIR_DRY_RUN=1           print the repair plan without writing
  */
 import { readFileSync } from "node:fs";
@@ -19,9 +24,14 @@ import type { Json, SurfacedItemRow } from "../lib/types/database";
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
-const TARGET_STATUSES = ["shown", "discovered", "opened"];
-const TARGET_DESTINATIONS = ["radar", "holding"];
 const DRY_RUN = process.env.REPAIR_DRY_RUN === "1";
+// Strict NULL-backfill mode: only rows with a stored NULL category, scoped to the
+// live Radar shelf (destination='radar', status shown/opened). This is the exact
+// surface the loader re-classifies at display time via visibleRadarCategory().
+const NULL_ONLY = process.env.REPAIR_NULL_ONLY === "1";
+const ALL_USERS = process.env.REPAIR_ALL_USERS === "1";
+const TARGET_STATUSES = NULL_ONLY ? ["shown", "opened"] : ["shown", "discovered", "opened"];
+const TARGET_DESTINATIONS = NULL_ONLY ? ["radar"] : ["radar", "holding"];
 
 type CountRow = {
   category: string;
@@ -67,9 +77,13 @@ async function main() {
 
   const { getSupabaseServiceClient } = await import("../lib/supabase/server");
   const supabase = getSupabaseServiceClient();
-  const userId = process.env.REPAIR_USER_ID ?? await readOwnerUserId(supabase);
-  if (!userId) {
-    console.error("No owner user_id found. Set REPAIR_USER_ID.");
+  // ALL_USERS drops the per-user filter so the global invariant ("no radar
+  // shown/opened row has category NULL") holds across every founder, not just one.
+  const userId = ALL_USERS
+    ? null
+    : process.env.REPAIR_USER_ID ?? await readOwnerUserId(supabase);
+  if (!ALL_USERS && !userId) {
+    console.error("No owner user_id found. Set REPAIR_USER_ID or REPAIR_ALL_USERS=1.");
     process.exit(1);
   }
 
@@ -90,7 +104,9 @@ async function main() {
           updated_at: new Date().toISOString(),
         })
         .eq("id", fix.id)
-        .eq("user_id", userId);
+        // Guard by the row's own owner — correct for both single-user and
+        // ALL_USERS runs (rows were fetched per their user_id either way).
+        .eq("user_id", row.user_id);
       if (error) {
         throw new Error(`${fix.title}: ${error.message}`);
       }
@@ -99,10 +115,14 @@ async function main() {
 
   const afterRows = DRY_RUN ? applyFixes(beforeRows, fixes) : await readTargetRows(supabase, userId);
   const output = {
-    userId,
+    scope: ALL_USERS ? "all-users" : userId,
+    nullOnly: NULL_ONLY,
+    statuses: TARGET_STATUSES,
+    destinations: TARGET_DESTINATIONS,
     dryRun: DRY_RUN,
     scanned: beforeRows.length,
     fixed: fixes.length,
+    remainingNullCategory: afterRows.filter((row) => row.category == null).length,
     beforeCounts: countsByCategoryType(beforeRows),
     afterCounts: countsByCategoryType(afterRows),
     sampleFixedRows: sampleFixes(fixes, 5),
@@ -120,17 +140,21 @@ async function readOwnerUserId(supabase: SupabaseClient): Promise<string | null>
   return typeof data?.user_id === "string" ? data.user_id : null;
 }
 
-async function readTargetRows(supabase: SupabaseClient, userId: string): Promise<SurfacedItemRow[]> {
+async function readTargetRows(
+  supabase: SupabaseClient,
+  userId: string | null,
+): Promise<SurfacedItemRow[]> {
   const all: SurfacedItemRow[] = [];
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
     const to = from + pageSize - 1;
-    const { data, error } = await supabase
+    let query = supabase
       .from("surfaced_items")
       .select("*")
-      .eq("user_id", userId)
       .in("status", TARGET_STATUSES)
-      .in("destination", TARGET_DESTINATIONS)
+      .in("destination", TARGET_DESTINATIONS);
+    if (userId) query = query.eq("user_id", userId);
+    const { data, error } = await query
       .order("updated_at", { ascending: false })
       .range(from, to);
     if (error) throw new Error(`Could not read surfaced_items: ${error.message}`);
@@ -144,6 +168,10 @@ async function readTargetRows(supabase: SupabaseClient, userId: string): Promise
 function plannedFixes(rows: SurfacedItemRow[]): FixedRow[] {
   const fixes: FixedRow[] = [];
   for (const row of rows) {
+    // NULL-only mode: never touch a row that already has a stored category.
+    // That excludes authoritative engine rows and any non-null drift — we only
+    // backfill the stale NULL rows the loader is currently re-classifying live.
+    if (NULL_ONLY && row.category != null) continue;
     const classification = normalizeRadarClassification({
       category: row.category,
       type: row.type,

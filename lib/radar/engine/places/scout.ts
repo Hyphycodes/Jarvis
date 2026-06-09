@@ -51,13 +51,19 @@ export async function seedPlacesFromLibrary(input: {
   for (const place of libRows as PlacesLibraryRow[]) {
     result.scanned += 1;
     // Only rows that the canonical classifier routes to the Places lane.
+    // Include verdict in the description blob so bars / breweries / cocktail
+    // bars (where cuisine_or_focus is null but verdict says "craft cocktail bar"
+    // or "neighborhood brewery") are correctly routed to Dining and skipped here.
+    const classifyDescription = [place.cuisine_or_focus, place.verdict]
+      .filter(Boolean)
+      .join(" ") || null;
     const category = normalizeRadarClassification({
       category: place.place_type,
       type: place.place_type,
       title: place.name,
       placeType: place.place_type,
-      description: place.cuisine_or_focus,
-      tags: place.vibe_keywords ?? [],
+      description: classifyDescription,
+      tags: [...(place.vibe_keywords ?? []), ...(place.best_for ?? [])],
       sourcePayload: { place_type: place.place_type, cuisine_or_focus: place.cuisine_or_focus, vibe_keywords: place.vibe_keywords },
     }).category;
     if (category !== "places") {
