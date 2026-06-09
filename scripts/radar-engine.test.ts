@@ -25,7 +25,13 @@ import { assessLaneReadiness } from "../lib/radar/engine/laneReadiness";
 import { radarItemReadyForFeature } from "../lib/radar/engine/radarReadiness";
 import { evaluateRecommendationFloor } from "../lib/radar/engine/recommendationFloor";
 import { pillarsForItem } from "../lib/radar/engine/pillars";
-import { classifyEventSubLibrary, parseSerpEventDate, hasRealEventTime } from "../lib/radar/engine/events/config";
+import {
+  classifyEventSubLibrary,
+  parseSerpEventDate,
+  hasRealEventTime,
+  parseSerpEventCandidate,
+  eventsLanePrimaryEmptyReason,
+} from "../lib/radar/engine/events/config";
 import { normalizeRadarClassification } from "../lib/radar/category";
 import {
   assessTruth,
@@ -547,6 +553,59 @@ check("hasRealEventTime: keeps 7 PM Chicago (00:00 UTC), drops local midnight", 
   assert.equal(hasRealEventTime("2026-08-16T05:00:00Z"), false); // 00:00 America/Chicago (CDT)
   assert.equal(hasRealEventTime(null), false);
   assert.equal(hasRealEventTime("garbage"), false);
+});
+
+// ── events: SerpAPI candidate parsing (response_results → candidate/reason) ────
+check("parseSerpEventCandidate: full google_events result → candidate", () => {
+  const r = parseSerpEventCandidate({
+    title: "Chris Greene Quartet",
+    date: { when: "Sat, Aug 15, 7 – 10 PM", start_date: "Aug 15" },
+    venue: { name: "Fitzgerald's" },
+    address: ["6615 Roosevelt Rd", "Berwyn, IL"],
+    link: "https://fitzgeraldsnightclub.com/show",
+    ticket_info: [{ source: "Ticketweb", link: "https://ticketweb.com/x", link_type: "tickets" }],
+    thumbnail: "https://img.example/jazz.jpg",
+    description: "Live jazz quartet on the patio.",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.candidate.venue, "Fitzgerald's");
+    assert.equal(r.candidate.subLibrary, "events_music");
+    assert.equal(r.candidate.ticketUrl, "https://ticketweb.com/x");
+    assert.equal(r.candidate.imageUrl, "https://img.example/jazz.jpg");
+    assert.ok(r.candidate.externalId.length > 0);
+  }
+});
+
+check("parseSerpEventCandidate: venue from address when venue.name absent", () => {
+  const r = parseSerpEventCandidate({
+    title: "Outdoor Movie",
+    date: { start_date: "Sep 3" }, // all-day style, no time → date kept, evening window
+    address: ["Millennium Park", "Chicago, IL"],
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.candidate.venue, "Millennium Park");
+});
+
+check("parseSerpEventCandidate: rejection reasons (no_title / no_venue / no_date)", () => {
+  assert.deepEqual(parseSerpEventCandidate({ date: { when: "Aug 15" }, venue: { name: "X" } }), { ok: false, reason: "no_title" });
+  assert.deepEqual(parseSerpEventCandidate({ title: "Show", date: { when: "Aug 15" } }), { ok: false, reason: "no_venue" });
+  assert.deepEqual(parseSerpEventCandidate({ title: "Show", venue: { name: "X" }, date: {} }), { ok: false, reason: "no_date" });
+});
+
+// ── events: lane health primary-empty-reason (distinct failure modes) ──────────
+check("eventsLanePrimaryEmptyReason: distinguishes the empty causes", () => {
+  // healthy
+  assert.equal(eventsLanePrimaryEmptyReason({ readyShown: 3, shown: 3, imageMissing: 0, verifiedReserve: 0, pending: 0 }), null);
+  // all shown lack images
+  assert.equal(eventsLanePrimaryEmptyReason({ readyShown: 0, shown: 2, imageMissing: 2, verifiedReserve: 0, pending: 0 }), "images_missing");
+  // verified pool exists but nothing rendered
+  assert.equal(eventsLanePrimaryEmptyReason({ readyShown: 0, shown: 0, imageMissing: 0, verifiedReserve: 4, pending: 0 }), "verified_not_rendered");
+  // pending verification
+  assert.equal(eventsLanePrimaryEmptyReason({ readyShown: 0, shown: 0, imageMissing: 0, verifiedReserve: 0, pending: 5 }), "awaiting_verification");
+  // genuinely no source — carries the scout reason
+  assert.equal(eventsLanePrimaryEmptyReason({ readyShown: 0, shown: 0, imageMissing: 0, verifiedReserve: 0, pending: 0 }, "no_source"), "no_source:no_source");
+  assert.equal(eventsLanePrimaryEmptyReason({ readyShown: 0, shown: 0, imageMissing: 0, verifiedReserve: 0, pending: 0 }), "no_source");
 });
 
 // ── culture: classification ────────────────────────────────────────────────────

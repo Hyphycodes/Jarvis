@@ -6,7 +6,7 @@ import { runEventScout } from "@/lib/brain/eventScout";
 import { processEventCandidates } from "@/lib/intelligence/eventWorker";
 import { ENGINE_SOURCE } from "@/lib/radar/engine/ownership";
 import { pillarsForItem } from "@/lib/radar/engine/pillars";
-import { scoutAllEventSubLibraries } from "@/lib/radar/engine/events/scout";
+import { scoutAllEventSubLibraries, fetchOgImage } from "@/lib/radar/engine/events/scout";
 import { runEventsCouncil } from "@/lib/radar/engine/events/council";
 import { selectEventsShelf, type ShelfCandidate } from "@/lib/radar/engine/events/editor";
 import {
@@ -17,7 +17,7 @@ import {
   expiresAtFor,
   type AssessableEvent,
 } from "@/lib/radar/engine/events/assess";
-import { classifyEventSubLibrary, hasRealEventTime } from "@/lib/radar/engine/events/config";
+import { classifyEventSubLibrary, hasRealEventTime, eventsLanePrimaryEmptyReason } from "@/lib/radar/engine/events/config";
 import { readOperatingPreferences } from "@/lib/operating/readOperatingPreferences";
 import type { Json } from "@/lib/types/database";
 
@@ -57,6 +57,8 @@ export type EventsEngineResult = {
   /** SerpAPI candidates PROPOSED before dedup/insert — proves the structured
    *  source is returning real events (distinct from how many were new). */
   scoutedProposed: number;
+  /** Why the scout added what it did: ok | no_source | all_parsed_out | all_duplicates. */
+  scoutPrimaryReason: string;
   verified: number;
   held: number;
   rejected: number;
@@ -68,7 +70,21 @@ export type EventsEngineResult = {
   demoted: number;
   routedToToday: number;
   backfilled: number;
+  laneHealth: EventsLaneHealth;
   errors: string[];
+};
+
+/** A single, honest read of the Events lane — so an empty lane explains itself
+ *  (no source vs. nothing ready vs. images missing) instead of just "empty". */
+export type EventsLaneHealth = {
+  shown: number; // cards on the board (status shown/opened, future)
+  readyShown: number; // …that pass the readiness contract (image + date + venue + source)
+  imageMissing: number; // shown future cards with no usable image
+  dateInvalid: number; // shown future cards without a real clock time
+  verifiedReserve: number; // verified/surfaced future events not yet on the board
+  pending: number; // awaiting verification
+  rawFuture: number; // all future warehouse rows
+  primaryEmptyReason: string | null; // why the lane is empty, if it is
 };
 
 export async function runEventsEngine(input: {
@@ -80,6 +96,7 @@ export async function runEventsEngine(input: {
     scouted: 0,
     scoutedStructured: 0,
     scoutedProposed: 0,
+    scoutPrimaryReason: "ok",
     verified: 0,
     held: 0,
     rejected: 0,
@@ -91,6 +108,7 @@ export async function runEventsEngine(input: {
     demoted: 0,
     routedToToday: 0,
     backfilled: 0,
+    laneHealth: emptyLaneHealth(),
     errors: [],
   };
 
@@ -109,8 +127,16 @@ export async function runEventsEngine(input: {
   if (futureReady < FUTURE_READY_TARGET) {
     try {
       const structured = await scoutAllEventSubLibraries({ userId: input.userId, supabase });
-      result.scoutedStructured = structured.reduce((s, r) => s + r.added, 0);
-      result.scoutedProposed = structured.reduce((s, r) => s + r.proposed, 0);
+      result.scoutedStructured = structured.added;
+      result.scoutedProposed = structured.proposed;
+      result.scoutPrimaryReason =
+        structured.added > 0
+          ? "ok"
+          : structured.noSource
+            ? "no_source"
+            : structured.parsed === 0
+              ? "all_parsed_out"
+              : "all_duplicates";
     } catch (err) {
       result.errors.push(`scout(serp): ${msg(err)}`);
     }
@@ -141,6 +167,15 @@ export async function runEventsEngine(input: {
     result.assessed = await assessVerifiedEvents(supabase, input.userId);
   } catch (err) {
     result.errors.push(`assess: ${msg(err)}`);
+  }
+
+  // 5.5) Image enrichment — verified future events with no image get an OG image
+  //     from their source page (bounded). The readiness contract still hides any
+  //     that stay imageless, so this only ever ADDS real heroes (never stock).
+  try {
+    await enrichEventImages(supabase, input.userId);
+  } catch (err) {
+    result.errors.push(`image_enrich: ${msg(err)}`);
   }
 
   // 6) Events Specialist Council (LLM) on finalists → final_score + taste vector.
@@ -177,7 +212,130 @@ export async function runEventsEngine(input: {
     result.errors.push(`today: ${msg(err)}`);
   }
 
+  // 10) Lane health read — so an empty lane always explains itself.
+  try {
+    result.laneHealth = await eventsLaneHealth(supabase, input.userId, result.scoutPrimaryReason);
+  } catch (err) {
+    result.errors.push(`health: ${msg(err)}`);
+  }
+
   return result;
+}
+
+const IMAGE_ENRICH_CAP = 8;
+
+/** Verified future events with no image → fetch an Open-Graph hero from the
+ *  source page (bounded, best-effort), persisted to the warehouse so render
+ *  carries it. Final fallback stays null → the readiness contract hides it. */
+async function enrichEventImages(supabase: SupabaseClient, userId: string): Promise<number> {
+  const { data } = await supabase
+    .from("current_events")
+    .select("id, ticket_url, discovered_via, sources_cited")
+    .eq("user_id", userId)
+    .in("status", ["verified", "surfaced"])
+    .gt("starts_at", new Date().toISOString())
+    .is("image_url", null)
+    .limit(IMAGE_ENRICH_CAP);
+  let enriched = 0;
+  for (const row of (data ?? []) as Array<{
+    id: string;
+    ticket_url: string | null;
+    discovered_via: string | null;
+    sources_cited: unknown;
+  }>) {
+    const src =
+      [row.ticket_url, row.discovered_via].find(isHttpUrl) ?? firstUrlDeep(row.sources_cited);
+    if (!src) continue;
+    const og = await fetchOgImage(src);
+    if (!og) continue;
+    const { error } = await supabase
+      .from("current_events")
+      .update({ image_url: og, updated_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .eq("user_id", userId);
+    if (!error) enriched += 1;
+  }
+  return enriched;
+}
+
+function emptyLaneHealth(): EventsLaneHealth {
+  return {
+    shown: 0,
+    readyShown: 0,
+    imageMissing: 0,
+    dateInvalid: 0,
+    verifiedReserve: 0,
+    pending: 0,
+    rawFuture: 0,
+    primaryEmptyReason: null,
+  };
+}
+
+/** Read the Events lane's true state from the warehouse + board. Pure-ish (DB
+ *  reads only). Distinguishes empty-because-no-source from empty-because-not-ready
+ *  from empty-because-images-missing. */
+export async function eventsLaneHealth(
+  supabase: SupabaseClient,
+  userId: string,
+  scoutReason?: string,
+): Promise<EventsLaneHealth> {
+  const nowIso = new Date().toISOString();
+  const health = emptyLaneHealth();
+
+  const { data: cards } = await supabase
+    .from("surfaced_items")
+    .select("starts_at, image_url, url, subtitle, location_name, payload")
+    .eq("user_id", userId)
+    .eq("category", "events")
+    .in("status", ["shown", "opened"])
+    .eq("destination", "radar");
+  for (const c of (cards ?? []) as Array<{
+    starts_at: string | null;
+    image_url: string | null;
+    url: string | null;
+    subtitle: string | null;
+    location_name: string | null;
+    payload: unknown;
+  }>) {
+    if (c.starts_at && Date.parse(c.starts_at) < Date.now() - EXPIRE_GRACE_MS) continue; // expired
+    health.shown += 1;
+    const p = isRecord(c.payload) ? c.payload : {};
+    const img =
+      isHttpUrl(c.image_url) ||
+      isHttpUrl((isRecord(p.brief) ? p.brief.hero_image_url : null)) ||
+      isHttpUrl(p.image_url);
+    const dateOk = hasRealEventTime(c.starts_at);
+    const venue = Boolean(c.location_name?.trim() || c.subtitle?.trim());
+    const source = isHttpUrl(c.url) || isHttpUrl(p.verified_source_url);
+    if (!img) health.imageMissing += 1;
+    if (!dateOk) health.dateInvalid += 1;
+    if (img && dateOk && venue && source) health.readyShown += 1;
+  }
+
+  const reserveRes = await supabase
+    .from("current_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .in("status", ["verified", "surfaced"])
+    .gt("starts_at", nowIso);
+  health.verifiedReserve = reserveRes.count ?? 0;
+
+  const pendingRes = await supabase
+    .from("current_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "pending");
+  health.pending = pendingRes.count ?? 0;
+
+  const futureRes = await supabase
+    .from("current_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gt("starts_at", nowIso);
+  health.rawFuture = futureRes.count ?? 0;
+
+  health.primaryEmptyReason = eventsLanePrimaryEmptyReason(health, scoutReason);
+  return health;
 }
 
 /** Deterministic brain layer: write Truth/Fit/Urgency/Planability + expires_at +
@@ -313,7 +471,7 @@ async function renderEventsShelf(
   const { data: events, error } = await supabase
     .from("current_events")
     .select(
-      "id, title, venue_name, starts_at, ends_at, ticket_url, discovered_via, sources_cited, description, verdict, verdict_strength, quality_score, final_score, sub_library, urgency_assessment, event_type, named_entities, vibe_keywords, library_place_id",
+      "id, title, venue_name, starts_at, ends_at, ticket_url, discovered_via, sources_cited, description, verdict, verdict_strength, quality_score, final_score, sub_library, urgency_assessment, event_type, named_entities, vibe_keywords, library_place_id, image_url",
     )
     .eq("user_id", userId)
     .in("status", ["verified", "surfaced"])
@@ -341,7 +499,7 @@ async function renderEventsShelf(
   // Existing engine event cards (to adopt/insert/demote).
   const { data: cardRows } = await supabase
     .from("surfaced_items")
-    .select("id, source_id, status, source, payload")
+    .select("id, source_id, status, source, image_url, payload")
     .eq("user_id", userId)
     .eq("category", "events");
   const cardsByEvent = new Map<string, ExistingCard[]>();
@@ -361,12 +519,15 @@ async function renderEventsShelf(
     const live = cards.find((c) => c.status === "shown" || c.status === "discovered");
     if (live) {
       const payload = isRecord(live.payload) ? live.payload : {};
+      const existingImg = typeof live.image_url === "string" ? live.image_url : null;
       const { error: upErr } = await supabase
         .from("surfaced_items")
         .update({
           status: "shown",
           destination: "radar",
           score: e.final_score ?? e.verdict_strength ?? null,
+          // Backfill the hero if the card never had one (the old imageless bug).
+          image_url: existingImg ?? (isHttpUrl(e.image_url) ? e.image_url : null),
           payload: { ...payload, ...eventPayload(e), source_layer: ENGINE_SOURCE },
         })
         .eq("id", live.id)
@@ -419,6 +580,11 @@ function eventPayload(e: EventRow): Record<string, unknown> {
     verified_source_url: firstEventSource(e),
     official_starts_at: e.starts_at,
     event_time_locked: true,
+    // Carry the event image so the card has a hero (heroImageForItem reads these).
+    // Without this the engine event card is always imageless and the readiness
+    // contract hides it — the lane could never render.
+    image_url: isHttpUrl(e.image_url) ? e.image_url : null,
+    brief: { hero_image_url: isHttpUrl(e.image_url) ? e.image_url : null },
   };
 }
 
@@ -436,6 +602,7 @@ function buildEventCard(userId: string, e: EventRow): Record<string, unknown> {
     starts_at: e.starts_at,
     ends_at: e.ends_at ?? null,
     url: firstEventSource(e),
+    image_url: isHttpUrl(e.image_url) ? e.image_url : null,
     type: "event",
     category: "events",
     tags: e.vibe_keywords ?? [],
@@ -453,6 +620,7 @@ type ExistingCard = {
   source_id: string | null;
   status: string;
   source: string | null;
+  image_url: string | null;
   payload: unknown;
 };
 
@@ -476,6 +644,7 @@ type EventRow = {
   named_entities: string[] | null;
   vibe_keywords: string[] | null;
   library_place_id: string | null;
+  image_url: string | null;
 };
 
 function eventPillars(e: EventRow): string[] {

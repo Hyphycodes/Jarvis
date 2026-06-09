@@ -6,6 +6,9 @@
  * Pure + dependency-light so it's unit-testable and importable anywhere.
  */
 
+import { normalizeExternalId } from "@/lib/radar/engine/curation";
+import type { SerpGoogleEventResult } from "@/lib/sources/serpapi";
+
 export type EventSubLibrary =
   | "events_music"
   | "events_food"
@@ -293,4 +296,88 @@ export function hasRealEventTime(value: string | null | undefined, tz = "America
     hourCycle: "h23",
   }).format(d);
   return hm !== "00:00";
+}
+
+// ── SerpAPI event → candidate (pure: parse + classify + reject reason) ─────────
+
+export type EventCandidateReason = "no_title" | "no_venue" | "no_date";
+
+export type EventCandidate = {
+  title: string;
+  venue: string;
+  startsAt: string;
+  subLibrary: EventSubLibrary;
+  eventType: string;
+  ticketUrl: string | null;
+  imageUrl: string | null;
+  description: string | null;
+  link: string | null;
+  externalId: string;
+};
+
+/** Turn one SerpAPI Google Events result into an insertable candidate, or a
+ *  concrete rejection reason. Pure — drives both the scout and its unit tests. */
+export function parseSerpEventCandidate(
+  ev: SerpGoogleEventResult,
+): { ok: true; candidate: EventCandidate } | { ok: false; reason: EventCandidateReason } {
+  const title = ev.title?.trim();
+  if (!title) return { ok: false, reason: "no_title" };
+  const venue = ev.venue?.name?.trim() || (ev.address ?? [])[0]?.trim() || null;
+  if (!venue) return { ok: false, reason: "no_venue" };
+  const startsAt = parseSerpEventDate(ev.date?.when ?? null, ev.date?.start_date ?? null);
+  if (!startsAt) return { ok: false, reason: "no_date" };
+
+  const subLibrary = classifyEventSubLibrary({
+    title,
+    description: ev.description ?? null,
+    venue_name: venue,
+  });
+  const ticketUrl =
+    (ev.ticket_info ?? []).find((t) => isHttp(t.link))?.link ?? (isHttp(ev.link) ? ev.link! : null);
+  return {
+    ok: true,
+    candidate: {
+      title,
+      venue,
+      startsAt,
+      subLibrary,
+      eventType: eventTypeForSub(subLibrary),
+      ticketUrl,
+      imageUrl: isHttp(ev.thumbnail) ? ev.thumbnail! : null,
+      description: ev.description ?? null,
+      link: ev.link ?? null,
+      externalId: normalizeExternalId(`${title}-${venue}-${startsAt.slice(0, 10)}`),
+    },
+  };
+}
+
+export function eventTypeForSub(sub: EventSubLibrary): string {
+  switch (sub) {
+    case "events_music":
+      return "live_music";
+    case "events_food":
+      return "chef_dinner";
+    case "events_art":
+      return "art_opening";
+    case "events_outdoor":
+      return "other";
+  }
+}
+
+/** Why the Events lane is empty (or null if it isn't), from a health snapshot.
+ *  Distinguishes images-missing vs verified-but-unrendered vs awaiting-verify vs
+ *  no-source — so an empty lane is never a mystery. */
+export function eventsLanePrimaryEmptyReason(
+  h: { readyShown: number; shown: number; imageMissing: number; verifiedReserve: number; pending: number },
+  scoutReason?: string,
+): string | null {
+  if (h.readyShown > 0) return null;
+  if (h.imageMissing > 0 && h.imageMissing >= h.shown) return "images_missing";
+  if (h.verifiedReserve > 0) return "verified_not_rendered";
+  if (h.pending > 0) return "awaiting_verification";
+  return scoutReason && scoutReason !== "ok" ? `no_source:${scoutReason}` : "no_source";
+}
+
+function isHttp(v: unknown): v is string {
+  return typeof v === "string" && /^https?:\/\//i.test(v);
 }

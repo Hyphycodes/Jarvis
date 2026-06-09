@@ -93,26 +93,100 @@ export async function searchProducts(input: {
   });
 }
 
-export async function searchGoogleEvents(input: {
+export type SerpEventsDiagnostics = {
+  engine: string;
   query: string;
   location?: string;
+  hl: string;
+  gl: string;
+  htichips?: string;
+  /** search_metadata.status (e.g. "Success") or null when the request threw. */
+  status: string | null;
+  /** SerpAPI top-level `error` string, or the thrown HTTP error message. */
+  error: string | null;
+  topLevelKeys: string[];
+  hasEventsResults: boolean;
+  eventsCount: number;
+  /** Other event-like top-level keys, if events_results is absent. */
+  altEventKeys: string[];
+};
+
+export type SerpEventsInput = {
+  query: string;
+  location?: string;
+  hl?: string;
+  gl?: string;
+  /** Google Events date chip, e.g. "date:week" | "date:month" | "date:today". */
+  htichips?: string;
+  /** "google_events" (default) or "google" (regular search onebox fallback). */
+  engine?: "google_events" | "google";
   maxResults?: number;
-}): Promise<SerpGoogleEventResult[]> {
-  const cacheKey = `serpapi:events:${input.query}:${input.location ?? ""}:${input.maxResults ?? 10}`;
+};
+
+/**
+ * SerpAPI Google Events with full response-shape diagnostics. Never throws and
+ * never silently swallows: a transport error or SerpAPI `error` is captured in
+ * `diagnostics` (status/error/topLevelKeys/eventsCount) so the scout can log WHY
+ * a query returned nothing instead of treating an error like "no events".
+ */
+export async function searchGoogleEventsWithDiagnostics(
+  input: SerpEventsInput,
+): Promise<{ events: SerpGoogleEventResult[]; diagnostics: SerpEventsDiagnostics }> {
+  const engine = input.engine ?? "google_events";
+  const hl = input.hl ?? "en";
+  const gl = input.gl ?? "us";
+  const cacheKey = `serpapi:${engine}:${input.query}:${input.location ?? ""}:${input.htichips ?? ""}:${gl}:${hl}:${input.maxResults ?? 10}`;
   return cached(cacheKey, TTL.events, async () => {
-    const data = await fetchJson<{ events_results?: SerpGoogleEventResult[] }>(
-      BASE,
-      {
-        service: "serpapi",
-        query: {
-          engine: "google_events",
-          q: input.query,
-          location: input.location,
-          api_key: key(),
-          hl: "en",
-        },
+    const query: Record<string, string | undefined> = {
+      engine,
+      q: input.query,
+      location: input.location,
+      hl,
+      gl,
+      api_key: key(),
+    };
+    if (input.htichips) query.htichips = input.htichips;
+
+    let data: Record<string, unknown> = {};
+    let error: string | null = null;
+    try {
+      data = await fetchJson<Record<string, unknown>>(BASE, { service: "serpapi", query });
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    const meta = isRecord(data.search_metadata) ? data.search_metadata : {};
+    const status = typeof meta.status === "string" ? meta.status : error ? "error" : null;
+    if (typeof data.error === "string") error = data.error;
+    const eventsRaw = Array.isArray(data.events_results)
+      ? (data.events_results as SerpGoogleEventResult[])
+      : [];
+    const topLevelKeys = Object.keys(data);
+    const events = eventsRaw.slice(0, Math.min(input.maxResults ?? 10, 20));
+    return {
+      events,
+      diagnostics: {
+        engine,
+        query: input.query,
+        location: input.location,
+        hl,
+        gl,
+        htichips: input.htichips,
+        status,
+        error,
+        topLevelKeys,
+        hasEventsResults: Array.isArray(data.events_results),
+        eventsCount: eventsRaw.length,
+        altEventKeys: topLevelKeys.filter((k) => /event/i.test(k) && k !== "events_results"),
       },
-    );
-    return (data.events_results ?? []).slice(0, Math.min(input.maxResults ?? 10, 20));
+    };
   });
+}
+
+export async function searchGoogleEvents(input: SerpEventsInput): Promise<SerpGoogleEventResult[]> {
+  const { events } = await searchGoogleEventsWithDiagnostics(input);
+  return events;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
