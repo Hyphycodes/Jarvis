@@ -77,6 +77,10 @@ const DIRECT: Record<string, RadarCategory> = {
   mexican: "dining", japanese: "dining", italian: "dining", mediterranean: "dining",
   steak: "dining", steakhouse: "dining", sushi: "dining", french: "dining",
   winery: "dining", wine: "dining", brewery: "dining", tavern: "dining",
+  pasta: "dining", trattoria: "dining", osteria: "dining", ristorante: "dining",
+  enoteca: "dining", brasserie: "dining", gastropub: "dining", izakaya: "dining",
+  ramen: "dining", noodle: "dining", deli: "dining", diner: "dining",
+  patisserie: "dining", gelato: "dining", supperclub: "dining", trattorias: "dining",
   // places — non-food spots / atmosphere
   place: "places", places: "places", park: "places", parks: "places",
   shop: "places", venue: "places", view: "places", spa: "places",
@@ -255,7 +259,7 @@ export function labelForRadarCategory(category: RadarCategory | string | null | 
 
 const SEQUENCE_RE = /\b(then|after|start(?:ing)? at|finish|end at|route|loop|circuit|stop\s+\d|first|next|walk to|drive to|followed by|itinerary)\b/i;
 const MOVE_ACTION_RE = /\b(walk|route|loop|run|ride|bike|hike|workout|boxing|basketball|shootaround|golf|class|lesson|errands?|flow|tour|horseback|horse riding|trail ride|pickleball|tennis|pilates|yoga|range|court|league)\b/i;
-const DINING_RE = /\b(restaurant|dining|supper|dinner|brunch|lunch|bar|cafe|coffee|coffeehouse|lounge|cocktail|wine bar|winery|brewery|brewpub|tavern|steakhouse|sushi|omakase|pizzeria|pizza|bistro|kitchen|chef|tasting room|taqueria|bakery)\b/i;
+const DINING_RE = /\b(restaurant|dining room|dining|supper club|supper|dinner|brunch|lunch|bar|cafe|café|coffee|coffeehouse|lounge|cocktail|wine bar|wine list|winery|brewery|brewpub|tavern|steakhouse|sushi|omakase|pizzeria|pizza|bistro|trattoria|osteria|ristorante|enoteca|brasserie|gastropub|izakaya|ramen|noodle|pasta|kitchen|chef|tasting menu|tasting room|taqueria|bakery|patisserie|gelato|deli|diner)\b/i;
 const PLACE_RE = /\b(hotel|inn|lobby|park|trail|lakefront|riverwalk|waterfront|beach|garden|neighborhood|scenic|view|bookstore|book shop|boutique|record shop|wine shop|gift shop|galleria|artisan market|cigar lounge|cigar room|cigar|spa|plaza|promenade|lookout|observatory)\b/i;
 const CULTURE_RE = /\b(museum|gallery|exhibit|exhibition|architecture|architectural|design|film|cinema|craftsmanship|opera|theater|theatre|fine arts|cultural center|biennial|art institute|installation|screening|artist|symphony|orchestra|orchestral|philharmonic|classical|recital|chamber music|ballet|conservatory|jazz club|jazz room|jazz lounge|listening bar|listening room|live music|music room|music venue|concert hall|concert venue|performing arts|jazz archive)\b/i;
 const FIND_RE = /\b(product|watch|sneaker|apparel|fashion|overshirt|jacket|retail|shopping|buy|purchase|acquire|drop|gear|wardrobe|shirt|denim|bag|luggage|homeware)\b/i;

@@ -26,6 +26,7 @@ import { radarItemReadyForFeature } from "../lib/radar/engine/radarReadiness";
 import { evaluateRecommendationFloor } from "../lib/radar/engine/recommendationFloor";
 import { pillarsForItem } from "../lib/radar/engine/pillars";
 import { classifyEventSubLibrary, parseSerpEventDate, hasRealEventTime } from "../lib/radar/engine/events/config";
+import { normalizeRadarClassification } from "../lib/radar/category";
 import {
   assessTruth,
   assessUrgency,
@@ -356,6 +357,29 @@ check("readiness: missing card basics (title/reason/score) are blockers", () => 
     imageUrl: GOOD_IMG,
   });
   assert.equal(zero.ready, true);
+});
+
+// ── dining vs places boundary (food/drink wins over places) ───────────────────
+check("classification: food/drink venues are Dining even when type=place", () => {
+  // Pasta/wine spot — dining must win.
+  assert.equal(
+    normalizeRadarClassification({ title: "Mano a Mano", type: "place", description: "house pasta and natural wine" }).category,
+    "dining",
+  );
+  // Italian keywords now recognized.
+  assert.equal(normalizeRadarClassification({ title: "Daisies", description: "trattoria / pasta" }).category, "dining");
+  assert.equal(normalizeRadarClassification({ title: "Some Enoteca", placeType: "venue" }).category, "dining");
+  // A wine bar / cocktail bar → dining.
+  assert.equal(normalizeRadarClassification({ title: "Kumiko", description: "cocktail bar" }).category, "dining");
+  // Dining beats places when both signals present (rooftop BAR → dining).
+  assert.equal(normalizeRadarClassification({ title: "Cindy's rooftop bar" }).category, "dining");
+});
+
+check("classification: real places stay Places", () => {
+  assert.equal(normalizeRadarClassification({ title: "Lakefront Trail", placeType: "outdoor" }).category, "places");
+  assert.equal(normalizeRadarClassification({ title: "The Allis hotel lobby" }).category, "places");
+  assert.equal(normalizeRadarClassification({ title: "Indian Boundary Park" }).category, "places");
+  assert.equal(normalizeRadarClassification({ title: "Gold Coast cigar lounge", description: "cigar lounge" }).category, "places");
 });
 
 // ── recommendation floor ──────────────────────────────────────────────────────
