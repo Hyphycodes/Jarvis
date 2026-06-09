@@ -28,24 +28,33 @@ const ALL_DESTINATIONS = new Set<IndexDestination>([
 
 export function rowToIndexedItem(row: SurfacedItemRow): IndexedItem {
   const payload = isRecord(row.payload) ? row.payload : {};
-  const classification = normalizeRadarClassification({
-    category: row.category,
-    type: row.type,
-    title: row.title,
-    subtitle: row.subtitle,
-    description: row.description,
-    locationName: row.location_name,
-    startsAt: row.starts_at,
-    tags: row.tags,
-    reasons: row.reasons,
-    sourcePayload: payload,
-  });
+  // If the stored category is already a canonical Radar category, trust it and
+  // skip runtime re-classification. Re-classifying overwrites authoritative
+  // engine values — e.g. "dining" items whose council verdict mentions
+  // "neighborhood" get re-routed to "places" by the place-signal heuristic.
+  // Re-classification is only needed for legacy rows that have a null or
+  // non-canonical category that needs to be inferred from other fields.
+  const storedCategory = normalizeRadarCategory(row.category);
+  const classification = storedCategory
+    ? null
+    : normalizeRadarClassification({
+        category: row.category,
+        type: row.type,
+        title: row.title,
+        subtitle: row.subtitle,
+        description: row.description,
+        locationName: row.location_name,
+        startsAt: row.starts_at,
+        tags: row.tags,
+        reasons: row.reasons,
+        sourcePayload: payload,
+      });
   return {
     id: row.id,
     source: (row.source ?? "system") as IndexedItem["source"],
     sourceId: row.source_id ?? undefined,
-    type: (classification.type ?? row.type ?? "recommendation") as IndexItemType,
-    category: classification.category ?? row.category ?? undefined,
+    type: (row.type ?? classification?.type ?? "recommendation") as IndexItemType,
+    category: storedCategory ?? classification?.category ?? undefined,
     title: row.title ?? "Untitled",
     subtitle: row.subtitle ?? undefined,
     description: row.description ?? undefined,
