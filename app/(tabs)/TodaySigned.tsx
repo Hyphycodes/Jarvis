@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useRef, useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import {
   AppFrame,
@@ -14,7 +13,7 @@ import {
 import { Arrow, ArrowRight, Chevron } from "@/components/icons";
 import { CalendarView } from "@/components/calendar/CalendarView";
 import { SignalBriefSheet } from "@/components/today/SignalBriefSheet";
-import type { TodayCommandItem, TodayPayload } from "@/lib/ai/types";
+import type { TodayCommandItem, TodayMicroMove, TodayPayload } from "@/lib/ai/types";
 
 /**
  * Sprint 5 — Today realigned to OG reference.
@@ -93,7 +92,57 @@ export function TodaySigned({ payload }: { payload?: TodayPayload }) {
       {grabItems.length > 0 ? <GrabList items={grabItems} /> : null}
 
       <SignalsSection items={signals} />
+
+      <MicroMovesStrip items={payload?.microMoves ?? []} />
     </AppFrame>
+  );
+}
+
+// ── Micro-moves — pre-thought nudges at the bottom of the day ────────────────
+
+function MicroMovesStrip({ items }: { items: TodayMicroMove[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="mt-10 pb-4">
+      <div className="lux-divider mb-5 h-px w-full" />
+      <SectionLabel>Teed up</SectionLabel>
+      <div className="mt-4 flex flex-col gap-2">
+        {items.map((move) => {
+          const inner = (
+            <div className="flex items-baseline justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <div className="truncate text-[14px] leading-[1.4] text-warm-ivory/80">
+                  {move.label}
+                </div>
+                {move.detail ? (
+                  <div className="mt-0.5 truncate text-[11px] text-warm-ivory/42">
+                    {move.detail}
+                  </div>
+                ) : null}
+              </div>
+              {move.href ? (
+                <span aria-hidden className="shrink-0 text-[11px] text-muted-gold/70">
+                  →
+                </span>
+              ) : null}
+            </div>
+          );
+          return move.href ? (
+            <Link
+              key={move.id}
+              href={move.href}
+              className="lux-surface block rounded-[var(--radius-card)] transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015]"
+            >
+              {inner}
+            </Link>
+          ) : (
+            <div key={move.id} className="lux-surface rounded-[var(--radius-card)]">
+              {inner}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -270,29 +319,7 @@ function TonightSection({ items }: { items: TodayCommandItem[] }) {
 }
 
 function TonightEventCard({ item, full }: { item: TodayCommandItem; full: boolean }) {
-  const router = useRouter();
-  const [planning, setPlanning] = useState(false);
-  const [, startTransition] = useTransition();
   const time = item.startsAt ? formatEventTime(item.startsAt) : null;
-
-  function handlePlan(e: React.MouseEvent) {
-    e.preventDefault();
-    if (planning) return;
-    setPlanning(true);
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/items/${item.id}/generate-plan`, { method: "POST" });
-        const json = (await res.json().catch(() => ({}))) as { plan_slug?: string };
-        if (json.plan_slug) {
-          router.push(`/plan/${json.plan_slug}`);
-        } else {
-          window.location.href = `/item/${item.id}`;
-        }
-      } catch {
-        setPlanning(false);
-      }
-    });
-  }
 
   return (
     <div className="border-l border-muted-gold/55 bg-soft-black/40 px-4 py-3">
@@ -314,23 +341,16 @@ function TonightEventCard({ item, full }: { item: TodayCommandItem; full: boolea
       </div>
       {full ? (
         <div className="mt-3 flex items-center gap-3">
+          {/* The plan is built FOR him in the background — never a "Plan it"
+              ask. Until it's ready, the brief carries the details. */}
           {item.planSlug ? (
             <Link
               href={`/plan/${item.planSlug}`}
               className="inline-flex items-center rounded-full border border-muted-gold/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-gold transition-colors hover:bg-muted-gold/10"
             >
-              View plan
+              Open plan
             </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={handlePlan}
-              disabled={planning}
-              className="inline-flex items-center rounded-full border border-muted-gold/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-gold transition-colors hover:bg-muted-gold/10 disabled:opacity-50"
-            >
-              {planning ? "…" : "Plan it"}
-            </button>
-          )}
+          ) : null}
           <Link
             href={`/item/${item.id}`}
             className="text-[11px] text-warm-ivory/40 hover:text-warm-ivory/70"

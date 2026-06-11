@@ -16,7 +16,15 @@ type PreBuildRow = {
 export async function preBuildPlansForShownItems(
   userId: string,
   supabase: SupabaseClient,
-  opts: { maxItems?: number; statuses?: string[]; orderBy?: "score" | "updated_at" } = {},
+  opts: {
+    maxItems?: number;
+    statuses?: string[];
+    orderBy?: "score" | "updated_at";
+    /** Where to look. Default radar; the cron also passes today/upcoming so
+     *  committed items (saved tonight events, voiced occasions) get their
+     *  plans built FOR him — nothing ever asks him to "plan it". */
+    destinations?: string[];
+  } = {},
 ): Promise<{ built: number; errors: string[] }> {
   const max = opts.maxItems ?? 8;
   // Default to 'shown' (legacy callers). The engine stages cards as 'discovered'
@@ -25,6 +33,7 @@ export async function preBuildPlansForShownItems(
   const statuses = opts.statuses ?? ["shown"];
   // Engine passes 'score' so the best venues get planned (and shown) first.
   const orderBy = opts.orderBy ?? "updated_at";
+  const destinations = opts.destinations ?? ["radar"];
   const errors: string[] = [];
   let built = 0;
 
@@ -33,7 +42,7 @@ export async function preBuildPlansForShownItems(
     .select("id, category, payload")
     .eq("user_id", userId)
     .in("status", statuses)
-    .eq("destination", "radar")
+    .in("destination", destinations)
     .order(orderBy, { ascending: false, nullsFirst: false })
     .limit(max * 4);
 

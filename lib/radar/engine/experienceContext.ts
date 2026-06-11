@@ -38,6 +38,40 @@ function lineFor(row: MemoryRow): string {
   return `${row.venue_name ?? "a place"}${where ? ` (${where})` : ""}${note}`;
 }
 
+/**
+ * North as the hand on the scale: a deterministic one-liner from real pillar
+ * progress. Cold pillars tilt judgment toward what feeds them; Peace is the
+ * north star (default posture: protect, subtract, stay quiet). Never surfaces
+ * as its own items — only weights.
+ */
+async function northReadLine(
+  userId: string,
+  supabase: SupabaseClient,
+): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from("north_pillars")
+      .select("title, progress")
+      .eq("user_id", userId);
+    const pillars = (data ?? []) as Array<{ title: string; progress: number | null }>;
+    if (pillars.length === 0) return null;
+    const cold = pillars
+      .filter((p) => typeof p.progress === "number" && p.progress < 0.3)
+      .map((p) => p.title);
+    const active = pillars
+      .filter((p) => typeof p.progress === "number" && p.progress > 0.7)
+      .map((p) => p.title);
+    if (cold.length === 0 && active.length === 0) return null;
+    const parts: string[] = ["North read (silent weighting):"];
+    if (cold.length) parts.push(`${cold.join(", ")} ${cold.length === 1 ? "is" : "are"} cold — tilt toward what feeds ${cold.length === 1 ? "it" : "them"}.`);
+    if (active.length) parts.push(`${active.join(", ")} ${active.length === 1 ? "is" : "are"} active — range can widen there.`);
+    parts.push("When in doubt, protect Peace: subtract, stay quiet.");
+    return parts.join(" ");
+  } catch {
+    return null;
+  }
+}
+
 export async function getExperienceContext(input: {
   userId: string;
   lane?: string;
@@ -55,11 +89,13 @@ export async function getExperienceContext(input: {
     .limit(limit);
   if (input.lane) query = query.eq("lane", input.lane);
 
-  const [{ data, error }, canon] = await Promise.all([
+  const [{ data, error }, canon, northRead] = await Promise.all([
     query,
     getTasteCanon({ userId: input.userId, lane: input.lane, supabase }),
+    northReadLine(input.userId, supabase),
   ]);
-  if (error || !data) return { loved: [], avoided: [], block: canon.block };
+  const baseBlock = [canon.block, northRead].filter(Boolean).join("\n");
+  if (error || !data) return { loved: [], avoided: [], block: baseBlock };
 
   const rows = data as MemoryRow[];
   const loved: string[] = [];
@@ -73,11 +109,11 @@ export async function getExperienceContext(input: {
   }
 
   if (loved.length === 0 && avoided.length === 0) {
-    return { loved, avoided, block: canon.block };
+    return { loved, avoided, block: baseBlock };
   }
 
   const parts: string[] = [];
-  if (canon.block) parts.push(canon.block, "");
+  if (baseBlock) parts.push(baseBlock, "");
   parts.push(
     "Jerry's own past experiences (his real feedback — weight this heavily over generic acclaim):",
   );

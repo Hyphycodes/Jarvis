@@ -36,7 +36,12 @@ import {
 } from "@/lib/items/considerationBrief";
 import { isUsableVenueImageUrl } from "@/lib/items/venueImage";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
-import { readCircleGiftIdeas, readCircleImportantDates } from "@/lib/circle/personFields";
+import {
+  contactRhythm,
+  daysUntilImportantDate,
+  readCircleGiftIdeas,
+  readCircleImportantDates,
+} from "@/lib/circle/personFields";
 import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
 import {
   DEFAULT_WEEKLY_RHYTHM,
@@ -68,12 +73,108 @@ import type {
   PlanDetailSection,
   RadarCard,
   TodayCommandItem,
+  TodayMicroMove,
   TodayPayload,
   TodayTimelineItem,
 } from "@/lib/ai/types";
 import type { IndexedItem } from "@/lib/index/types";
 
 type Loader<T> = () => Promise<T>;
+
+/**
+ * The bottom-of-Today strip: short, pre-reasoned micro-moves. Sources are all
+ * real — circle important dates inside 7 days (with gift-state awareness),
+ * connections drifting past their rhythm, and day-of items that didn't make
+ * the main timeline. Max 4; silence when there's nothing.
+ */
+async function buildTodayMicroMoves(
+  supabase: Awaited<ReturnType<typeof getServerSupabase>>,
+  userId: string,
+  onDeck: OnDeckItem[],
+): Promise<TodayMicroMove[]> {
+  const moves: TodayMicroMove[] = [];
+  try {
+    const { data } = await supabase
+      .from("circle_people")
+      .select("id, name, last_interaction, last_seen_at, contact_rhythm_days, closeness_score, important_dates, gift_ideas")
+      .eq("user_id", userId);
+    const people = (data ?? []) as Array<Record<string, unknown>>;
+
+    // Important dates inside 7 days — gift state included so the nudge is
+    // already thought through ("grab the gift" vs "no gift on the list yet").
+    const dated: Array<{ move: TodayMicroMove; days: number }> = [];
+    for (const p of people) {
+      const name = typeof p.name === "string" ? p.name : null;
+      const personId = typeof p.id === "string" ? p.id : null;
+      if (!name || !personId) continue;
+      const gifts = readCircleGiftIdeas(p.gift_ideas);
+      for (const d of readCircleImportantDates(p.important_dates)) {
+        const days = daysUntilImportantDate(d.date);
+        if (days === null || days > 7) continue;
+        const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+        dated.push({
+          days,
+          move: {
+            id: `date-${personId}-${d.label}`,
+            label: `${d.label} — ${name}, ${when}`,
+            detail:
+              gifts.length > 0
+                ? `Gift list has ${gifts.length} idea${gifts.length === 1 ? "" : "s"} ready.`
+                : "Nothing on the gift list yet.",
+            href: `/person/${personId}`,
+          },
+        });
+      }
+    }
+    dated.sort((a, b) => a.days - b.days);
+    moves.push(...dated.slice(0, 2).map((d) => d.move));
+
+    // Drifting connections — closest people past their cadence, max 1.
+    const drifting = people
+      .map((p) => ({
+        id: typeof p.id === "string" ? p.id : null,
+        name: typeof p.name === "string" ? p.name : null,
+        closeness: typeof p.closeness_score === "number" ? p.closeness_score : 0,
+        rhythm: contactRhythm({
+          lastInteraction: typeof p.last_interaction === "string" ? p.last_interaction : null,
+          lastSeenAt: typeof p.last_seen_at === "string" ? p.last_seen_at : null,
+          contactRhythmDays:
+            typeof p.contact_rhythm_days === "number" ? p.contact_rhythm_days : null,
+        }),
+      }))
+      .filter((p) => p.id && p.name && p.rhythm.state === "drifting" && p.closeness >= 0.5)
+      .sort((a, b) => b.closeness - a.closeness);
+    if (drifting[0]) {
+      moves.push({
+        id: `drift-${drifting[0].id}`,
+        label: `Haven't seen ${drifting[0].name} in a while`,
+        detail: drifting[0].rhythm.line ?? undefined,
+        href: `/person/${drifting[0].id}`,
+      });
+    }
+  } catch (error) {
+    logQueryError("today.microMoves", error as { message: string } | null);
+  }
+
+  // Day-of items that didn't make the main timeline.
+  for (const item of onDeck.slice(0, 2)) {
+    moves.push({
+      id: `ondeck-${item.id}`,
+      label: item.title,
+      detail: [formatClockTime(item.startsAt), item.locationName].filter(Boolean).join(" · ") || undefined,
+      href: `/item/${item.id}`,
+    });
+  }
+
+  return moves.slice(0, 4);
+}
+
+function formatClockTime(iso?: string): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
 
 export const loadTodaySurface: Loader<TodayPayload> = async () => {
   try {
@@ -250,6 +351,11 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
     const nextMove = topTodayItem;
     const hero = buildTodayHero(visiblePlanRow, planKeyStats, activePlanDisplay, weeklyRhythm);
 
+    // Pre-thought micro-moves for the bottom strip: circle date nudges
+    // ("birthday in 4 days"), drifting connections, and day-of items not on
+    // the main timeline. Already-reasoned nudges, never a to-do list to build.
+    const microMoves = await buildTodayMicroMoves(supabase, id, onDeck);
+
     return {
       hero: {
         eyebrow: "Today",
@@ -297,6 +403,7 @@ export const loadTodaySurface: Loader<TodayPayload> = async () => {
           }
         : undefined,
       onDeck: onDeck.length > 0 ? onDeck : undefined,
+      microMoves: microMoves.length > 0 ? microMoves : undefined,
       upcomingCount: upcomingItems.length > 0 ? upcomingCountRes : 0,
       nextMove,
       todayStack: undefined,

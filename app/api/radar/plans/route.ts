@@ -77,6 +77,15 @@ export async function GET(req: Request) {
       orderBy: "score",
     });
 
+    // 2b. Committed items (saved tonight events, voiced occasions on today/
+    //     upcoming) get plans built FOR him too — never a "Plan it" ask.
+    const pbCommitted = await preBuildPlansForShownItems(ownerUserId, supabase, {
+      maxItems: 2,
+      statuses: ["saved", "planned"],
+      destinations: ["today", "upcoming"],
+      orderBy: "updated_at",
+    });
+
     // 3. Show ONLY plan-complete engine items (top-N, diversity).
     const shown = [];
     for (const lane of ENGINE_LANES) {
@@ -84,11 +93,13 @@ export async function GET(req: Request) {
     }
 
     const durationMs = Date.now() - startedAt;
+    const plansBuilt = pb.built + pbCommitted.built;
+    const errors = [...pb.errors, ...pbCommitted.errors];
     console.log(
       "[api/radar/plans] run " +
-        JSON.stringify({ durationMs, staged, plansBuilt: pb.built, shown, errors: pb.errors.slice(0, 5) }),
+        JSON.stringify({ durationMs, staged, plansBuilt, shown, errors: errors.slice(0, 5) }),
     );
-    return NextResponse.json({ ok: true, durationMs, staged, plansBuilt: pb.built, shown, errors: pb.errors });
+    return NextResponse.json({ ok: true, durationMs, staged, plansBuilt, shown, errors });
   } catch (err) {
     const message = err instanceof Error ? err.message : "radar/plans failed";
     console.error("[api/radar/plans] error", err);

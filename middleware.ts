@@ -7,6 +7,7 @@ export const CRON_API_PATHS = [
   "/api/radar/promote",
   "/api/radar/engine",
   "/api/radar/plans",
+  "/api/plans/refresh-today",
   "/api/intelligence/run",
   "/api/library/scout",
   "/api/library/process-candidates",

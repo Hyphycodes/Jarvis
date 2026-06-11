@@ -101,6 +101,9 @@ export type TodayPayload = {
    *  (Upcoming/Holding/Radar). Surfaced read-only; promotion to
    *  destination="today" is manual via POST /api/today/promote. */
   onDeck?: OnDeckItem[];
+  /** Pre-thought, verified micro-moves teed up for the bottom of Today:
+   *  circle date nudges, drifting connections, day-of items. Real data only. */
+  microMoves?: TodayMicroMove[];
   /** Count of items in Upcoming, for the small entry link. */
   upcomingCount?: number;
   nextMove?: TodayCommandItem;
@@ -145,6 +148,14 @@ export type OnDeckItem = {
   locationName?: string;
   category?: string;
   planId?: string;
+};
+
+export type TodayMicroMove = {
+  id: string;
+  /** The move itself, already reasoned ("Grab the gift for Vu — birthday in 4 days"). */
+  label: string;
+  detail?: string;
+  href?: string;
 };
 
 export type TodayTimelineItem = {
