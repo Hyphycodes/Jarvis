@@ -65,7 +65,7 @@ export function AtAGlanceRow({
   const copy = RADAR_CATEGORY_COPY[filter];
   if (tiles.length === 0) return null;
   return (
-    <section className="mt-8">
+    <section className="mt-2">
       <h2 className="text-[10px] uppercase tracking-[0.2em] text-warm-ivory/45">
         {copy.title.toUpperCase()} AT A GLANCE
       </h2>

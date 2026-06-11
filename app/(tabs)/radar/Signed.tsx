@@ -1,14 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import useEmblaCarousel from "embla-carousel-react";
 import type { UseEmblaCarouselType } from "embla-carousel-react";
-import { AppFrame } from "@/components";
-import { Bookmark } from "@/components/icons";
 import { CategoryPage } from "@/components/radar/sections/CategoryPage";
-import { SlideGate } from "@/components/radar/sections/SlideGate";
+import { RadarCategoryHeader } from "@/components/radar/sections/RadarCategoryHeader";
 import {
   TileListSheet,
   type TileSheetTarget,
@@ -22,8 +19,6 @@ import {
 import type { RadarCard as RadarPayloadCard } from "@/lib/ai/types";
 import type { GlanceTileKey } from "@/lib/radar/categoryCopy";
 import type { RadarCategoryPagesPayload } from "@/lib/radar/categoryPagesTypes";
-
-const ALL_FEED_VISIBLE_LIMIT = 18;
 
 type EmblaApi = NonNullable<UseEmblaCarouselType[1]>;
 
@@ -41,14 +36,10 @@ type HoldingItem = {
 function adaptRadarToCard(item: RadarPayloadCard): Card {
   const filter = mapCategoryToFilter(item.category);
   const title = item.title;
-  // A real area to show — but never the venue name again (it's already the
-  // title). This kills the "THE PROMONTORY / THE PROMONTORY" stacking.
   const area = distinctFromTitle(item.neighborhood ?? item.locationLabel, title);
-  // WHEN line: a committed event time, or the brain's suggested time to go.
   const meta = [formatWhen(item.datetime, item.whenConfirmed)].filter(
     (value): value is string => Boolean(value),
   );
-  // Footer reads like the brief: where + what it costs, deduped, no internals.
   const footerLine = uniqueParts([area, item.priceEstimate]).join(" · ");
   return {
     id: item.id,
@@ -117,7 +108,6 @@ function mapCategoryToFilter(category: string): Filter {
     case "style":
     case "product":
     case "finds":
-      // Style/product are no longer a visible tab — they live under Finds.
       return "Finds";
     case "music":
       return "Events";
@@ -173,11 +163,6 @@ function mapCategoryToBadge(category: string): Card["category"] {
   }
 }
 
-/**
- * The card's "when" line. A committed time reads as a date ("Fri, Jun 7 ·
- * 8:00 PM"); a brain-suggested time is prefixed and kept tight ("Suggested ·
- * Fri 8:00 PM"). Rendered uppercase by the card.
- */
 function formatWhen(iso?: string, confirmed?: boolean): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -208,36 +193,6 @@ function formatToday(): string {
     .toUpperCase();
 }
 
-function formatBudgetTier(tier?: RadarPayloadCard["budgetTier"]): string | undefined {
-  switch (tier) {
-    case "attainable":
-      return "attainable";
-    case "premium-realistic":
-      return "premium-realistic";
-    case "aspirational":
-      return "aspirational";
-    case "hold":
-      return "hold";
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Inner-carousel drag guard: ignore drags that start inside elements marked
- * data-no-inner-drag (the filter tab strip's own horizontal scroller).
- */
-function innerWatchDrag(
-  _emblaApi: EmblaApi,
-  event: TouchEvent | MouseEvent | PointerEvent,
-) {
-  const target = event.target;
-  if (target instanceof Element && target.closest("[data-no-inner-drag]")) {
-    return false;
-  }
-  return true;
-}
-
 export function RadarSigned({
   items = [],
   pages = null,
@@ -247,8 +202,6 @@ export function RadarSigned({
 }) {
   const router = useRouter();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
-  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [holdingOpen, setHoldingOpen] = useState(false);
   const [holdingItems, setHoldingItems] = useState<HoldingItem[]>([]);
   const [holdingLoading, setHoldingLoading] = useState(false);
@@ -264,18 +217,20 @@ export function RadarSigned({
   }, [pages]);
 
   const date = useMemo(() => formatToday(), []);
-
   const cards = useMemo(() => items.map(adaptRadarToCard), [items]);
 
-  // The Radar tab content owns horizontal drags inside its area (the wrapper
-  // carries data-no-embla-drag so the outer page carousel ignores them).
+  const activeFilter = FILTERS[selectedIndex] ?? "All";
+  const activeKey = FILTER_TO_KEY[activeFilter];
+  const heldCount = pages?.pages[activeKey]?.heldCount ?? 0;
+
+  // Only the content below the header/tabs swipes between filters. The wrapper
+  // carries data-no-embla-drag so the outer page carousel ignores these drags.
   const [innerRef, innerApi] = useEmblaCarousel({
     loop: false,
     align: "start",
     containScroll: "trimSnaps",
     dragFree: false,
     duration: 22,
-    watchDrag: innerWatchDrag,
   });
 
   useEffect(() => {
@@ -299,12 +254,9 @@ export function RadarSigned({
     [innerApi],
   );
 
-  const activeFilter = FILTERS[selectedIndex] ?? "All";
-
   function cardsFor(filter: Filter): Card[] {
-    const live = cards.filter((c) => !dismissed[c.id]);
-    if (filter === "All") return live.slice(0, ALL_FEED_VISIBLE_LIMIT);
-    return live.filter((c) => c.filter === filter);
+    if (filter === "All") return cards;
+    return cards.filter((c) => c.filter === filter);
   }
 
   async function loadHolding(openSheet = false) {
@@ -327,24 +279,6 @@ export function RadarSigned({
     }
   }
 
-  function dismissCard(id: string) {
-    setActionErrors((errors) => {
-      const next = { ...errors };
-      delete next[id];
-      return next;
-    });
-    setDismissed((current) => ({ ...current, [id]: true }));
-  }
-
-  function restoreCard(id: string, message: string) {
-    setDismissed((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-    setActionErrors((errors) => ({ ...errors, [id]: message }));
-  }
-
   function refreshAfterAction() {
     router.refresh();
     void loadHolding();
@@ -365,7 +299,6 @@ export function RadarSigned({
       if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
       router.refresh();
     } catch (error) {
-      // Revert the optimistic flip.
       setFavoriteIds((prev) => {
         const updated = new Set(prev);
         if (next) updated.delete(id);
@@ -377,8 +310,7 @@ export function RadarSigned({
   }
 
   function onTileTap(filter: Filter, tile: { key: GlanceTileKey; label: string }) {
-    // The HELD tile is the Holding collection — open its dedicated sheet so
-    // its move-back/pass actions stay available.
+    // HELD opens the deferred Holding collection with its own actions.
     if (tile.key === "held") {
       void loadHolding(true);
       return;
@@ -387,54 +319,52 @@ export function RadarSigned({
   }
 
   return (
-    <>
+    <div
+      className="lux-page relative mx-auto flex w-full max-w-[440px] flex-col overflow-hidden text-warm-ivory"
+      style={{ height: "100dvh" }}
+    >
+      {/* Pinned: title block + filter tabs. Stays put while filters swipe. */}
+      <div
+        className="shrink-0 px-6"
+        style={{ paddingTop: "calc(var(--safe-top) + 16px)" }}
+      >
+        <RadarCategoryHeader
+          filter={activeKey}
+          date={date}
+          heldCount={heldCount}
+          onHeldTap={() => void loadHolding(true)}
+        />
+        <FilterRow active={activeFilter} onChange={onFilterTap} />
+      </div>
+
+      {/* Swipeable: only the content below the tabs moves between filters. */}
       <div
         ref={innerRef}
         data-no-embla-drag
-        className="overflow-hidden"
-        style={{ height: "100dvh" }}
+        className="min-h-0 flex-1 overflow-hidden"
       >
         <div className="flex h-full" style={{ touchAction: "pan-y pinch-zoom" }}>
-          {FILTERS.map((filter, index) => (
+          {FILTERS.map((filter) => (
             <div
               key={filter}
-              className="min-w-0 flex-[0_0_100%] overflow-y-auto"
+              className="min-w-0 flex-[0_0_100%] overflow-y-auto px-6"
               style={{ overscrollBehavior: "contain" }}
             >
-              <AppFrame>
-                <SlideGate active={Math.abs(index - selectedIndex) <= 1}>
-                  <CategoryPage
-                    filter={FILTER_TO_KEY[filter]}
-                    data={pages?.pages[FILTER_TO_KEY[filter]]}
-                    date={date}
-                    cards={cardsFor(filter)}
-                    favoriteIds={favoriteIds}
-                    tabRow={<FilterRow active={activeFilter} onChange={onFilterTap} />}
-                    renderCard={(card) => (
-                      <RadarCard
-                        key={card.id}
-                        card={card}
-                        error={actionErrors[card.id]}
-                        favorited={favoriteIds.has(card.id)}
-                        onToggleFavorite={toggleFavorite}
-                        onDismiss={() => dismissCard(card.id)}
-                        onRestore={(message) => restoreCard(card.id, message)}
-                        onPersistedAction={refreshAfterAction}
-                      />
-                    )}
-                    onHeldTap={() => void loadHolding(true)}
-                    onTileTap={(tile) => onTileTap(filter, tile)}
-                    onToggleFavorite={toggleFavorite}
-                    onViewAllSaved={() =>
-                      setTileTarget({
-                        filter: FILTER_TO_KEY[filter],
-                        tile: "saved",
-                        label: "SAVED",
-                      })
-                    }
-                  />
-                </SlideGate>
-              </AppFrame>
+              <CategoryPage
+                filter={FILTER_TO_KEY[filter]}
+                data={pages?.pages[FILTER_TO_KEY[filter]]}
+                cards={cardsFor(filter)}
+                favoriteIds={favoriteIds}
+                onTileTap={(tile) => onTileTap(filter, tile)}
+                onToggleFavorite={toggleFavorite}
+                onViewAllSaved={() =>
+                  setTileTarget({
+                    filter: FILTER_TO_KEY[filter],
+                    tile: "saved",
+                    label: "SAVED",
+                  })
+                }
+              />
             </div>
           ))}
         </div>
@@ -446,17 +376,8 @@ export function RadarSigned({
         loading={holdingLoading}
         error={holdingError}
         onClose={() => setHoldingOpen(false)}
-        onItemsChange={(nextItems) => {
-          setHoldingItems(nextItems);
-        }}
-        onMoveBack={(itemId) => {
-          setDismissed((current) => {
-            const next = { ...current };
-            delete next[itemId];
-            return next;
-          });
-          refreshAfterAction();
-        }}
+        onItemsChange={(nextItems) => setHoldingItems(nextItems)}
+        onMoveBack={() => refreshAfterAction()}
         onPersistedAction={refreshAfterAction}
       />
       <TileListSheet
@@ -465,7 +386,7 @@ export function RadarSigned({
         onToggleFavorite={toggleFavorite}
         onClose={() => setTileTarget(null)}
       />
-    </>
+    </div>
   );
 }
 
@@ -479,11 +400,11 @@ function FilterRow({
   return (
     <nav
       aria-label="Radar filters"
-      data-no-inner-drag
-      className="mt-8 -mx-6 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      data-no-embla-drag
+      className="mt-6 -mx-6 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ touchAction: "pan-x" }}
     >
-      <ul className="flex items-center gap-7">
+      <ul className="flex items-center gap-7 border-b border-white/[0.06] pb-3">
         {FILTERS.map((f) => {
           const isActive = f === active;
           return (
@@ -492,7 +413,7 @@ function FilterRow({
                 type="button"
                 onClick={() => onChange(f)}
                 className={
-                  "relative pb-1.5 text-[11px] uppercase tracking-[0.2em] transition-opacity duration-300 ease-atmospheric " +
+                  "relative pb-3 text-[11px] uppercase tracking-[0.2em] transition-opacity duration-300 ease-atmospheric " +
                   (isActive
                     ? "text-warm-ivory"
                     : "text-warm-ivory/35 hover:text-warm-ivory/70")
@@ -502,7 +423,7 @@ function FilterRow({
                 {isActive ? (
                   <span
                     aria-hidden
-                    className="absolute -bottom-0 left-0 h-px w-full bg-muted-gold"
+                    className="absolute -bottom-[13px] left-0 h-px w-full bg-muted-gold"
                   />
                 ) : null}
               </button>
@@ -511,204 +432,6 @@ function FilterRow({
         })}
       </ul>
     </nav>
-  );
-}
-
-function RadarCard({
-  card,
-  error,
-  favorited,
-  onToggleFavorite,
-  onDismiss,
-  onRestore,
-  onPersistedAction,
-}: {
-  card: Card;
-  error?: string;
-  favorited: boolean;
-  onToggleFavorite: (id: string, next: boolean) => void;
-  onDismiss: () => void;
-  onRestore: (message: string) => void;
-  onPersistedAction: () => void;
-}) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const hasMedia = Boolean(card.imageUrl) || Boolean(card.placeholderKind);
-  // Finds are products, not outings — they open their own detail page and never
-  // generate a plan.
-  const isFind = card.filter === "Finds";
-  const detailHref = isFind ? `/find/${card.id}` : card.planSlug ? `/plan/${card.planSlug}` : `/item/${card.id}`;
-
-  function persist(action: "save" | "move-holding") {
-    onDismiss();
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/items/${card.id}/${action}`, { method: "POST" });
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok || json.error) {
-          throw new Error(json.error ?? `HTTP ${res.status}`);
-        }
-        onPersistedAction();
-        if (action === "save") {
-          router.push(detailHref);
-        }
-      } catch (err) {
-        onRestore(err instanceof Error ? err.message : "Action failed.");
-        console.error("radar action failed", err);
-      }
-    });
-  }
-
-  function generatePlan() {
-    onDismiss();
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/items/${card.id}/generate-plan`, { method: "POST" });
-        const json = (await res.json().catch(() => ({}))) as {
-          plan_slug?: string;
-          error?: string;
-        };
-        if (!res.ok || json.error || !json.plan_slug) {
-          throw new Error(json.error ?? `HTTP ${res.status}`);
-        }
-        onPersistedAction();
-        router.push(`/plan/${json.plan_slug}`);
-      } catch (err) {
-        onRestore(err instanceof Error ? err.message : "Action failed.");
-        console.error("radar plan generation failed", err);
-      }
-    });
-  }
-
-  function handleGo(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (pending) return;
-    if (isFind) {
-      router.push(detailHref);
-      return;
-    }
-    if (card.canGeneratePlan) {
-      generatePlan();
-      return;
-    }
-    persist("save");
-  }
-
-  function handleOpenCard(e: React.MouseEvent) {
-    if (isFind) return; // let the Link navigate to the Finds detail page
-    if (pending || card.planSlug || !card.canGeneratePlan) return;
-    e.preventDefault();
-    generatePlan();
-  }
-
-  function handleWait(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (pending) return;
-    persist("move-holding");
-  }
-
-  function handleFavorite(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    onToggleFavorite(card.id, !favorited);
-  }
-
-  return (
-    <article
-      className="lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric"
-    >
-      <Link
-        href={detailHref}
-        onClick={handleOpenCard}
-        className="block transition-colors duration-300 ease-atmospheric hover:bg-white/[0.012]"
-        aria-label={`Open ${card.title}`}
-      >
-        <div
-          className={
-            hasMedia
-              ? "grid gap-4 p-5 sm:grid-cols-[1fr_140px]"
-              : "p-5"
-          }
-        >
-          <div className="min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[0.2em]">
-                <span className="text-muted-gold/80">
-                  {isFind
-                    ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
-                    : card.category}
-                </span>
-              </div>
-              <button
-                type="button"
-                aria-label={favorited ? `Unfavorite ${card.title}` : `Favorite ${card.title}`}
-                aria-pressed={favorited}
-                onClick={handleFavorite}
-                className="-mr-1.5 -mt-1.5 flex h-8 w-8 shrink-0 items-center justify-center text-muted-gold/80 transition-colors duration-300 ease-atmospheric hover:text-soft-gold active:scale-95"
-              >
-                <Bookmark size={15} filled={favorited} />
-              </button>
-            </div>
-            <h2 className="mt-3 font-serif text-[28px] leading-[1.06] tracking-[-0.005em] text-warm-ivory">
-              {card.title}
-            </h2>
-            <p className="mt-3 text-[14px] leading-[1.5] text-warm-ivory/68">
-              {card.body}
-            </p>
-            {card.whoLine ? (
-              <p className="mt-2 text-[13px] leading-[1.45] text-warm-ivory/50">
-                {card.whoLine}
-              </p>
-            ) : null}
-            {card.meta.length > 0 ? (
-              <div className="mt-4 text-[10px] uppercase leading-[1.55] tracking-[0.2em] text-warm-ivory/40">
-                {card.meta[0]}
-              </div>
-            ) : null}
-            {card.footerLine ? (
-              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-gold/55">
-                {card.footerLine}
-              </div>
-            ) : null}
-          </div>
-
-          {hasMedia ? (
-            <CardMedia
-              placeholderKind={card.placeholderKind}
-              imageUrl={card.imageUrl}
-              title={card.title}
-            />
-          ) : null}
-        </div>
-      </Link>
-
-      {error ? (
-        <div className="border-t border-[#E07A6E]/20 px-5 py-2 text-[11px] text-[#E07A6E]">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-2 border-t border-white/[0.045]">
-        <button
-          type="button"
-          onClick={handleGo}
-          disabled={pending}
-          className="border-r border-white/[0.045] py-4 text-[11px] uppercase tracking-[0.22em] text-muted-gold transition-colors duration-300 ease-atmospheric hover:text-soft-gold disabled:opacity-60"
-        >
-          {isFind ? "View" : "Go"}
-        </button>
-        <button
-          type="button"
-          onClick={handleWait}
-          disabled={pending}
-          className="py-4 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/50 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory/80 disabled:opacity-60"
-        >
-          {isFind ? "Pass" : "Wait"}
-        </button>
-      </div>
-    </article>
   );
 }
 
@@ -844,59 +567,4 @@ function HoldingSheet({
       </section>
     </div>
   );
-}
-
-function CardMedia({
-  imageUrl,
-  title,
-  placeholderKind,
-}: {
-  imageUrl?: string;
-  title: string;
-  placeholderKind?: Card["placeholderKind"];
-}) {
-  const [failed, setFailed] = useState(false);
-  if (imageUrl && !failed) {
-    return (
-      <div className="aspect-[4/5] overflow-hidden rounded-[var(--radius-soft)] border border-white/[0.055] bg-charcoal sm:aspect-auto sm:h-full">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt={title}
-          className="h-full w-full object-cover"
-          loading="lazy"
-          onError={() => setFailed(true)}
-        />
-      </div>
-    );
-  }
-  return (
-    <div
-      aria-hidden
-      className="aspect-[4/5] overflow-hidden rounded-[var(--radius-soft)] border border-white/[0.055] bg-charcoal sm:aspect-auto sm:h-full"
-      style={{
-        backgroundImage: placeholderGradient(placeholderKind),
-      }}
-    >
-      <div className="flex h-full items-end p-3 text-[9px] uppercase tracking-[0.22em] text-muted-gold/45">
-        {placeholderKind ?? "signal"}
-      </div>
-    </div>
-  );
-}
-
-function placeholderGradient(kind?: Card["placeholderKind"]): string {
-  switch (kind) {
-    case "product":
-      return "radial-gradient(ellipse at 60% 25%, rgba(201,169,110,0.18), transparent 52%), linear-gradient(180deg, #202023, #0A0A0B)";
-    case "event":
-      return "radial-gradient(ellipse at 45% 35%, rgba(123,154,196,0.16), transparent 54%), linear-gradient(180deg, #1B1B20, #08080A)";
-    case "place":
-    case "activity":
-      return "radial-gradient(ellipse at 45% 45%, rgba(184,146,74,0.16), transparent 56%), linear-gradient(180deg, #1A1A1C, #09090A)";
-    case "idea":
-      return "radial-gradient(ellipse at 30% 30%, rgba(255,250,240,0.10), transparent 55%), linear-gradient(180deg, #1B1B1B, #090909)";
-    default:
-      return "linear-gradient(180deg, rgba(184,146,74,0.10), transparent 62%), linear-gradient(180deg, #19191B, #08080A)";
-  }
 }

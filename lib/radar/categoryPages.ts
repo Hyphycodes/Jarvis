@@ -104,12 +104,13 @@ export function buildRadarCategoryPages(
   const pages = {} as Record<RadarFilterKey, CategoryPageData>;
   for (const filter of RADAR_FILTER_KEYS) {
     const pool = poolForFilter(inputs.items, filter);
-    const glance = RADAR_CATEGORY_COPY[filter].tiles
-      .map((tile) => ({
-        key: tile.key,
-        count: selectTileItems(inputs, filter, tile.key).length,
-      }))
-      .filter((tile) => tile.count > 0);
+    // Always emit all four tiles for the filter (the at-a-glance grid is a
+    // fixed 4-box row, like the reference). Counts are real — a 0 is a true 0,
+    // not a fabricated number.
+    const glance = RADAR_CATEGORY_COPY[filter].tiles.map((tile) => ({
+      key: tile.key,
+      count: selectTileItems(inputs, filter, tile.key).length,
+    }));
     const confirmed = pool
       .filter((item) => item.status === "planned")
       .map((item) => toConfirmedEntry(item, inputs.plansById))

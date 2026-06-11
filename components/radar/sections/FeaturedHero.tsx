@@ -35,7 +35,7 @@ export function FeaturedHero({
   href: string;
 }) {
   return (
-    <section className="mt-9">
+    <section className="mt-6">
       <h2 className="text-[10px] uppercase tracking-[0.2em] text-warm-ivory/45">
         {label}
       </h2>
