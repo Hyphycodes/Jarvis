@@ -23,6 +23,8 @@ const ACTIONS = [
   "add-upcoming",
   "remove-upcoming",
   "expire",
+  "favorite",
+  "unfavorite",
   "save-taste",
   "interested-later",
   "watch",

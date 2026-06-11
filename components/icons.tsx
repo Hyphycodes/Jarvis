@@ -295,3 +295,92 @@ export function Lock({ size = 16, className = "" }: IconProps) {
     </svg>
   );
 }
+
+export function RadarSweep({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" opacity=".55" />
+      <path d="M12 12l6-6" />
+      <circle cx="12" cy="12" r="1" fill={S} />
+    </svg>
+  );
+}
+
+export function Calendar({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <rect x="4" y="5" width="16" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M4 10h16" />
+    </svg>
+  );
+}
+
+export function Gallery({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <circle cx="9.5" cy="9.5" r="1.5" />
+      <path d="M4 17l5-5 4 4 3-3 4 4" />
+    </svg>
+  );
+}
+
+export function Sliders({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M5 7h2M11 7h8M5 12h8M17 12h2M5 17h1M10 17h9" />
+      <circle cx="9" cy="7" r="1.75" />
+      <circle cx="15" cy="12" r="1.75" />
+      <circle cx="8" cy="17" r="1.75" />
+    </svg>
+  );
+}
+
+export function Bookmark({
+  size = 16,
+  className = "",
+  filled = false,
+}: IconProps & { filled?: boolean }) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M7 4h10v17l-5-4-5 4z" fill={filled ? S : "none"} />
+    </svg>
+  );
+}
+
+export function Star({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9l-5.3 2.7 1-5.8-4.2-4.1 5.9-.9z" />
+    </svg>
+  );
+}
+
+export function BellRing({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M12 4a6 6 0 0 1 6 6v3H6v-3a6 6 0 0 1 6-6z" />
+      <path d="M4 16h16" />
+      <path d="M12 2v2" />
+      <circle cx="12" cy="19" r="1" fill={S} />
+    </svg>
+  );
+}
+
+export function Zap({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <path d="M13 3L5 13h6l-1 8 8-10h-6z" />
+    </svg>
+  );
+}
+
+export function Search({ size = 16, className = "" }: IconProps) {
+  return (
+    <svg {...svgProps(size)} className={className}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l5 5" />
+    </svg>
+  );
+}

@@ -125,9 +125,11 @@ export function TabShell({
   );
 
   return (
-    <div className="relative mx-auto w-full max-w-[440px] bg-near-black text-warm-ivory">
+    <div className="relative mx-auto w-full max-w-[440px] text-warm-ivory">
       <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex">
+        {/* pan-y: the browser owns vertical scroll intent, so diagonal
+            scrolling never accidentally drags the page carousel sideways. */}
+        <div className="flex" style={{ touchAction: "pan-y pinch-zoom" }}>
           <TabPanel>{today}</TabPanel>
           <TabPanel>{radar}</TabPanel>
           <TabPanel>{circle}</TabPanel>
@@ -156,7 +158,7 @@ function TabPanel({ children }: { children: ReactNode }) {
   return (
     <div
       className="min-w-0 flex-[0_0_100%] overflow-y-auto"
-      style={{ height: "100dvh" }}
+      style={{ height: "100dvh", overscrollBehavior: "contain" }}
     >
       {children}
     </div>

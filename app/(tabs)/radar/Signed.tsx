@@ -1,40 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import useEmblaCarousel from "embla-carousel-react";
+import type { UseEmblaCarouselType } from "embla-carousel-react";
 import { AppFrame } from "@/components";
+import { Bookmark } from "@/components/icons";
+import { CategoryPage } from "@/components/radar/sections/CategoryPage";
+import { SlideGate } from "@/components/radar/sections/SlideGate";
+import {
+  TileListSheet,
+  type TileSheetTarget,
+} from "@/components/radar/sections/TileListSheet";
+import {
+  FILTERS,
+  FILTER_TO_KEY,
+  type Card,
+  type Filter,
+} from "@/components/radar/sections/types";
 import type { RadarCard as RadarPayloadCard } from "@/lib/ai/types";
+import type { GlanceTileKey } from "@/lib/radar/categoryCopy";
+import type { RadarCategoryPagesPayload } from "@/lib/radar/categoryPagesTypes";
 
-const FILTERS = [
-  "All",
-  "Moves",
-  "Events",
-  "Dining",
-  "Culture",
-  "Places",
-  "Finds",
-] as const;
 const ALL_FEED_VISIBLE_LIMIT = 18;
-type Filter = (typeof FILTERS)[number];
 
-type Card = {
-  id: string;
-  category: string;
-  title: string;
-  body: string;
-  whoLine?: string;
-  meta: string[];
-  footerLine: string;
-  imageUrl?: string;
-  placeholderKind?: RadarPayloadCard["placeholderKind"];
-  planSlug?: string;
-  canGeneratePlan: boolean;
-  filter: Filter;
-  sourceLabel?: string;
-  sourceBrain?: string;
-  budgetTier?: RadarPayloadCard["budgetTier"];
-};
+type EmblaApi = NonNullable<UseEmblaCarouselType[1]>;
 
 type HoldingItem = {
   id: string;
@@ -75,6 +66,7 @@ function adaptRadarToCard(item: RadarPayloadCard): Card {
     sourceLabel: item.sourceLabel,
     sourceBrain: item.sourceBrain,
     budgetTier: item.budgetTier,
+    score: item.score ?? 0,
   };
 }
 
@@ -231,24 +223,89 @@ function formatBudgetTier(tier?: RadarPayloadCard["budgetTier"]): string | undef
   }
 }
 
-export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
+/**
+ * Inner-carousel drag guard: ignore drags that start inside elements marked
+ * data-no-inner-drag (the filter tab strip's own horizontal scroller).
+ */
+function innerWatchDrag(
+  _emblaApi: EmblaApi,
+  event: TouchEvent | MouseEvent | PointerEvent,
+) {
+  const target = event.target;
+  if (target instanceof Element && target.closest("[data-no-inner-drag]")) {
+    return false;
+  }
+  return true;
+}
+
+export function RadarSigned({
+  items = [],
+  pages = null,
+}: {
+  items?: RadarPayloadCard[];
+  pages?: RadarCategoryPagesPayload | null;
+}) {
   const router = useRouter();
-  const [filter, setFilter] = useState<Filter>("All");
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [holdingOpen, setHoldingOpen] = useState(false);
   const [holdingItems, setHoldingItems] = useState<HoldingItem[]>([]);
-  const [holdingCount, setHoldingCount] = useState(0);
   const [holdingLoading, setHoldingLoading] = useState(false);
   const [holdingError, setHoldingError] = useState<string | null>(null);
+  const [tileTarget, setTileTarget] = useState<TileSheetTarget | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(
+    () => new Set(pages?.favoriteIds ?? []),
+  );
 
-  const cards = useMemo(() => {
-    return items.map(adaptRadarToCard);
-  }, [items]);
+  // Server payload is the source of truth — re-sync after router.refresh().
+  useEffect(() => {
+    setFavoriteIds(new Set(pages?.favoriteIds ?? []));
+  }, [pages]);
 
-  const visible = cards
-    .filter((c) => !dismissed[c.id] && (filter === "All" || c.filter === filter))
-    .slice(0, filter === "All" ? ALL_FEED_VISIBLE_LIMIT : undefined);
+  const date = useMemo(() => formatToday(), []);
+
+  const cards = useMemo(() => items.map(adaptRadarToCard), [items]);
+
+  // The Radar tab content owns horizontal drags inside its area (the wrapper
+  // carries data-no-embla-drag so the outer page carousel ignores them).
+  const [innerRef, innerApi] = useEmblaCarousel({
+    loop: false,
+    align: "start",
+    containScroll: "trimSnaps",
+    dragFree: false,
+    duration: 22,
+    watchDrag: innerWatchDrag,
+  });
+
+  useEffect(() => {
+    if (!innerApi) return;
+    function onSelect(api: EmblaApi) {
+      setSelectedIndex(api.selectedScrollSnap());
+    }
+    innerApi.on("select", onSelect);
+    return () => {
+      innerApi.off("select", onSelect);
+    };
+  }, [innerApi]);
+
+  const onFilterTap = useCallback(
+    (filter: Filter) => {
+      const idx = FILTERS.indexOf(filter);
+      if (idx < 0) return;
+      setSelectedIndex(idx);
+      innerApi?.scrollTo(idx);
+    },
+    [innerApi],
+  );
+
+  const activeFilter = FILTERS[selectedIndex] ?? "All";
+
+  function cardsFor(filter: Filter): Card[] {
+    const live = cards.filter((c) => !dismissed[c.id]);
+    if (filter === "All") return live.slice(0, ALL_FEED_VISIBLE_LIMIT);
+    return live.filter((c) => c.filter === filter);
+  }
 
   async function loadHolding(openSheet = false) {
     if (openSheet) setHoldingOpen(true);
@@ -262,19 +319,13 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
         error?: string;
       };
       if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
-      const nextItems = json.items ?? [];
-      setHoldingItems(nextItems);
-      setHoldingCount(json.count ?? nextItems.length);
+      setHoldingItems(json.items ?? []);
     } catch (error) {
       setHoldingError(error instanceof Error ? error.message : "Could not load Holding.");
     } finally {
       setHoldingLoading(false);
     }
   }
-
-  useEffect(() => {
-    void loadHolding();
-  }, []);
 
   function dismissCard(id: string) {
     setActionErrors((errors) => {
@@ -299,67 +350,96 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
     void loadHolding();
   }
 
+  async function toggleFavorite(id: string, next: boolean) {
+    setFavoriteIds((prev) => {
+      const updated = new Set(prev);
+      if (next) updated.add(id);
+      else updated.delete(id);
+      return updated;
+    });
+    try {
+      const res = await fetch(`/api/items/${id}/${next ? "favorite" : "unfavorite"}`, {
+        method: "POST",
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+      router.refresh();
+    } catch (error) {
+      // Revert the optimistic flip.
+      setFavoriteIds((prev) => {
+        const updated = new Set(prev);
+        if (next) updated.delete(id);
+        else updated.add(id);
+        return updated;
+      });
+      console.error("favorite toggle failed", error);
+    }
+  }
+
+  function onTileTap(filter: Filter, tile: { key: GlanceTileKey; label: string }) {
+    // The HELD tile is the Holding collection — open its dedicated sheet so
+    // its move-back/pass actions stay available.
+    if (tile.key === "held") {
+      void loadHolding(true);
+      return;
+    }
+    setTileTarget({ filter: FILTER_TO_KEY[filter], tile: tile.key, label: tile.label });
+  }
+
   return (
-    <AppFrame>
-      <header className="flex flex-col gap-3 pt-6">
-        <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-4">
-          <h1 className="font-serif text-[52px] italic leading-[1.02] tracking-[-0.005em] text-warm-ivory">
-            Radar
-          </h1>
-          <div className="self-start pt-[8px] text-right">
-            <span className="block text-[11px] uppercase tracking-[0.16em] text-warm-ivory/55">
-              {formatToday()}
-            </span>
-            <button
-              type="button"
-              onClick={() => void loadHolding(true)}
-              className="mt-2 text-[10px] uppercase tracking-[0.18em] text-warm-ivory/40 transition-colors duration-300 ease-atmospheric hover:text-muted-gold"
-            >
-              {holdingCount} held
-            </button>
-          </div>
-        </div>
-        <p className="max-w-[42ch] text-[15px] leading-[1.55] text-warm-ivory/62">
-          Curated signal for your taste and trajectory.
-          <br />
-          Not everything. Just what&apos;s worth your time.
-        </p>
-        <div className="h-px w-8 bg-muted-gold/30" />
-      </header>
-
-      <FilterRow active={filter} onChange={setFilter} />
-
-      <section
-        key={filter}
-        className="mt-6 flex flex-col gap-5"
-        style={{ animation: "cross-fade 200ms var(--ease-atmospheric)" }}
+    <>
+      <div
+        ref={innerRef}
+        data-no-embla-drag
+        className="overflow-hidden"
+        style={{ height: "100dvh" }}
       >
-        {cards.length === 0 ? (
-          <RadarEmptyState />
-        ) : visible.length === 0 ? (
-          <div
-            className="py-16 text-center font-serif italic"
-            style={{
-              color: "var(--text-muted)",
-              fontSize: "22px",
-              lineHeight: 1.3,
-            }}
-          >
-            Nothing made the cut.
-          </div>
-        ) : (
-          visible.map((card) => (
-            <RadarCard
-              key={card.id}
-              card={card}
-              error={actionErrors[card.id]}
-              onDismiss={() => dismissCard(card.id)}
-              onRestore={(message) => restoreCard(card.id, message)}
-              onPersistedAction={refreshAfterAction}
-            />
-          ))
-        )}
-      </section>
+        <div className="flex h-full" style={{ touchAction: "pan-y pinch-zoom" }}>
+          {FILTERS.map((filter, index) => (
+            <div
+              key={filter}
+              className="min-w-0 flex-[0_0_100%] overflow-y-auto"
+              style={{ overscrollBehavior: "contain" }}
+            >
+              <AppFrame>
+                <SlideGate active={Math.abs(index - selectedIndex) <= 1}>
+                  <CategoryPage
+                    filter={FILTER_TO_KEY[filter]}
+                    data={pages?.pages[FILTER_TO_KEY[filter]]}
+                    date={date}
+                    cards={cardsFor(filter)}
+                    favoriteIds={favoriteIds}
+                    tabRow={<FilterRow active={activeFilter} onChange={onFilterTap} />}
+                    renderCard={(card) => (
+                      <RadarCard
+                        key={card.id}
+                        card={card}
+                        error={actionErrors[card.id]}
+                        favorited={favoriteIds.has(card.id)}
+                        onToggleFavorite={toggleFavorite}
+                        onDismiss={() => dismissCard(card.id)}
+                        onRestore={(message) => restoreCard(card.id, message)}
+                        onPersistedAction={refreshAfterAction}
+                      />
+                    )}
+                    onHeldTap={() => void loadHolding(true)}
+                    onTileTap={(tile) => onTileTap(filter, tile)}
+                    onToggleFavorite={toggleFavorite}
+                    onViewAllSaved={() =>
+                      setTileTarget({
+                        filter: FILTER_TO_KEY[filter],
+                        tile: "saved",
+                        label: "SAVED",
+                      })
+                    }
+                  />
+                </SlideGate>
+              </AppFrame>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <HoldingSheet
         open={holdingOpen}
         items={holdingItems}
@@ -368,7 +448,6 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
         onClose={() => setHoldingOpen(false)}
         onItemsChange={(nextItems) => {
           setHoldingItems(nextItems);
-          setHoldingCount(nextItems.length);
         }}
         onMoveBack={(itemId) => {
           setDismissed((current) => {
@@ -380,7 +459,13 @@ export function RadarSigned({ items = [] }: { items?: RadarPayloadCard[] }) {
         }}
         onPersistedAction={refreshAfterAction}
       />
-    </AppFrame>
+      <TileListSheet
+        target={tileTarget}
+        favoriteIds={favoriteIds}
+        onToggleFavorite={toggleFavorite}
+        onClose={() => setTileTarget(null)}
+      />
+    </>
   );
 }
 
@@ -394,7 +479,7 @@ function FilterRow({
   return (
     <nav
       aria-label="Radar filters"
-      data-no-embla-drag
+      data-no-inner-drag
       className="mt-8 -mx-6 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ touchAction: "pan-x" }}
     >
@@ -432,12 +517,16 @@ function FilterRow({
 function RadarCard({
   card,
   error,
+  favorited,
+  onToggleFavorite,
   onDismiss,
   onRestore,
   onPersistedAction,
 }: {
   card: Card;
   error?: string;
+  favorited: boolean;
+  onToggleFavorite: (id: string, next: boolean) => void;
   onDismiss: () => void;
   onRestore: (message: string) => void;
   onPersistedAction: () => void;
@@ -520,6 +609,12 @@ function RadarCard({
     persist("move-holding");
   }
 
+  function handleFavorite(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    onToggleFavorite(card.id, !favorited);
+  }
+
   return (
     <article
       className="lux-surface overflow-hidden rounded-[var(--radius-card)] transition-opacity duration-500 ease-atmospheric"
@@ -538,12 +633,23 @@ function RadarCard({
           }
         >
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[0.2em]">
-              <span className="text-muted-gold/80">
-                {isFind
-                  ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
-                  : card.category}
-              </span>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[0.2em]">
+                <span className="text-muted-gold/80">
+                  {isFind
+                    ? uniqueParts([card.category, card.sourceBrain, formatBudgetTier(card.budgetTier)]).join(" · ")
+                    : card.category}
+                </span>
+              </div>
+              <button
+                type="button"
+                aria-label={favorited ? `Unfavorite ${card.title}` : `Favorite ${card.title}`}
+                aria-pressed={favorited}
+                onClick={handleFavorite}
+                className="-mr-1.5 -mt-1.5 flex h-8 w-8 shrink-0 items-center justify-center text-muted-gold/80 transition-colors duration-300 ease-atmospheric hover:text-soft-gold active:scale-95"
+              >
+                <Bookmark size={15} filled={favorited} />
+              </button>
             </div>
             <h2 className="mt-3 font-serif text-[28px] leading-[1.06] tracking-[-0.005em] text-warm-ivory">
               {card.title}
@@ -736,21 +842,6 @@ function HoldingSheet({
           )}
         </div>
       </section>
-    </div>
-  );
-}
-
-function RadarEmptyState() {
-  return (
-    <div className="border-t border-white/[0.06] pt-16 pb-12">
-      <div className="max-w-[34ch]">
-        <h2 className="font-serif text-[32px] italic leading-tight text-warm-ivory">
-          Nothing made the cut.
-        </h2>
-        <p className="mt-4 text-[14px] leading-[1.55] text-warm-ivory/58">
-          Jarvis checked the board. Nothing strong enough to interrupt the day.
-        </p>
-      </div>
     </div>
   );
 }

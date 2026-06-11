@@ -63,8 +63,9 @@ export function BottomNav({
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[440px]"
       style={{
-        background:
-          "linear-gradient(180deg, rgba(6,6,5,0.92) 0%, var(--bg) 38%)",
+        // Solid bar — a translucent top edge reads as "floating" over content
+        // in the standalone web app, especially above the home indicator.
+        background: "var(--bg)",
         borderTop: "1px solid rgba(246,239,221,0.11)",
         paddingBottom: "env(safe-area-inset-bottom)",
       }}

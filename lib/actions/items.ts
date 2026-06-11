@@ -486,6 +486,38 @@ export async function expireItem(input: { itemId: string }): Promise<ItemActionR
   });
 }
 
+/**
+ * Favorite/unfavorite — a payload-only flag (`payload.favorited_at`) so it
+ * never fights the status lifecycle: an item can be shown, saved, or planned
+ * AND a favorite. Counted per category by the Radar category pages.
+ */
+export async function favoriteItem(input: { itemId: string }): Promise<ItemActionResult> {
+  const item = await getIndexItem(input.itemId);
+  if (!item) throw new Error("Index item not found.");
+  return transition(
+    input.itemId,
+    item.status,
+    {
+      type: "item.save",
+      itemId: input.itemId,
+      category: item.category,
+      learning: behaviorMetadataForItem(item, "save"),
+    },
+    { patchPayload: { favorited_at: new Date().toISOString() } },
+  );
+}
+
+export async function unfavoriteItem(input: { itemId: string }): Promise<ItemActionResult> {
+  const item = await getIndexItem(input.itemId);
+  if (!item) throw new Error("Index item not found.");
+  return transition(
+    input.itemId,
+    item.status,
+    { type: "item.intent", itemId: input.itemId, intent: "watching" },
+    { patchPayload: { favorited_at: null }, recordBehavior: false },
+  );
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────────
 
 export type ItemAction =
@@ -502,6 +534,8 @@ export type ItemAction =
   | "add-upcoming"
   | "remove-upcoming"
   | "expire"
+  | "favorite"
+  | "unfavorite"
   | "save-taste"
   | "interested-later"
   | "watch"
@@ -539,6 +573,10 @@ export async function dispatchItemAction(
       return removeFromUpcoming({ itemId: input.itemId });
     case "expire":
       return expireItem({ itemId: input.itemId });
+    case "favorite":
+      return favoriteItem({ itemId: input.itemId });
+    case "unfavorite":
+      return unfavoriteItem({ itemId: input.itemId });
     case "save-taste":
       return markItemIntent({ itemId: input.itemId, intent: "saved_reference" });
     case "interested-later":

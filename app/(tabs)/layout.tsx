@@ -6,6 +6,7 @@ import {
   loadRadarSurface,
   loadTodaySurface,
 } from "@/lib/dispatch/loadSurface";
+import { loadRadarCategoryPages } from "@/lib/radar/categoryPages";
 import { TodaySigned } from "./TodaySigned";
 import { TodayEmpty } from "./TodayEmpty";
 import { RadarSigned } from "./radar/Signed";
@@ -30,14 +31,16 @@ export default async function TabsLayout({
   const user = await getSessionUser();
   const signedIn = !!user;
 
-  const [todayPayload, radarCards, northPayload, circlePayload] = signedIn
-    ? await Promise.all([
-        loadTodaySurface(),
-        loadRadarSurface(),
-        loadNorthSurface(),
-        loadCircleSurface(),
-      ])
-    : [null, [], null, null];
+  const [todayPayload, radarCards, northPayload, circlePayload, radarPages] =
+    signedIn
+      ? await Promise.all([
+          loadTodaySurface(),
+          loadRadarSurface(),
+          loadNorthSurface(),
+          loadCircleSurface(),
+          loadRadarCategoryPages(),
+        ])
+      : [null, [], null, null, null];
 
   const hasCircleData =
     signedIn &&
@@ -55,7 +58,13 @@ export default async function TabsLayout({
           <TodayEmpty />
         )
       }
-      radar={signedIn ? <RadarSigned items={radarCards} /> : <RadarEmpty />}
+      radar={
+        signedIn ? (
+          <RadarSigned items={radarCards} pages={radarPages} />
+        ) : (
+          <RadarEmpty />
+        )
+      }
       circle={
         hasCircleData && circlePayload ? (
           <CircleSigned payload={circlePayload} />

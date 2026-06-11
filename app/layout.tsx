@@ -29,7 +29,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#0a0a08",
+  // Must match --bg and the manifest colors exactly, or iOS paints visible
+  // seams at the status bar / home indicator in standalone mode.
+  themeColor: "#060605",
 };
 
 export default function RootLayout({
@@ -40,7 +42,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`bg-near-black ${instrumentSerif.variable}`}>
       <head>
-        <meta name="theme-color" content="#0a0a08" />
+        <meta name="theme-color" content="#060605" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta
