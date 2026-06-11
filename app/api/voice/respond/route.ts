@@ -14,6 +14,7 @@ import { enqueueWardrobeImport, processWardrobeImportJob } from "@/lib/wardrobe/
 import { buildClosetChips } from "@/lib/wardrobe/closetChips";
 import { handleLinkDrop, type LinkChatAttachment } from "@/lib/chat/handlers/handleLinkDrop";
 import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
+import { looksRoutable, routeUtteranceToHomes, type HomeRoute } from "@/lib/chat/homeRouter";
 import { saveItem, passItem } from "@/lib/actions/items";
 import { createCanonicalMemory } from "@/lib/memory/memoryStore";
 import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
@@ -299,10 +300,32 @@ export async function POST(req: Request) {
       });
     }
 
+    // ── The mic is the router ────────────────────────────────────────────────
+    // What he says goes to its right home as a REAL write — a taste updates the
+    // taste profile + canon (and reflects back in his words), a person fact
+    // lands on their Circle profile, a direction tilts North, a dated occasion
+    // drops onto the calendar with a plan pre-staged. Not observations waiting
+    // for review. Gated by a cheap regex so it's not an LLM call per turn.
+    let homeRoute: HomeRoute | null = null;
+    if (!imageAttachment && !linkAttachment && !wardrobeJobId && looksRoutable(message)) {
+      try {
+        const sb = await getServerSupabase();
+        homeRoute = await routeUtteranceToHomes({
+          userId: owner.id,
+          message,
+          supabase: sb,
+        });
+      } catch (err) {
+        console.error("[voice.respond] home routing failed", err);
+      }
+    }
+
     // ── Actionable intent capture ────────────────────────────────────────────
     // "I want to try Pizz'Amici next week" → capture as a prioritized user_intent
     // candidate and research/surface it through the unified pipeline in the
     // background. Gated by a cheap regex so we don't spend an LLM call per turn.
+    // A routed occasion already lives on the calendar with a plan staging — it
+    // must NOT also become a Radar candidate.
     let capturedIntentTitle: string | null = null;
     let capturedIntentKind: string | null = null;
     const capturedIntentChips: ChatChip[] = [];
@@ -310,6 +333,7 @@ export async function POST(req: Request) {
       !imageAttachment &&
       !linkAttachment &&
       !committedActionType &&
+      !homeRoute?.routedOccasion &&
       looksActionable(message)
     ) {
       try {
@@ -391,11 +415,13 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join("\n");
 
-    const intakeSummary = capturedIntentTitle
+    const baseIntakeSummary = capturedIntentTitle
       ? capturedIntentKind === "finds"
         ? `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner wants to acquire "${capturedIntentTitle}". You're researching the best option and will put it in Finds. Acknowledge in one short, natural line.`
         : `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner asked for "${capturedIntentTitle}". You've saved it to Radar and are researching it + building its plan now. Acknowledge in one short, natural line.`
       : wardrobeContextBlock ?? intakeResult?.contextBlock;
+    const intakeSummary =
+      [baseIntakeSummary, homeRoute?.contextBlock].filter(Boolean).join("\n") || undefined;
 
     const systemPrompt = renderChatSystemPrompt(context, {
       intent: routed.intent,
