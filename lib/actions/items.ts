@@ -287,19 +287,26 @@ export async function planItem(input: {
   // When an item is planned with a known starts_at, also surface it in Upcoming
   // (or Today if it's actually today). Otherwise leave its destination alone.
   const nextDestination = inferSaveDestination(item ?? undefined);
+  // Saying yes to a pre-planned Radar card: the plan already exists in the
+  // payload — link THAT plan instead of resetting plan_status to draft.
+  const existingPlanId =
+    item && isRecord(item.rawPayload) && typeof item.rawPayload.plan_id === "string"
+      ? item.rawPayload.plan_id
+      : undefined;
+  const planId = input.planId ?? existingPlanId;
   return transition(
     input.itemId,
     "planned",
     {
       type: "item.plan",
       itemId: input.itemId,
-      planId: input.planId,
+      planId,
       learning: behaviorMetadataForItem(item, "save"),
     },
     {
-      patchPayload: input.planId
+      patchPayload: planId
         ? {
-            plan_id: input.planId,
+            plan_id: planId,
             plan_status: "active",
             ...(item ? { intent: intentJson(buildItemIntentPayload({ item, intent: "planning_soon" })) } : {}),
           }

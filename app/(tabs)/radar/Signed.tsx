@@ -207,6 +207,7 @@ export function RadarSigned({
   const [holdingLoading, setHoldingLoading] = useState(false);
   const [holdingError, setHoldingError] = useState<string | null>(null);
   const [tileTarget, setTileTarget] = useState<TileSheetTarget | null>(null);
+  const [decided, setDecided] = useState<Record<string, boolean>>({});
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(
     () => new Set(pages?.favoriteIds ?? []),
   );
@@ -255,8 +256,49 @@ export function RadarSigned({
   );
 
   function cardsFor(filter: Filter): Card[] {
-    if (filter === "All") return cards;
-    return cards.filter((c) => c.filter === filter);
+    const live = cards.filter((c) => !decided[c.id]);
+    if (filter === "All") return live;
+    return live.filter((c) => c.filter === filter);
+  }
+
+  /**
+   * YES on a decided move: the plan is already built, so this is a commit —
+   * status planned, destination today/upcoming (the calendar block), surfaces
+   * on Today. The card leaves Radar and the next-strongest takes the slot.
+   */
+  async function sayYes(card: Card) {
+    setDecided((d) => ({ ...d, [card.id]: true }));
+    try {
+      const res = await fetch(`/api/items/${card.id}/plan`, { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+      refreshAfterAction();
+    } catch (error) {
+      setDecided((d) => {
+        const next = { ...d };
+        delete next[card.id];
+        return next;
+      });
+      console.error("radar yes failed", error);
+    }
+  }
+
+  /** PASS: it's gone. */
+  async function sayPass(card: Card) {
+    setDecided((d) => ({ ...d, [card.id]: true }));
+    try {
+      const res = await fetch(`/api/items/${card.id}/pass`, { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+      refreshAfterAction();
+    } catch (error) {
+      setDecided((d) => {
+        const next = { ...d };
+        delete next[card.id];
+        return next;
+      });
+      console.error("radar pass failed", error);
+    }
   }
 
   async function loadHolding(openSheet = false) {
@@ -364,6 +406,8 @@ export function RadarSigned({
                     label: "SAVED",
                   })
                 }
+                onYes={sayYes}
+                onPass={sayPass}
               />
             </div>
           ))}

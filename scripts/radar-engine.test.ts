@@ -271,8 +271,8 @@ check("readiness: a card that opens a half-built plan is held", () => {
   assert.equal(r.detailReady, false);
 });
 
-check("readiness: a plan-lane card with NO plan ref still passes on card+image", () => {
-  // No "open plan" advertised → it renders as a brief, owes only card + image.
+check("readiness: a plan-lane card with NO plan ref is HELD (pre-planning is the filter)", () => {
+  // If it's on Radar, the plan is already built. No plan → not front-room.
   const r = radarItemReadyForFeature({
     lane: "moves",
     title: "Sunrise lakefront run",
@@ -281,8 +281,9 @@ check("readiness: a plan-lane card with NO plan ref still passes on card+image",
     imageUrl: GOOD_IMG,
     hasPlanRef: false,
   });
-  assert.equal(r.ready, true);
-  assert.equal(r.planReady, true);
+  assert.equal(r.ready, false);
+  assert.ok(r.missing.includes("plan"));
+  assert.equal(r.planReady, false);
 });
 
 check("readiness: every lane needs a real image (blank/stock held)", () => {
@@ -344,6 +345,8 @@ check("readiness: events need a real date + venue", () => {
     imageUrl: GOOD_IMG,
     startsAt: "2026-07-01T20:00:00Z",
     venue: "Green Mill",
+    hasPlanRef: true,
+    planReady: true,
   });
   assert.equal(full.ready, true);
 });
@@ -361,6 +364,8 @@ check("readiness: missing card basics (title/reason/score) are blockers", () => 
     description: "Evergreen.",
     score: 0,
     imageUrl: GOOD_IMG,
+    hasPlanRef: true,
+    planReady: true,
   });
   assert.equal(zero.ready, true);
 });

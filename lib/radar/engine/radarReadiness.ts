@@ -97,12 +97,13 @@ export function radarItemReadyForFeature(input: RadarReadinessInput): RadarReadi
     detailReady = input.findsReady === true;
     if (!detailReady) missing.push("product_detail");
   } else {
-    // plan + brief lanes. A card that opens a plan must open a READY plan — never
-    // a building/failed/cancelled one (no blank plan page). A card with no plan
-    // ref renders as a brief and only owes its card + image + lane facts.
-    const opensPlan = input.hasPlanRef === true;
-    planReady = opensPlan ? input.planReady === true : true;
-    if (opensPlan && !planReady) missing.push("plan");
+    // plan lanes. THE CONTRACT: if it's on Radar, the plan is already built.
+    // A non-finds card may not surface without a complete READY plan — never a
+    // building/failed/cancelled one, and never no plan at all. Pre-planning is
+    // the quality filter (junk can't survive being staged into a real plan),
+    // and it's what makes every card a one-tap yes.
+    planReady = input.hasPlanRef === true && input.planReady === true;
+    if (!planReady) missing.push("plan");
 
     // Events carry a fixed happening: a real date and a venue are non-negotiable.
     if (lane === "events") {

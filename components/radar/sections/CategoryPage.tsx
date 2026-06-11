@@ -38,6 +38,8 @@ export function CategoryPage({
   onTileTap,
   onToggleFavorite,
   onViewAllSaved,
+  onYes,
+  onPass,
 }: {
   filter: RadarFilterKey;
   data: CategoryPageData | undefined;
@@ -46,6 +48,8 @@ export function CategoryPage({
   onTileTap: (tile: { key: GlanceTileKey; label: string }) => void;
   onToggleFavorite: (id: string, next: boolean) => void;
   onViewAllSaved: () => void;
+  onYes: (card: Card) => Promise<void>;
+  onPass: (card: Card) => Promise<void>;
 }) {
   const copy = RADAR_CATEGORY_COPY[filter];
   const page = data ?? EMPTY_DATA;
@@ -82,7 +86,13 @@ export function CategoryPage({
         />
       ) : null}
       {showHero && hero && heroHref ? (
-        <FeaturedHero label={copy.heroLabel} card={hero} href={heroHref} />
+        <FeaturedHero
+          label={copy.heroLabel}
+          card={hero}
+          href={heroHref}
+          onYes={onYes}
+          onPass={onPass}
+        />
       ) : null}
       {page.saved.length > 0 ? (
         <SavedRow
