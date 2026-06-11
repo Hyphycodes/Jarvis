@@ -6,6 +6,7 @@ import { generateStructured } from "@/lib/ai/structured";
 import { buildBrainContext } from "@/lib/brain/context";
 import { buildAgentTasteBlock, type AgentTaste } from "@/lib/brain/categoryAgents";
 import { operatingFitBlock } from "@/lib/operating/operatingPreferences";
+import { getTasteCanon } from "@/lib/taste/references";
 
 /**
  * Finds Specialist Council (per jarvis-finds-engine-brain-tree.md). Five voices —
@@ -40,7 +41,10 @@ export async function runFindsCouncil(input: {
   const out = new Map<string, FindCouncilVerdict>();
   if (!hasAnthropic() || input.finds.length === 0) return out;
 
-  const brain = await buildBrainContext({ userId: input.userId, includeWeather: false, supabase: input.supabase });
+  const [brain, canon] = await Promise.all([
+    buildBrainContext({ userId: input.userId, includeWeather: false, supabase: input.supabase }),
+    getTasteCanon({ userId: input.userId, lane: "finds", supabase: input.supabase }),
+  ]);
   const taste: AgentTaste = {
     displayName: brain.founder?.displayName ?? null,
     city: brain.homeCity?.trim() || "Chicago",
@@ -61,8 +65,9 @@ export async function runFindsCouncil(input: {
     "2. Jerry-fit — fits his taste, closet, home, work, creative output? Subtle luxury, never flashy/logo-loud.",
     "3. Budget/Utility — realistic + useful + worth the spend at his ~$100k/balanced posture? Attainable/premium-realistic preferred; fantasy luxury is a hold.",
     "4. Devil's advocate — your only job is to KILL it for CLEAR reasons: duplicate, generic Amazon junk, hype-driven, fantasy luxury (unless asked), low utility, wrong brand. A real, useful, on-taste item must NOT be killed for being imperfect.",
-    "5. Verdict writer — a crisp buyer decision note: buy if / skip if.",
+    "5. Verdict writer — a crisp, DEFINITIVE buyer decision note: buy if / skip if. Never hedge; doubt is a lower score or a kill, not a hedged note.",
     "final_score is your honest 0..1 conviction this is worth sourcing for him.",
+    "CALIBRATION: 0.9+ means it beats his YES references head-to-head. Most good finds live 0.6-0.8; anything closer to a NO reference than a YES reference dies here. He judges on whether the make and the line move him — not price, not brand prestige.",
   ].join("\n");
   const list = input.finds
     .map((f, i) => `${i}. ${f.title}${f.brand ? ` — ${f.brand}` : ""}${f.price ? ` (${f.price})` : ""}${f.source_brain ? ` [${f.source_brain}]` : ""}${f.budget_tier ? ` {${f.budget_tier}}` : ""}`)
@@ -70,6 +75,7 @@ export async function runFindsCouncil(input: {
   const prompt = [
     "Jerry's taste, pulled fresh:",
     buildAgentTasteBlock(taste),
+    ...(canon.block ? ["", canon.block] : []),
     "",
     "Find finalists (index. title — brand (price) [brain] {tier}):",
     list,

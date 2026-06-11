@@ -152,9 +152,11 @@ async function judge(
     "3. Depth — does it deepen taste/conversation/creative input, or is it shallow/tourist/influencer-coded?",
     "4. Fit/Logistics — realistic right now (weekday/weekend, distance, energy, current mode)?",
     "5. Devil's advocate — your only job is to KILL it: too shallow, touristy, boring, corny, too academic, too far, unsupported claims.",
-    "6. Verdict writer — synthesize a 2-4 sentence opinionated verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
+    "6. Verdict writer — synthesize a 1-3 sentence DEFINITIVE verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
     cfg.brief,
     "Rules: Culture is mostly TIMELESS — do NOT invent urgency. A dated single happening belongs in Events, not here. final_score is your honest 0..1 conviction this deepens his taste/worldview enough to deserve radar attention. ONLY set devil_kill=true for CLEAR junk — shallow tourist/instagram bait, fake/unverifiable, or wrong-category. A real, substantive cultural item must NOT be devil-killed for being imperfect — lower the score and let the floor decide.",
+    "VERDICT VOICE: a confident editorial line that could sit on a card — why this, in his language; it may name his canon. NEVER hedge ('may or may not', 'feels more X than Y') — doubt belongs in a lower score or a kill, never the verdict.",
+    "CALIBRATION: 0.9+ means it beats his YES references head-to-head. Most good items live 0.6-0.8; anything closer to a NO reference than a YES reference dies here. Don't cluster at 0.85+.",
   ].join("\n");
 
   const list = rows

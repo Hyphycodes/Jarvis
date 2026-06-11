@@ -8,6 +8,7 @@ import { buildAgentTasteBlock, type AgentTaste } from "@/lib/brain/categoryAgent
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { normalizeExternalId } from "@/lib/radar/engine/curation";
 import { DINING_SUBLIBRARIES, type SubLibraryConfig } from "@/lib/radar/engine/sources";
+import { getTasteCanon } from "@/lib/taste/references";
 
 export type ScoutResult = {
   subLibrary: string;
@@ -79,9 +80,11 @@ export async function scoutSubLibrary(input: {
     }
   }
 
+  const canon = await getTasteCanon({ userId: input.userId, lane: config.lane, supabase });
+
   let proposed: ScoutCandidate[];
   try {
-    proposed = await proposeCandidates(config, taste, city, target, existingNames);
+    proposed = await proposeCandidates(config, taste, city, target, existingNames, canon.block);
   } catch (error) {
     result.errors.push(`scout LLM: ${error instanceof Error ? error.message : String(error)}`);
     return result;
@@ -141,6 +144,7 @@ async function proposeCandidates(
   city: string,
   target: number,
   existingNames: string[],
+  canonBlock: string,
 ): Promise<ScoutCandidate[]> {
   const system = [
     `You are the SCOUT for the "${config.label}" sub-library in ${city}.`,
@@ -148,12 +152,15 @@ async function proposeCandidates(
     `You fish from these specialist sources first: ${config.specialistSources.join(", ")}.`,
     "You propose REAL, currently-open, specific venues by name — never invent, never generic.",
     "Cast wide: the pipeline kills a lot downstream, so volume matters here. Quality over hype, always.",
+    "NEGATIVE FILTER AT THE SOURCE: do NOT propose anything clubby, flashy, try-hard, touristy, corny, or generic — " +
+      "or anything matching his dealbreakers or resembling a NO reference. Those don't enter the pool at all. Polished garbage is still garbage.",
   ].join("\n");
 
   const avoidList = existingNames.slice(0, 300);
   const prompt = [
     "Jerry's taste, pulled fresh:",
     buildAgentTasteBlock(taste),
+    ...(canonBlock ? ["", canonBlock] : []),
     "",
     `Propose up to ${target} real ${config.label.toLowerCase()} in ${city} worth scouting into the library now.`,
     `Tag each with a sub_type from (or close to): ${config.subTypes.join(", ")}.`,

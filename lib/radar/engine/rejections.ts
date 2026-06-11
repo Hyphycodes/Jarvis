@@ -12,7 +12,8 @@ export type RejectionReason =
   | "plan_fail"
   | "plan_generic"
   | "comparative_cut"
-  | "editor_cut";
+  | "editor_cut"
+  | "negative_filter_veto";
 
 export type RejectionEntry = { candidateId: string; detail?: string | null };
 

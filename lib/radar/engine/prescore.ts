@@ -9,9 +9,12 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { blendTasteVector, weightsFor, type TasteVector } from "@/lib/radar/engine/tasteVector";
 import { DINING_SUBLIBRARIES } from "@/lib/radar/engine/sources";
 import { logRejections } from "@/lib/radar/engine/rejections";
+import { getTasteCanon } from "@/lib/taste/references";
 
 /** Stage 3 — cheap multi-axis pre-score (no council). Quick taste-vector pass
- *  that ranks the rough field; floor 0.5 kills obvious mismatches. */
+ *  that ranks the rough field; floor 0.5 kills obvious mismatches, and a hard
+ *  veto kills anything matching a dealbreaker or NO reference at the source —
+ *  polished garbage is still garbage. */
 export const PRE_SCORE_FLOOR = 0.5;
 
 export type PreScoreResult = {
@@ -23,7 +26,7 @@ export type PreScoreResult = {
 };
 
 type DiscoveredRow = { id: string; name: string; sub_type: string | null; neighborhood: string | null };
-type AxisScores = { craft: number; fit: number; timing: number; novelty: number; relational: number };
+type AxisScores = { craft: number; fit: number; timing: number; novelty: number; relational: number; veto: boolean };
 
 export async function preScoreSubLibrary(input: {
   userId: string;
@@ -79,9 +82,11 @@ export async function preScoreSubLibrary(input: {
     northTags: brain.northTags ?? [],
   };
 
+  const canon = await getTasteCanon({ userId: input.userId, lane: config.lane, supabase });
+
   let vectors: Map<number, AxisScores>;
   try {
-    vectors = await scoreVectors(config.subLibrary, config.brief, taste, rows);
+    vectors = await scoreVectors(config.subLibrary, config.brief, taste, rows, canon.block);
   } catch (err) {
     result.errors.push(`pre-score LLM: ${err instanceof Error ? err.message : String(err)}`);
     return result;
@@ -90,9 +95,15 @@ export async function preScoreSubLibrary(input: {
   const weights = weightsFor(config.subLibrary);
   const now = new Date().toISOString();
   const rejectedIds: string[] = [];
+  const vetoedIds: string[] = [];
   for (let i = 0; i < rows.length; i++) {
     const axes = vectors.get(i);
     if (!axes) continue; // model skipped one — leave discovered for the next pass
+    if (axes.veto) {
+      vetoedIds.push(rows[i].id);
+      result.rejected += 1;
+      continue;
+    }
     const vector: TasteVector = clampVector(axes);
     const pre = blendTasteVector(vector, weights);
     if (pre < PRE_SCORE_FLOOR) {
@@ -123,6 +134,20 @@ export async function preScoreSubLibrary(input: {
       entries: rejectedIds.map((id) => ({ candidateId: id })),
     });
   }
+  if (vetoedIds.length > 0) {
+    await supabase
+      .from(config.subLibrary)
+      .update({ status: "rejected", rejection_stage: "pre_score", rejection_reason: "negative_filter_veto" })
+      .in("id", vetoedIds)
+      .eq("user_id", input.userId);
+    await logRejections(supabase, {
+      userId: input.userId,
+      subLibrary: config.subLibrary,
+      stage: "pre_score",
+      reason: "negative_filter_veto",
+      entries: vetoedIds.map((id) => ({ candidateId: id })),
+    });
+  }
 
   return result;
 }
@@ -145,6 +170,7 @@ async function scoreVectors(
   brief: string,
   taste: AgentTaste,
   rows: DiscoveredRow[],
+  canonBlock: string,
 ): Promise<Map<number, AxisScores>> {
   const system = [
     `You are the cheap PRE-SCORER for the "${subLibrary}" sub-library.`,
@@ -155,6 +181,8 @@ async function scoreVectors(
     "- timing: right for the season/now?",
     "- novelty: fresh vs something he's likely already seen/owns?",
     "- relational: does it connect to his people?",
+    "Also set veto=true for any candidate that clearly matches a dealbreaker or resembles a NO reference — " +
+      "clubby, flashy, try-hard, touristy, corny, or generic things die HERE, regardless of polish. Polished garbage is still garbage.",
     "Be decisive: obvious mismatches should score low so they die here.",
   ].join("\n");
 
@@ -164,12 +192,13 @@ async function scoreVectors(
   const prompt = [
     "Jerry's taste, pulled fresh:",
     buildAgentTasteBlock(taste),
+    ...(canonBlock ? ["", canonBlock] : []),
     "",
     "Candidates (index. name):",
     list,
     "",
     "Return strict JSON scoring EVERY index:",
-    `{ "scores": [{ "i": number, "craft": number, "fit": number, "timing": number, "novelty": number, "relational": number }] }`,
+    `{ "scores": [{ "i": number, "craft": number, "fit": number, "timing": number, "novelty": number, "relational": number, "veto": boolean }] }`,
   ].join("\n");
 
   const raw = await generateStructured<unknown>({
@@ -190,6 +219,7 @@ async function scoreVectors(
       timing: num(entry.timing),
       novelty: num(entry.novelty),
       relational: num(entry.relational),
+      veto: entry.veto === true,
     });
   }
   return out;

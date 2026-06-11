@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth";
 import { getServerSupabase } from "@/lib/supabase/ssr-server";
 import { buildExperienceTasteSignal } from "@/lib/radar/engine/tasteSignal";
+import { upsertTasteReference } from "@/lib/taste/references";
 import type { Json, PlanRow, SurfacedItemRow } from "@/lib/types/database";
 import type { ExperienceRating } from "@/lib/radar/engine/tasteSignal";
 
@@ -178,6 +179,36 @@ export async function recordExperienceMemory(
       .update({ payload: nextPayload as Json })
       .eq("id", resolvedItemId)
       .eq("user_id", owner.id);
+  }
+
+  // Done-loop → canon: every done-thing is the richest signal in the app.
+  // Loved + would-return hardens into a YES reference; not-for-me becomes a
+  // NO reference, so the councils can reject by comparison, not just approve.
+  if (ctx.venueName) {
+    const note = input.notes?.trim() || ctx.subType || ctx.cuisine || null;
+    if (input.rating === "loved" && input.wouldReturn) {
+      await upsertTasteReference({
+        userId: owner.id,
+        name: ctx.venueName,
+        kind: "yes",
+        lane: ctx.lane,
+        note,
+        source: "experience",
+        strength: 0.85,
+        supabase,
+      });
+    } else if (input.rating === "not_for_me") {
+      await upsertTasteReference({
+        userId: owner.id,
+        name: ctx.venueName,
+        kind: "no",
+        lane: ctx.lane,
+        note,
+        source: "experience",
+        strength: 0.8,
+        supabase,
+      });
+    }
   }
 
   const slug =

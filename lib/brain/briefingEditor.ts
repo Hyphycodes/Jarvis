@@ -24,6 +24,8 @@ export type BriefingEditorInput = {
   selection?: BrainSelection;
   criticReason?: string;
   maxAgeMs?: number;
+  /** Reference canon block (YES/NO anchors) — lets copy name his references. */
+  tasteCanonBlock?: string;
 };
 
 export type BriefingEditorResult = {
@@ -199,6 +201,7 @@ function renderBriefingPrompt(input: BriefingEditorInput): string {
         vibe: input.context.founder.vibeKeywords,
         avoid: input.context.founder.avoidKeywords,
         dealbreakers: input.context.founder.dealbreakers,
+        reference_canon: input.tasteCanonBlock || undefined,
         work_schedule:
           "Weeknights are limited energy. Practical after-work ideas should beat high-effort ones.",
       },

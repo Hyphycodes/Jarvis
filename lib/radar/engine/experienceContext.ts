@@ -2,10 +2,12 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { getTasteCanon } from "@/lib/taste/references";
 
-/** Stage 6/7 context — Jerry's own AFTER feedback, fed back into curation so the
- *  shelf adapts to what he actually enjoyed. Kept compact (a handful of recent
- *  one-liners split loved vs not-for-me) so it never bloats the prompt. */
+/** Stage 6/7 context — the reference canon (named YES/NO anchor points) plus
+ *  Jerry's own AFTER feedback, fed back into curation so judgments are made by
+ *  comparison instead of in a vacuum. Kept compact so it never bloats the
+ *  prompt. Every lane council receives this block. */
 
 type MemoryRow = {
   venue_name: string | null;
@@ -53,8 +55,11 @@ export async function getExperienceContext(input: {
     .limit(limit);
   if (input.lane) query = query.eq("lane", input.lane);
 
-  const { data, error } = await query;
-  if (error || !data) return { loved: [], avoided: [], block: "" };
+  const [{ data, error }, canon] = await Promise.all([
+    query,
+    getTasteCanon({ userId: input.userId, lane: input.lane, supabase }),
+  ]);
+  if (error || !data) return { loved: [], avoided: [], block: canon.block };
 
   const rows = data as MemoryRow[];
   const loved: string[] = [];
@@ -67,11 +72,15 @@ export async function getExperienceContext(input: {
     (positive ? loved : avoided).push(lineFor(row));
   }
 
-  if (loved.length === 0 && avoided.length === 0) return { loved, avoided, block: "" };
+  if (loved.length === 0 && avoided.length === 0) {
+    return { loved, avoided, block: canon.block };
+  }
 
-  const parts: string[] = [
+  const parts: string[] = [];
+  if (canon.block) parts.push(canon.block, "");
+  parts.push(
     "Jerry's own past experiences (his real feedback — weight this heavily over generic acclaim):",
-  ];
+  );
   if (loved.length) parts.push(`Loved / would return: ${loved.slice(0, 8).join("; ")}`);
   if (avoided.length) parts.push(`Not for him: ${avoided.slice(0, 6).join("; ")}`);
   return { loved, avoided, block: parts.join("\n") };

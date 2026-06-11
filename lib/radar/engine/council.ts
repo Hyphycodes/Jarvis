@@ -205,11 +205,16 @@ async function runCouncil(
     "1. Authenticity agent — is the thing genuinely good, or well-marketed noise?",
     "2. Jerry-fit agent — hard criteria against his taste and relational map; no scene/pretense/tourist/corny/generic.",
     "3. Devil's advocate — your only job is to find reasons to KILL it; every yes must be earned.",
-    "4. Verdict writer — synthesize into a 2-4 sentence opinionated verdict + a 5-axis taste vector.",
+    "4. Verdict writer — synthesize into a 1-3 sentence DEFINITIVE verdict + a 5-axis taste vector.",
     brief,
     "Rules: if the devil's advocate's case is decisive, set devil_kill=true and give devil_detail (a plain-English reason). " +
-      "If concerns are real but not fatal, DON'T kill — surface them in `concerns` and reflect them in the verdict and a lower final_score, " +
+      "If concerns are real but not fatal, DON'T kill — put them in `concerns` and a lower final_score, " +
       "so the later head-to-head round can weigh them. final_score is your honest 0.0-1.0 conviction.",
+    "VERDICT VOICE: the verdict is a confident editorial line that could sit on a card — why this, in his language. " +
+      "It may name his canon (\"the Costera of steak\"). It must NEVER hedge: no 'may or may not', no 'feels more X than Y', " +
+      "no debate leaking through. Doubt belongs in `concerns` or a kill — never in the verdict.",
+    "CALIBRATION: 0.9+ means you would bet it beats his YES references head-to-head. Most genuinely good items belong in 0.6-0.8. " +
+      "Anything closer to a NO reference than to a YES reference dies here. Do not cluster scores at 0.85+ — comparison forces separation.",
   ].join("\n");
 
   const list = rows

@@ -143,9 +143,11 @@ async function judge(
     "2. Jerry-fit — fits his world, rhythm, taste, and real movement patterns?",
     "3. Role/Use-Case — what ROLE does it play? destination / drift_zone / second_stop / quiet_reset / photo_location / meeting_spot / cigar_walk_zone / low_friction_fallback / neighborhood_anchor / creative_input.",
     "4. Devil's advocate — your only job is to KILL it: too generic, touristy, far, scene-heavy, weak reason, or actually a restaurant/event/culture/move.",
-    "5. Verdict writer — synthesize a 2-4 sentence verdict + primary_role + best_use_case + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
+    "5. Verdict writer — synthesize a 1-3 sentence DEFINITIVE verdict + primary_role + best_use_case + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
     cfg.brief,
     "Rules: Places are EVERGREEN spatial assets — no urgency. A restaurant/bar where food/drink is the point is Dining, not here. final_score is your honest 0..1 conviction this room/zone is worth knowing in his life. ONLY set devil_kill=true for CLEAR junk — generic map filler, no real identity/reason, or wrong-category. A real place worth knowing must NOT be devil-killed for being imperfect — lower the score and let the floor decide.",
+    "VERDICT VOICE: a confident editorial line that could sit on a card — why this room, in his language; it may name his canon. NEVER hedge ('may or may not', 'feels more X than Y') — doubt belongs in a lower score or a kill, never the verdict.",
+    "CALIBRATION: 0.9+ means it beats his YES references head-to-head. Most good places live 0.6-0.8; anything closer to a NO reference than a YES reference dies here. Don't cluster at 0.85+.",
   ].join("\n");
 
   const list = rows

@@ -8,6 +8,7 @@ import { buildAgentTasteBlock, type AgentTaste } from "@/lib/brain/categoryAgent
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { DINING_SUBLIBRARIES } from "@/lib/radar/engine/sources";
 import { logRejections } from "@/lib/radar/engine/rejections";
+import { getTasteCanon } from "@/lib/taste/references";
 
 /** Stage 7 — comparative head-to-head within each sub-library.
  *  Ranked survivors insert into category_best; losers → rejected/comparative_cut. */
@@ -17,6 +18,11 @@ import { logRejections } from "@/lib/radar/engine/rejections";
 // Keeping only ~7 here would starve the bench AND permanently reject good
 // enriched venues each cycle. The editor (≤30) + bench displacement curate down.
 export const COMPARATIVE_KEEP = 15;
+
+// Run the LLM head-to-head whenever there's real competition, not only when the
+// field overflows the keep. Comparison is what keeps scores honest — people
+// with taste compare, they don't grade in a vacuum.
+export const HEAD_TO_HEAD_MIN = 7;
 
 export type ComparativeResult = {
   subLibrary: string;
@@ -119,9 +125,10 @@ export async function comparativeSubLibrary(input: {
   result.considered = rows.length;
   if (rows.length === 0) return result;
 
-  // If ≤ keep items, skip the LLM round and promote all directly.
+  // Tiny fields skip the LLM; anything with real competition gets ranked
+  // head-to-head so winners are forced, not implied by vacuum scores.
   let rankings: RankEntry[];
-  if (rows.length <= keep) {
+  if (rows.length < HEAD_TO_HEAD_MIN) {
     rankings = rows.map((_, i) => ({ i, rank: i + 1 }));
   } else {
     const brain = await buildBrainContext({ userId: input.userId, includeWeather: false, supabase });
@@ -137,8 +144,9 @@ export async function comparativeSubLibrary(input: {
       memories: (brain.memory ?? []).map((m) => ({ content: m.content, kind: m.kind })),
       northTags: brain.northTags ?? [],
     };
+    const canon = await getTasteCanon({ userId: input.userId, lane: "dining", supabase });
     try {
-      rankings = await runComparative(config.subLibrary, config.brief, taste, rows);
+      rankings = await runComparative(config.subLibrary, config.brief, taste, rows, canon.block);
     } catch (err) {
       result.errors.push(`comparative LLM: ${err instanceof Error ? err.message : String(err)}`);
       return result;
@@ -159,7 +167,10 @@ export async function comparativeSubLibrary(input: {
     const isWinner = winners.has(i);
 
     if (isWinner) {
-      // Insert into category_best
+      // Insert into category_best (the head-to-head rationale rides along so
+      // later stages can see WHY it won, not just that it did).
+      const enrichment = buildEnrichmentData(row);
+      if (entry?.rationale) enrichment.comparative_rationale = entry.rationale;
       const { error: insErr } = await supabase.from("category_best").insert({
         user_id: input.userId,
         lane: "dining",
@@ -170,7 +181,7 @@ export async function comparativeSubLibrary(input: {
         neighborhood: row.neighborhood,
         final_score: row.final_score,
         comparative_rank: entry?.rank ?? i + 1,
-        enrichment_data: buildEnrichmentData(row),
+        enrichment_data: enrichment,
         promoted_at: now,
       });
       if (insErr) {
@@ -230,11 +241,13 @@ async function runComparative(
   brief: string,
   taste: AgentTaste,
   rows: JudgedRow[],
+  canonBlock: string,
 ): Promise<RankEntry[]> {
   const system = [
     `You are the COMPARATIVE EDITOR for the "${subLibrary}" sub-library.`,
     "Each item has already passed the specialist council (authenticity + Jerry-fit + devil's advocate).",
-    "Your job: rank them head-to-head as a coherent shelf — not just highest score wins.",
+    "Your job: rank them HEAD-TO-HEAD and force real separation — not everyone earns a top mark, and council scores do not protect anyone here.",
+    "Judge by reference: which would he actually pick, put against his YES canon? Which is quietly giving NO-reference energy?",
     "Ask: which set, taken together, gives Jerry the richest, most varied, least redundant experience?",
     "Penalize sub_type duplicates (e.g. two identical cocktail bars) and neighborhood clustering (too many Logan Square picks when better options exist elsewhere).",
     brief,
@@ -250,6 +263,7 @@ async function runComparative(
   const prompt = [
     "Jerry's taste:",
     buildAgentTasteBlock(taste),
+    ...(canonBlock ? ["", canonBlock] : []),
     "",
     `Finalists for comparative ranking (${rows.length} items — rank ALL of them):`,
     list,

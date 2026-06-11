@@ -7,6 +7,7 @@ import { listIndexItems, rowToIndexedItem } from "@/lib/index/repo";
 import { hasAnthropic } from "@/lib/ai/anthropic";
 import { buildBrainContext } from "@/lib/brain/context";
 import { editBriefing } from "@/lib/brain/briefingEditor";
+import { getTasteCanon } from "@/lib/taste/references";
 import {
   isMajorQualityFlag,
   mergeBriefingIntoPayload,
@@ -95,6 +96,7 @@ export async function runRadarCuration(options: {
   const owner = await requireOwner();
   const supabase = await getServerSupabase();
   const context = await buildBrainContext();
+  const tasteCanon = await getTasteCanon({ userId: owner.id });
 
   // Pre-fetch places library for curator/critic known-place injection
   const { data: libraryEntries } = await supabase
@@ -214,6 +216,7 @@ export async function runRadarCuration(options: {
     shortlist,
     context,
     options.maxBriefings ?? MAX_BRIEFINGS_PER_REFRESH,
+    tasteCanon.block,
   );
 
   // Post-critique gates (code-enforced, not just prompt hints)
@@ -478,6 +481,7 @@ async function attachBriefings(
   shortlist: ScoredItem[],
   context: Awaited<ReturnType<typeof buildBrainContext>>,
   maxBriefings: number,
+  tasteCanonBlock?: string,
 ): Promise<BrainDecision> {
   const scoreByItemId = new Map(shortlist.map((s) => [s.item.id, s]));
   const rejectionReasonByItemId = new Map(
@@ -510,6 +514,7 @@ async function attachBriefings(
         scored,
         selection: sel,
         criticReason: rejectionReasonByItemId.get(sel.itemId),
+        tasteCanonBlock,
       });
       return {
         sel: { ...sel, briefing: result.briefing, briefingMeta: result.meta },

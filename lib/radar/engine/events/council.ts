@@ -153,9 +153,11 @@ async function judge(
     "2. Jerry-fit — does it fit his taste, rhythm, spend, and social world? No scene/hype/corny/generic.",
     "3. Fit/Logistics — can it realistically work in his calendar/life (timing, friction, cost)?",
     "4. Devil's advocate — your only job is to find reasons to KILL it: too generic, far, loud, expensive, fake, weak.",
-    "5. Verdict writer — synthesize a 2-4 sentence opinionated verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
+    "5. Verdict writer — synthesize a 1-3 sentence DEFINITIVE verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
     cfg.brief,
-    "Rules: ONLY set devil_kill=true for CLEAR junk — fake/unverifiable, generic noise, wrong-category, or genuinely off his taste. A real, dated, on-taste event must NOT be devil-killed just for being imperfect — surface concerns in the verdict and a lower final_score instead, and let the floor decide. final_score is your honest 0..1 conviction this dated opportunity deserves Jerry's radar. An undated idea is NOT an event — score it low.",
+    "Rules: ONLY set devil_kill=true for CLEAR junk — fake/unverifiable, generic noise, wrong-category, or genuinely off his taste. A real, dated, on-taste event must NOT be devil-killed just for being imperfect — reflect doubt in a lower final_score instead, and let the floor decide. final_score is your honest 0..1 conviction this dated opportunity deserves Jerry's radar. An undated idea is NOT an event — score it low.",
+    "VERDICT VOICE: a confident editorial line that could sit on a card — why this night, in his language; it may name his canon. NEVER hedge ('may or may not', 'feels more X than Y') — doubt belongs in a lower score or a kill, never the verdict.",
+    "CALIBRATION: 0.9+ means it beats his YES references head-to-head. Most good events live 0.6-0.8; anything closer to a NO reference than a YES reference dies here. Don't cluster at 0.85+.",
   ].join("\n");
 
   const list = rows

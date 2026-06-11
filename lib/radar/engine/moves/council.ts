@@ -129,9 +129,11 @@ async function judge(
     "2. Fit/Energy — does it fit his time, energy, weather, rhythm, and current mode?",
     "3. Jerry-fit — does it fit his actual life/taste, or is it generic self-improvement fluff?",
     "4. Devil's advocate — your only job is to KILL it: vague, no sequence, corny, generic, weak payoff, wrong timing, or wrong-category (a place/restaurant/event with no real action).",
-    "5. Verdict writer — synthesize a 2-4 sentence verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
+    "5. Verdict writer — synthesize a 1-3 sentence DEFINITIVE verdict + a 5-axis taste vector (craft/fit/timing/novelty/relational).",
     cfg.brief,
     "Rules: A Move's central object is the ACTION. ONLY set devil_kill=true for CLEAR junk — vague/no-sequence, generic self-help, or wrong-category. A concrete, on-taste move must NOT be devil-killed for being simple — lower the score and let the floor decide. final_score is your honest 0..1 conviction this is worth Jerry actually doing.",
+    "VERDICT VOICE: a confident editorial line that could sit on a card — why this move, in his language. NEVER hedge ('may or may not', 'feels more X than Y') — doubt belongs in a lower score or a kill, never the verdict.",
+    "CALIBRATION: 0.9+ means it beats his YES references head-to-head. Most good moves live 0.6-0.8; anything closer to a NO reference than a YES reference dies here. Don't cluster at 0.85+.",
   ].join("\n");
 
   const list = rows
