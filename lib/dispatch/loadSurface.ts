@@ -36,6 +36,7 @@ import {
 } from "@/lib/items/considerationBrief";
 import { isUsableVenueImageUrl } from "@/lib/items/venueImage";
 import { scoreIndexedItem } from "@/lib/scoring/scoreIndexedItem";
+import { readCircleGiftIdeas, readCircleImportantDates } from "@/lib/circle/personFields";
 import { findDayOfItems, MAX_DAY_OF_ON_TODAY } from "@/lib/scheduling/promoteItems";
 import {
   DEFAULT_WEEKLY_RHYTHM,
@@ -533,17 +534,25 @@ export const loadCircleSurface: Loader<{
     logQueryError("circle.updates", updatesRes.error);
 
     const people: CirclePerson[] = ((peopleRes.data ?? []) as CirclePersonRow[]).map(
-      (row) => ({
-        id: row.id,
-        name: row.name,
-        category: row.category as CirclePerson["category"],
-        role: row.role ?? undefined,
-        closenessScore: Number(row.closeness_score),
-        lastInteraction: row.last_interaction ?? undefined,
-        nextAction: row.next_action ?? undefined,
-        currentThread: row.current_thread ?? undefined,
-        notes: row.notes ?? [],
-      }),
+      (row) => {
+        const raw = row as unknown as Record<string, unknown>;
+        return {
+          id: row.id,
+          name: row.name,
+          category: row.category as CirclePerson["category"],
+          role: row.role ?? undefined,
+          closenessScore: Number(row.closeness_score),
+          lastInteraction: row.last_interaction ?? undefined,
+          nextAction: row.next_action ?? undefined,
+          currentThread: row.current_thread ?? undefined,
+          notes: row.notes ?? [],
+          importantDates: readCircleImportantDates(raw.important_dates),
+          giftIdeas: readCircleGiftIdeas(raw.gift_ideas),
+          contactRhythmDays:
+            typeof raw.contact_rhythm_days === "number" ? raw.contact_rhythm_days : undefined,
+          lastSeenAt: typeof raw.last_seen_at === "string" ? raw.last_seen_at : undefined,
+        };
+      },
     );
 
     const updates: CircleUpdate[] = ((updatesRes.data ?? []) as CircleUpdateRow[]).map(

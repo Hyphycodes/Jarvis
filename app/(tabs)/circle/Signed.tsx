@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   AppFrame,
   Orbit,
@@ -72,6 +73,40 @@ export function CircleSigned({ payload }: { payload?: CirclePayload }) {
           </div>
         ) : null}
       </div>
+
+      {people.length > 0 ? (
+        <section className="mt-10 flex flex-col">
+          <SectionLabel>People</SectionLabel>
+          <ul className="lux-surface mt-4 flex flex-col overflow-hidden rounded-[var(--radius-card)]">
+            {people.slice(0, 12).map((p, i) => (
+              <li key={p.id}>
+                <Link
+                  href={`/person/${p.id}`}
+                  className={
+                    "flex items-center justify-between gap-3 px-4 py-3.5 transition-colors duration-300 ease-atmospheric hover:bg-white/[0.015] " +
+                    (i !== Math.min(people.length, 12) - 1 ? "border-b border-white/[0.055]" : "")
+                  }
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-serif text-[17px] italic leading-tight text-warm-ivory">
+                      {p.name}
+                    </div>
+                    {p.role ? (
+                      <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.18em] text-muted-gold/75">
+                        {p.role}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-warm-ivory/40">
+                    {formatRecency(p.lastSeenAt ?? p.lastInteraction) ?? ""}
+                    <Chevron direction="right" size={12} />
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="mt-10 flex flex-col">
         <SectionLabel>Updates</SectionLabel>

@@ -254,6 +254,18 @@ export type RadarCard = {
   routeOnPass: IntelligenceDestination[];
 };
 
+export type CircleImportantDate = {
+  label: string;
+  /** "MM-DD" (recurring) or "YYYY-MM-DD" (one-off). */
+  date: string;
+};
+
+export type CircleGiftIdea = {
+  idea: string;
+  note?: string;
+  added_at?: string;
+};
+
 export type CirclePerson = {
   id: string;
   name: string;
@@ -271,6 +283,10 @@ export type CirclePerson = {
   nextAction?: string;
   currentThread?: string;
   notes: string[];
+  importantDates: CircleImportantDate[];
+  giftIdeas: CircleGiftIdea[];
+  contactRhythmDays?: number;
+  lastSeenAt?: string;
 };
 
 export type CircleUpdate = {
