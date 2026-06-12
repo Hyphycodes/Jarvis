@@ -17,6 +17,7 @@ import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation
 import { looksRoutable, routeUtteranceToHomes, type HomeRoute } from "@/lib/chat/homeRouter";
 import { saveItem, passItem } from "@/lib/actions/items";
 import { runLiveResearch } from "@/lib/chat/research/liveResearch";
+import { deepenResearchPlaces } from "@/lib/chat/research/deepenResearch";
 import { cacheResearchFindings, recallResearchFindings } from "@/lib/chat/research/researchCache";
 import { createCanonicalMemory } from "@/lib/memory/memoryStore";
 import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
@@ -411,6 +412,17 @@ export async function POST(req: Request) {
               places: res.places,
             }).catch((err) => console.error("[voice.respond] research cache failed", err)),
           );
+          // The fast answer went to the thread; the deeper taste-fit pass runs
+          // quietly in the background and seeds the existing candidacy pipeline.
+          if (res.places.length) {
+            after(() =>
+              deepenResearchPlaces({
+                userId: owner.id,
+                context,
+                places: res.places,
+              }).catch((err) => console.error("[voice.respond] deepen research failed", err)),
+            );
+          }
         }
       } catch (err) {
         console.error("[voice.respond] live research failed", err);
