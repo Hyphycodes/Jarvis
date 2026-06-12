@@ -47,6 +47,11 @@ export function renderChatSystemPrompt(
     lines.push(`Weather: ${Math.round(c.today.weather.temperatureF)}F, wind ${Math.round(c.today.weather.windMph)} mph.`);
   }
   if (options.intent) lines.push(`Current intent route: ${options.intent}.`);
+  if (options.intent === "discover") {
+    lines.push(
+      "You researched before answering — real places are on screen as cards. Lead with a confident pick or two and one line on why each fits. Reference them by name. Do NOT re-ask what they meant or run a clarifying-question gauntlet; you already have the ground. If there's a clear next move, emit it as a build_plan chip carrying the place's item_id — don't ask about it in prose.",
+    );
+  }
   if (options.sheetContext) {
     lines.push(`Current context: ${options.sheetContext}`);
     lines.push(`Use this as the default subject if the message is short or ambiguous. If they're clearly talking about something else, follow their lead — context is ambient, not a constraint.`);

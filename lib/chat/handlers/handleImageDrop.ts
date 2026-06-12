@@ -11,6 +11,8 @@ import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
 import { buildRadarCandidate } from "@/lib/chat/research/buildRadarCandidate";
 import { judgeTasteFit } from "@/lib/chat/research/judgeTasteFit";
 import { researchSubject } from "@/lib/chat/research/researchSubject";
+import { inferImageMission } from "@/lib/chat/research/imageMission";
+import { runLiveResearch } from "@/lib/chat/research/liveResearch";
 import type { ChatContextPacket } from "@/lib/chat/context/types";
 import type {
   ChatAttachment,
@@ -89,6 +91,30 @@ export async function handleImageDrop(input: {
       image_analysis: analysis,
     },
   });
+
+  // ── Mission vs capture ────────────────────────────────────────────────────
+  // Before treating the image as a venue to save, ask what it's *asking for*.
+  // A friend's text ("craving Asian for bday dinner, any reccs?") is a mission:
+  // infer the job, research it, surface real places, and tee up a reply — the
+  // owner shouldn't have to explain the screenshot.
+  const mission = await inferImageMission({ analysis, userText: input.message });
+  if (mission.isMission && mission.query) {
+    const research = await runLiveResearch({ userId: input.userId, query: mission.query });
+    await updateObservation({
+      userId: input.userId,
+      observationId: observation.id,
+      state: "researched",
+      metadataPatch: { mission, research_places: research.places.length },
+    });
+    return {
+      observationId: observation.id,
+      analysis,
+      places: research.places,
+      state: "researched",
+      chips: [],
+      contextBlock: buildMissionContextBlock({ mission, research, analysis }),
+    };
+  }
 
   const research = await researchSubject({
     analysis,
@@ -257,6 +283,33 @@ function buildImageContextBlock(input: {
     `Action taken: ${input.radarItemId ? "radar candidate created" : "observation saved"}`,
     `Planning state: ${input.state}`,
   ].join("\n");
+}
+
+function buildMissionContextBlock(input: {
+  mission: { query: string | null; replyAngle: string | null };
+  research: Awaited<ReturnType<typeof runLiveResearch>>;
+  analysis: ImageAnalysisResult;
+}): string {
+  const lines: string[] = ["[IMAGE MISSION — you read the screenshot as a job, not a thing to label]"];
+  lines.push(
+    `The owner dropped an image that's really a request. You inferred the job: "${input.mission.query}" and ran live research.`,
+  );
+  if (input.research.answer) lines.push(`Search synthesis: ${input.research.answer}`);
+  if (input.research.places.length) {
+    lines.push("Real places now showing as cards in the thread (reference by name, don't invent others):");
+    input.research.places.forEach((p, i) => {
+      lines.push(
+        `${i + 1}. ${p.name}${p.neighborhood ? ` — ${p.neighborhood}` : ""}${p.priceTier ? ` (${p.priceTier})` : ""} [item_id ${p.itemId}] — ${p.hook}`,
+      );
+    });
+  }
+  lines.push(
+    input.mission.replyAngle
+      ? `Then hand the owner a ready-to-send reply they can paste back to the asker. Reply angle: ${input.mission.replyAngle}. Put the draft on its own line, in quotes.`
+      : "Then hand the owner a short, ready-to-send reply they can paste back to the asker — on its own line, in quotes.",
+  );
+  lines.push("Confident and specific. Don't ask the owner to explain the screenshot — you already got it.");
+  return lines.join("\n");
 }
 
 function extractedText(analysis: ImageAnalysisResult) {

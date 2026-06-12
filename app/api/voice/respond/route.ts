@@ -425,6 +425,12 @@ export async function POST(req: Request) {
       });
     }
 
+    // A dropped image read as a mission surfaces its own place cards; the brain
+    // already has its ground truth via the intake summary below.
+    if (!researchPlaces.length && intakeResult?.places?.length) {
+      researchPlaces = intakeResult.places;
+    }
+
     // ── Actionable intent capture ────────────────────────────────────────────
     // "I want to try Pizz'Amici next week" → capture as a prioritized user_intent
     // candidate and research/surface it through the unified pipeline in the

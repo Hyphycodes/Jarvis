@@ -217,4 +217,6 @@ export type ChatIntakeResult = {
   contextBlock: string;
   chips: ChatChip[];
   state: PlanningState;
+  /** Real places surfaced by an image-mission research run (rendered as cards). */
+  places?: ResearchPlace[];
 };
