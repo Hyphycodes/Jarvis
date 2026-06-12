@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Mic } from "@/components/icons";
 import type { IntentResult } from "@/lib/brain/intentClassifier";
 import { MAX_CHAT_IMAGE_ATTACHMENTS } from "@/lib/chat/attachmentLimits";
-import type { ChatAttachment, ChatChip } from "@/lib/chat/types";
+import type { ChatAttachment, ChatChip, ResearchPlace } from "@/lib/chat/types";
 import { buildClosetChips } from "@/lib/wardrobe/closetChips";
 import { useRealtimeVoice } from "@/lib/voice/useRealtimeVoice";
 import { buildSheetContext } from "@/lib/voice/buildSheetContext";
@@ -21,6 +21,7 @@ type Message = {
   timestamp: number;
   chips?: ChatChip[];
   attachments?: AttachmentContext[];
+  places?: ResearchPlace[];
 };
 
 type PlanCard = {
@@ -414,6 +415,11 @@ export function MicSheet({
     const messageWithAttachment = nonImageText ? `${trimmed}\n\n${nonImageText}` : trimmed;
     const attachmentsForApi = outgoingAttachments.map(attachmentForApi);
 
+    // The places Jarvis last put on screen are resolvable context — "the second
+    // one", "plan that one" should resolve against them on a follow-up turn even
+    // when this turn does no fresh research.
+    const recentPlaces = [...messages].reverse().find((m) => m.places?.length)?.places ?? [];
+
     setAttachments([]);
 
     try {
@@ -425,6 +431,7 @@ export function MicSheet({
           history: historyForApi,
           sheet_context: sheetContext || undefined,
           attachments: attachmentsForApi,
+          recent_places: recentPlaces.length > 0 ? recentPlaces : undefined,
         }),
       });
 
@@ -443,6 +450,7 @@ export function MicSheet({
       let buffer = "";
       let intentChips: ChatChip[] = [];
       let wardrobeJobId: string | null = null;
+      let surfacedPlaces: ResearchPlace[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -466,11 +474,14 @@ export function MicSheet({
               plan_context?: IntentResult["plan_context"];
               message?: string;
               wardrobe_job_id?: string | null;
+              places?: ResearchPlace[];
             };
 
             if (event.type === "token" && event.text) {
               accumulated += event.text;
               setCurrentResponse(accumulated);
+            } else if (event.type === "places") {
+              if (Array.isArray(event.places)) surfacedPlaces = event.places;
             } else if (event.type === "intent") {
               intentChips = normalizeChips(event.chips);
               if (event.wardrobe_job_id) wardrobeJobId = event.wardrobe_job_id;
@@ -496,6 +507,7 @@ export function MicSheet({
                   content: cleanContent,
                   timestamp: Date.now(),
                   chips: mergedChips.length > 0 ? mergedChips : undefined,
+                  places: surfacedPlaces.length > 0 ? surfacedPlaces : undefined,
                 };
                 setMessages((prev) => [...prev, jarvisMsg]);
                 setCurrentResponse("");
@@ -529,6 +541,7 @@ export function MicSheet({
             content: cleanContent,
             timestamp: Date.now(),
             chips: mergedChips.length > 0 ? mergedChips : undefined,
+            places: surfacedPlaces.length > 0 ? surfacedPlaces : undefined,
           }];
         });
         setCurrentResponse("");
@@ -777,6 +790,19 @@ export function MicSheet({
     }
   }, [busy, handleSendMessage, messages, onClose, subscribePush]);
 
+  // ── Open a surfaced place ─────────────────────────────────────────────────
+  // Tapping a card steps through a door: persist the thread, flag the tray to
+  // reopen on the way back, close it, and open the full Consideration Brief.
+  const handleOpenPlace = useCallback((place: ResearchPlace) => {
+    haptic(8);
+    saveSession(messages);
+    try {
+      sessionStorage.setItem("jarvis_reopen", "1");
+    } catch { /* noop */ }
+    onClose();
+    router.push(`/item/${place.itemId}?from=jarvis`);
+  }, [messages, onClose, router]);
+
   // ── Voice playback ──────────────────────────────────────────────────────────
 
   const playJarvisVoice = useCallback(async (text: string) => {
@@ -930,6 +956,9 @@ export function MicSheet({
                     <span className="mr-2 text-[10px] uppercase tracking-[0.16em] text-muted-gold/60">J.</span>
                     <span className="text-[15px] leading-[1.6] text-warm-ivory/88">{msg.content}</span>
                   </div>
+                  {msg.places && msg.places.length > 0 ? (
+                    <PlaceCardStrip places={msg.places} onOpen={handleOpenPlace} />
+                  ) : null}
                   {msg.chips && msg.chips.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {msg.chips.map((chip) => (
@@ -1246,6 +1275,66 @@ function AttachmentPreview({
     <span className={`truncate text-[12px] text-warm-ivory/60 ${compact ? "max-w-[220px]" : "min-w-0 flex-1"}`}>
       {attachment.label}
     </span>
+  );
+}
+
+/**
+ * A tight horizontal strip of the real places Jarvis surfaced — compressed
+ * Radar featured cards (~120px tall, image left, name + neighborhood + hook
+ * right). Tapping one steps into the full Consideration Brief.
+ */
+function PlaceCardStrip({
+  places,
+  onOpen,
+}: {
+  places: ResearchPlace[];
+  onOpen: (place: ResearchPlace) => void;
+}) {
+  return (
+    <div
+      className="mt-3 flex gap-2.5 overflow-x-auto pb-1"
+      style={{ scrollbarWidth: "none" }}
+      data-no-embla-drag
+    >
+      {places.map((place) => (
+        <button
+          key={place.itemId}
+          type="button"
+          onClick={() => onOpen(place)}
+          className="flex h-[112px] w-[252px] shrink-0 items-stretch overflow-hidden rounded-[14px] text-left transition-colors duration-200"
+          style={{
+            border: "1px solid rgba(246,239,221,0.10)",
+            background: "rgba(255,255,255,0.02)",
+          }}
+        >
+          <div className="h-full w-[92px] shrink-0 bg-[#15140f]">
+            {place.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={place.photoUrl} alt={place.name} className="h-full w-full object-cover" />
+            ) : (
+              <div
+                aria-hidden
+                className="h-full w-full"
+                style={{ background: "radial-gradient(circle at 35% 40%, rgba(208,173,104,0.18), transparent 60%)" }}
+              />
+            )}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col justify-center px-3 py-2.5">
+            <div className="truncate font-serif text-[16px] italic leading-tight text-warm-ivory/92">
+              {place.name}
+            </div>
+            {(place.neighborhood || place.priceTier) ? (
+              <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.13em] text-muted-gold/70">
+                {[place.neighborhood, place.priceTier].filter(Boolean).join("  ·  ")}
+              </div>
+            ) : null}
+            <p className="mt-1.5 text-[11.5px] leading-[1.4] text-warm-ivory/55 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
+              {place.hook}
+            </p>
+          </div>
+        </button>
+      ))}
+    </div>
   );
 }
 

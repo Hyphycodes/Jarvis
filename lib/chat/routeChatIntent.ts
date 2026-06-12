@@ -15,6 +15,12 @@ const CANCEL_RE = /\b(stop planning|cancel planning|don't plan|do not plan|never
 const SAVE_CURRENT_RE = /\b(save|keep|hold onto|bookmark)\s+(this|it)\b/i;
 const PASS_CURRENT_RE = /\b(pass|skip|dismiss|archive)\s+(on\s+)?(this|it)\b|don'?t show me this kind/i;
 const REMEMBER_RE = /\b(remember|note this|save this preference|make this part of north|add this to north)\b/i;
+// Recommendation / discovery asks — the ones that used to fall to `ask` and get
+// answered from raw model priors. These need live research before the brain
+// speaks. Kept broad on purpose: a confident answer grounded in a real search
+// always beats a guess.
+const DISCOVERY_RE =
+  /\b(find me|recommend|recommendations?|reccs?|suggest|where (should|can|could|do|to|would)|where'?s (a |the )?(good|best)|best (place|spot|restaurant|bar|lounge|cafe|coffee|brunch|dinner|date|night|cigar)|good (place|spot|restaurant|bar|lounge|cafe|coffee|brunch|spots?)|great (place|spot|spots?)|top (place|spot|spots?|restaurants?|bars?)|any (good|great|new|cool|fun)|new (spot|place|restaurant|bar)s?\b|spots? (for|to|near|in)|places? (for|to|near|in)|somewhere (to|for)|a (good |great |cool |fun )?(place|spot) (to|for)|take (me|him|her|them|devon|us) (to|out|somewhere)|where to (eat|go|take|drink|grab))\b/i;
 
 export function routeChatIntent(input: {
   message: string;
@@ -98,6 +104,20 @@ export function routeChatIntent(input: {
       recognitionMode: true,
       commitmentMode: false,
       dbWritesAllowed: "observe",
+      researchNeeded: true,
+      chips: [],
+    };
+  }
+
+  // Discovery / recommendation asks win over circle + decide: they need real
+  // places, so they route to live research (the brain answers grounded, not
+  // from priors). A "where should I take Marco" is a place ask first.
+  if (DISCOVERY_RE.test(message)) {
+    return {
+      intent: "discover",
+      recognitionMode: true,
+      commitmentMode: false,
+      dbWritesAllowed: "light",
       researchNeeded: true,
       chips: [],
     };

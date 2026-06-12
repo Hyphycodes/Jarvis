@@ -2,6 +2,7 @@ import type { Json } from "@/lib/types/database";
 
 export type ChatIntent =
   | "ask"
+  | "discover"
   | "plan"
   | "decide"
   | "image_drop"
@@ -57,6 +58,21 @@ export type ChatChip = {
   message: string;
   action_type: ChatActionType;
   payload?: Record<string, unknown>;
+};
+
+/**
+ * A real place surfaced into the thread by live research. Each one is
+ * materialized into surfaced_items so `itemId` resolves to a full `/item/[id]`
+ * detail route — the card in the thread and the brief it opens are one thing.
+ */
+export type ResearchPlace = {
+  itemId: string;
+  name: string;
+  neighborhood: string | null;
+  hook: string;
+  priceTier: string | null;
+  photoUrl: string | null;
+  placeId?: string;
 };
 
 export type ChatAttachment =

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   ArrowLeft,
@@ -30,6 +31,8 @@ export type ConsiderationBriefProps = {
   hasPlan: boolean;
   planSlug?: string;
   showActions: boolean;
+  /** Arrived here by tapping a place card in the Jarvis tray. */
+  fromJarvis?: boolean;
 };
 
 export function ConsiderationBrief({
@@ -46,8 +49,20 @@ export function ConsiderationBrief({
   hasPlan,
   planSlug,
   showActions,
+  fromJarvis,
 }: ConsiderationBriefProps) {
+  const router = useRouter();
   const [showMore, setShowMore] = useState(false);
+
+  // Stepping back through the door: flag the tray to reopen where it was left,
+  // then go back to the page it was floating over. The conversation, the cards,
+  // everything is restored.
+  function backToJarvis() {
+    try {
+      sessionStorage.setItem("jarvis_reopen", "1");
+    } catch { /* noop */ }
+    router.back();
+  }
 
   const factParts = [dateLabel, neighborhood, brief.price_estimate].filter(
     Boolean,
@@ -75,12 +90,22 @@ export function ConsiderationBrief({
 
         {/* Overlay nav */}
         <nav className="absolute inset-x-0 top-0 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+14px)]">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/70 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
-          >
-            <ArrowLeft size={15} strokeWidth={1.6} /> Radar
-          </Link>
+          {fromJarvis ? (
+            <button
+              type="button"
+              onClick={backToJarvis}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#D4AF53]/30 bg-black/35 px-3 py-1.5 text-[11px] uppercase tracking-[0.22em] text-[#D4AF53] backdrop-blur-md transition-colors duration-300 ease-atmospheric hover:text-soft-gold"
+            >
+              <ArrowLeft size={15} strokeWidth={1.6} /> Back to Jarvis
+            </button>
+          ) : (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.22em] text-warm-ivory/70 transition-colors duration-300 ease-atmospheric hover:text-warm-ivory"
+            >
+              <ArrowLeft size={15} strokeWidth={1.6} /> Radar
+            </Link>
+          )}
           <Link
             href="/account/history"
             aria-label="History"

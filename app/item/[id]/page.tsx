@@ -11,10 +11,14 @@ export const dynamic = "force-dynamic";
 
 export default async function ItemDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { id } = await params;
+  const { from } = await searchParams;
+  const fromJarvis = from === "jarvis";
   const user = await getSessionUser();
   if (!user) redirect(`/login?next=/item/${encodeURIComponent(id)}`);
 
@@ -42,6 +46,7 @@ export default async function ItemDetailPage({
       hasPlan={Boolean(plan.planSlug)}
       planSlug={plan.planSlug}
       showActions={!["completed", "expired"].includes(item.status)}
+      fromJarvis={fromJarvis}
     />
   );
 }

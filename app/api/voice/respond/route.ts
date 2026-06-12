@@ -16,11 +16,13 @@ import { handleLinkDrop, type LinkChatAttachment } from "@/lib/chat/handlers/han
 import { handleTextObservation } from "@/lib/chat/handlers/handleTextObservation";
 import { looksRoutable, routeUtteranceToHomes, type HomeRoute } from "@/lib/chat/homeRouter";
 import { saveItem, passItem } from "@/lib/actions/items";
+import { runLiveResearch } from "@/lib/chat/research/liveResearch";
+import { cacheResearchFindings, recallResearchFindings } from "@/lib/chat/research/researchCache";
 import { createCanonicalMemory } from "@/lib/memory/memoryStore";
 import { recordChatBehaviorSignal } from "@/lib/chat/behaviorSignals";
 import { MAX_CHAT_IMAGE_ATTACHMENTS } from "@/lib/chat/attachmentLimits";
 import type { ConversationMessage } from "@/lib/brain/intentClassifier";
-import type { ChatAttachment, ChatChip, ChatIntakeResult } from "@/lib/chat/types";
+import type { ChatAttachment, ChatChip, ChatIntakeResult, ResearchPlace } from "@/lib/chat/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -80,6 +82,57 @@ function normalizeAttachments(value: unknown): ChatAttachment[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeResearchPlaces(value: unknown): ResearchPlace[] {
+  if (!Array.isArray(value)) return [];
+  const out: ResearchPlace[] = [];
+  for (const entry of value.slice(0, 6)) {
+    if (!isRecord(entry)) continue;
+    if (typeof entry.itemId !== "string" || typeof entry.name !== "string") continue;
+    out.push({
+      itemId: entry.itemId,
+      name: entry.name,
+      neighborhood: typeof entry.neighborhood === "string" ? entry.neighborhood : null,
+      hook: typeof entry.hook === "string" ? entry.hook : "",
+      priceTier: typeof entry.priceTier === "string" ? entry.priceTier : null,
+      photoUrl: typeof entry.photoUrl === "string" ? entry.photoUrl : null,
+      placeId: typeof entry.placeId === "string" ? entry.placeId : undefined,
+    });
+  }
+  return out;
+}
+
+/** The brief Jarvis answers from: the synthesized search answer + the real
+ *  places now on screen, with their item ids so "that one"/"the second one"
+ *  resolves and Plan It carries the right id. */
+function buildResearchGroundTruth(input: {
+  answer: string | null;
+  places: ResearchPlace[];
+  sources?: { title: string; url: string }[];
+  fromCache?: boolean;
+}): string {
+  const lines: string[] = ["[LIVE RESEARCH — GROUND TRUTH]"];
+  lines.push(
+    input.fromCache
+      ? "You already researched something close to this recently — answer from it, don't re-search."
+      : "You just ran a live search. Answer FROM these findings — confident and specific. Do NOT hedge or ask clarifying questions; you have real ground to stand on.",
+  );
+  if (input.answer) lines.push(`Search synthesis: ${input.answer}`);
+  if (input.places.length) {
+    lines.push("Real places now showing as cards in the thread (reference them by name; never invent others):");
+    input.places.forEach((p, i) => {
+      lines.push(
+        `${i + 1}. ${p.name}${p.neighborhood ? ` — ${p.neighborhood}` : ""}${p.priceTier ? ` (${p.priceTier})` : ""} [item_id ${p.itemId}] — ${p.hook}`,
+      );
+    });
+    lines.push(
+      'When the owner says "that one", "the second one", "plan it", or names one of these, resolve to the matching item_id above and emit a build_plan chip carrying { "item_id": "<id>" }.',
+    );
+  } else {
+    lines.push("No strong places came back — say what you do know plainly, and don't fabricate venues.");
+  }
+  return lines.join("\n");
 }
 
 function mergeChips(...groups: Array<ChatChip[] | undefined>): ChatChip[] {
@@ -180,7 +233,9 @@ export async function POST(req: Request) {
       history?: ConversationMessage[];
       sheet_context?: string;
       attachments?: unknown;
+      recent_places?: unknown;
     };
+    const recentPlaces = normalizeResearchPlaces(body.recent_places);
 
     const messageRaw = typeof body.text === "string" ? body.text.trim() : "";
     const sheetContext = typeof body.sheet_context === "string" ? body.sheet_context.trim() : "";
@@ -320,6 +375,56 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── Live research (discovery / recommendation asks) ───────────────────────
+    // The operating desk researches BEFORE it answers. A discovery ask runs a
+    // fast live search (memory cache first, then Tavily + Google Places),
+    // materializes real places into the thread, and feeds the findings to the
+    // brain as ground truth so it writes a confident, positioned take instead
+    // of guessing from priors.
+    let researchPlaces: ResearchPlace[] = [];
+    let researchGroundTruth: string | null = null;
+    const isDiscovery =
+      routed.intent === "discover" && !imageAttachment && !linkAttachment && !wardrobeJobId;
+    if (isDiscovery) {
+      try {
+        const cached = await recallResearchFindings({ userId: owner.id, query: message });
+        if (cached && (cached.places.length || cached.answer)) {
+          researchPlaces = cached.places;
+          researchGroundTruth = buildResearchGroundTruth({
+            answer: cached.answer,
+            places: cached.places,
+            fromCache: true,
+          });
+        } else {
+          const res = await runLiveResearch({ userId: owner.id, query: message });
+          researchPlaces = res.places;
+          researchGroundTruth = buildResearchGroundTruth({
+            answer: res.answer,
+            places: res.places,
+            sources: res.sources,
+          });
+          after(() =>
+            cacheResearchFindings({
+              userId: owner.id,
+              query: message,
+              answer: res.answer,
+              places: res.places,
+            }).catch((err) => console.error("[voice.respond] research cache failed", err)),
+          );
+        }
+      } catch (err) {
+        console.error("[voice.respond] live research failed", err);
+      }
+    } else if (recentPlaces.length && !imageAttachment && !linkAttachment && !wardrobeJobId) {
+      // No fresh research this turn, but places are still on screen — keep them
+      // resolvable so "the second one" / "plan that one" lands on the right id.
+      researchGroundTruth = buildResearchGroundTruth({
+        answer: null,
+        places: recentPlaces,
+        fromCache: true,
+      });
+    }
+
     // ── Actionable intent capture ────────────────────────────────────────────
     // "I want to try Pizz'Amici next week" → capture as a prioritized user_intent
     // candidate and research/surface it through the unified pipeline in the
@@ -421,7 +526,8 @@ export async function POST(req: Request) {
         : `${intakeResult?.contextBlock ? `${intakeResult.contextBlock}\n` : ""}Owner asked for "${capturedIntentTitle}". You've saved it to Radar and are researching it + building its plan now. Acknowledge in one short, natural line.`
       : wardrobeContextBlock ?? intakeResult?.contextBlock;
     const intakeSummary =
-      [baseIntakeSummary, homeRoute?.contextBlock].filter(Boolean).join("\n") || undefined;
+      [baseIntakeSummary, homeRoute?.contextBlock, researchGroundTruth].filter(Boolean).join("\n") ||
+      undefined;
 
     const systemPrompt = renderChatSystemPrompt(context, {
       intent: routed.intent,
@@ -465,6 +571,12 @@ export async function POST(req: Request) {
           planning_state: intakeResult?.state,
           wardrobe_job_id: wardrobeJobId,
         });
+
+        // Stream the real places into the thread before the prose so the cards
+        // and the answer that talks about them land in the same moment.
+        if (researchPlaces.length) {
+          send({ type: "places", places: researchPlaces });
+        }
 
         // Prepend auto-commit confirmation before the LLM stream
         if (autoCommit?.success && autoCommit.confirmationText) {

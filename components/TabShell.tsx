@@ -59,6 +59,19 @@ export function TabShell({
 
   const [micOpen, setMicOpen] = useState(false);
 
+  // Returning from a place detail opened via the tray: the brief set a flag on
+  // its way back. Reopen the tray where it was left (the thread restores from
+  // session). Runs on mount and on every tab navigation so the back gesture
+  // always lands back inside Jarvis.
+  useEffect(() => {
+    let reopen = false;
+    try {
+      reopen = sessionStorage.getItem("jarvis_reopen") === "1";
+      if (reopen) sessionStorage.removeItem("jarvis_reopen");
+    } catch { /* noop */ }
+    if (reopen) setMicOpen(true);
+  }, [pathname]);
+
   useEffect(() => {
     function openFromNativeMicEvent(event: MouseEvent | PointerEvent | TouchEvent) {
       const target = event.target;
